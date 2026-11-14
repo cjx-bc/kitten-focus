@@ -329,16 +329,12 @@ main {
   min-height: 54px;
   min-width: 52px;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
   align-items: center;
   justify-content: center;
   color: #8c8c91;
-  font-size: 11px;
 }
 .tabbar a[aria-current='page'] {
   color: var(--ink);
-  font-weight: 700;
 }
 .tabbar a[aria-current='page'] svg {
   stroke-width: 2.4;

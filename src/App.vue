@@ -64,10 +64,10 @@ onMounted(async () => {
           v-for="tab in tabs"
           :key="tab.path"
           :to="tab.path"
+          :aria-label="tab.label"
           :aria-current="route.path === tab.path ? 'page' : undefined"
-          ><Icon :name="tab.icon" :size="25" /><span>{{ tab.label }}</span></RouterLink
-        >
-      </nav></template
+          ><Icon :name="tab.icon" :size="25"
+        /></RouterLink></nav></template
     ><Transition name="toast"
       ><div v-if="app.toast" class="toast" role="status">{{ app.toast }}</div></Transition
     >
