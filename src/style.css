@@ -11,6 +11,8 @@
   --muted: #737378;
   --surface: #f5f5f5;
   --line: #eaeaea;
+  --field-line: #ececee;
+  --focus: #838388;
   --accent: #ef4e36;
   --white: #fff;
   --radius: 20px;
@@ -51,10 +53,9 @@ button:disabled {
 }
 button:focus-visible,
 a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid var(--accent);
+input[type='checkbox']:focus-visible,
+input[type='color']:focus-visible {
+  outline: 2px solid var(--focus);
   outline-offset: 4px;
 }
 button:active:not(:disabled) {
@@ -98,12 +99,18 @@ select,
 textarea {
   width: 100%;
   min-height: 48px;
-  border: 1px solid transparent;
+  border: 1.5px solid var(--field-line);
   border-radius: 12px;
   background: var(--surface);
   color: var(--ink);
   padding: 12px 14px;
-  outline-offset: 2px;
+  outline: none;
+}
+input:not([type='checkbox']):not([type='color']):focus,
+select:focus,
+textarea:focus {
+  background: var(--white);
+  border-color: var(--focus);
 }
 input[type='checkbox'] {
   width: 20px;

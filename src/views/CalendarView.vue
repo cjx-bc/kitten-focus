@@ -1117,7 +1117,7 @@ function coursePosition(o: Occurrence) {
   color: white;
 }
 .weekday-checks input:focus-visible + span {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
 }
 .period-editor {
   display: grid;

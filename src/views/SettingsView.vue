@@ -182,7 +182,7 @@ async function enableNotifications() {
     <div class="settings-group">
       <button class="settings-row" @click="sheet = 'about'">
         <span class="row"><Icon name="info" :size="20" />关于小猫专注</span
-        ><span class="row settings-value">0.1.3<Icon name="right" :size="16" /></span>
+        ><span class="row settings-value">0.1.4<Icon name="right" :size="16" /></span>
       </button>
     </div>
     <p class="version-note">小猫专注 · 把时间留给自己</p>
@@ -236,7 +236,7 @@ async function enableNotifications() {
         <Icon name="cat" :size="47" />
         <h2>小猫专注</h2>
         <p>安排时间，选择一件事，认真投入。<br />让每一段专注都有记录。</p>
-        <small>版本 0.1.3 · 本地使用，无需登录</small>
+        <small>版本 0.1.4 · 本地使用，无需登录</small>
         <div class="divider" />
         <p class="field-help">
           数字字体 Nunito 使用 SIL Open Font License；界面图标使用 Lucide。字体许可随源码提供。
