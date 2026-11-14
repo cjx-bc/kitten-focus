@@ -5,6 +5,7 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { native } from './platform/bridge'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
+import { createTabSwipe } from './navigation/tabSwipe'
 const app = useApp(),
   route = useRoute(),
   router = useRouter(),
@@ -16,6 +17,12 @@ const tabs = [
   { path: '/statistics', label: '统计', icon: 'statistics' },
   { path: '/settings', label: '我的', icon: 'user' },
 ]
+const swipe = createTabSwipe({
+  paths: tabs.map((tab) => tab.path),
+  currentPath: () => route.path,
+  isBlocked: () => !app.ready,
+  navigate: (path) => void router.replace(path),
+})
 onMounted(async () => {
   await app.init()
   if (native) {
@@ -44,7 +51,14 @@ onMounted(async () => {
       ><div v-if="app.error" role="alert" class="error-banner">
         {{ app.error }}<button @click="app.error = ''">关闭</button>
       </div>
-      <main><RouterView /></main>
+      <main
+        @touchstart.passive="swipe.start"
+        @touchmove="swipe.move"
+        @touchend="swipe.end"
+        @touchcancel="swipe.reset"
+      >
+        <RouterView />
+      </main>
       <nav v-if="!full" class="tabbar" aria-label="主导航">
         <RouterLink
           v-for="tab in tabs"
