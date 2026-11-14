@@ -1,0 +1,26 @@
+{
+  "version": "0.1.0",
+  "type": "debug testing build",
+  "applicationId": "com.xiaomao.focus",
+  "files": [
+    {
+      "name": "xiaomao-focus-0.1.0-debug.apk",
+      "size": 4884300,
+      "sha256": "75cc8be2c87b683296ea0df5cc68663b049627fde942a5619519e86dac8d0f92"
+    },
+    {
+      "name": "xiaomao-focus-0.1.0-source.zip",
+      "size": 9305519,
+      "sha256": "0320085cf57fb3e54570f673681526bb62940d7b119efd79a6e4d57606824635"
+    }
+  ],
+  "sourceFileCount": 123,
+  "verified": {
+    "domainTests": 14,
+    "androidTests": 7,
+    "androidUiSmoke": "passed",
+    "androidEnvironment": "Android 15 emulator",
+    "physicalDeviceTested": false
+  },
+  "repository": "cjx-bc/kitten-focus"
+}

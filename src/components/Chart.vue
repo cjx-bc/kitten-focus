@@ -1,0 +1,43 @@
+<script setup lang="ts">
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { init, use, type ECharts, type EChartsCoreOption } from 'echarts/core'
+import { BarChart, PieChart, LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+use([
+  BarChart,
+  PieChart,
+  LineChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  CanvasRenderer,
+])
+const props = defineProps<{ option: EChartsCoreOption; label: string; height?: number }>(),
+  element = ref<HTMLElement>()
+let chart: ECharts | undefined, observer: ResizeObserver | undefined
+onMounted(() => {
+  chart = init(element.value!)
+  chart.setOption(props.option)
+  observer = new ResizeObserver(() => chart?.resize())
+  observer.observe(element.value!)
+})
+watch(
+  () => props.option,
+  (value) => chart?.setOption(value, true),
+  { deep: true },
+)
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  chart?.dispose()
+})
+</script>
+<template>
+  <div
+    ref="element"
+    class="chart"
+    :style="{ height: (height || 210) + 'px' }"
+    role="img"
+    :aria-label="label"
+  />
+</template>
