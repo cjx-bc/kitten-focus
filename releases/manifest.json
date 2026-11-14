@@ -1,24 +1,26 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "versionCode": 2,
   "type": "debug testing build",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
-      "name": "xiaomao-focus-0.1.0-debug.apk",
-      "size": 4884300,
-      "sha256": "75cc8be2c87b683296ea0df5cc68663b049627fde942a5619519e86dac8d0f92"
+      "name": "xiaomao-focus-0.1.1-debug.apk",
+      "size": 4818193,
+      "sha256": "6af28723f55a3d91099bd67719bd6f32e3f49d1028508f5d9200179ac1e6ea45"
     },
     {
-      "name": "xiaomao-focus-0.1.0-source.zip",
-      "size": 9305519,
-      "sha256": "0320085cf57fb3e54570f673681526bb62940d7b119efd79a6e4d57606824635"
+      "name": "xiaomao-focus-0.1.1-source.zip",
+      "size": 9308875,
+      "sha256": "d94c889bfba38e2f05f0f6a5c969df853cbe169a29128fd13085c44f0326e131"
     }
   ],
-  "sourceFileCount": 123,
+  "sourceFileCount": 124,
   "verified": {
     "domainTests": 14,
-    "androidTests": 7,
-    "androidUiSmoke": "passed",
+    "androidTests": 9,
+    "scrollRegressionTests": 2,
+    "androidUiSmoke": "v0.1.0 passed; full smoke not rerun for v0.1.1",
     "androidEnvironment": "Android 15 emulator",
     "physicalDeviceTested": false
   },
