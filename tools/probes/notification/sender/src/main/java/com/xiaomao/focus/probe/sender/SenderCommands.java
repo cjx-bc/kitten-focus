@@ -60,6 +60,7 @@ final class SenderCommands {
         }
         Intent click = new Intent(context, SenderActivity.class)
             .setAction("com.xiaomao.focus.probe.CLICK")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .setData(Uri.parse("kitten-probe://notification/" + id))
             .putExtra("id", id).putExtra("revision", revision);
         PendingIntent content = PendingIntent.getActivity(context, id, click,
