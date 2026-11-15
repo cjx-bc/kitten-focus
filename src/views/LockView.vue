@@ -8,6 +8,7 @@ import { protectionDriver } from '../platform/bridge'
 import Sheet from '../components/Sheet.vue'
 import Icon from '../components/Icon.vue'
 import AppWhitelistEditor from '../components/AppWhitelistEditor.vue'
+import NotificationSetting from '../components/NotificationSetting.vue'
 const app = useApp(), router = useRouter()
 const draft = ref<LockConfiguration | null>(null), whitelistOpen = ref(false)
 const starting = ref<LockConfiguration | null>(null), ending = ref(false), busy = ref(false), error = ref('')
@@ -74,6 +75,7 @@ onUnmounted(() => clearInterval(statusTimer))
       <button class="secondary wide" @click="edit()">新建锁机配置</button>
       <details v-if="app.lock.records.length"><summary>锁机历史（{{ app.lock.records.length }}）</summary><p v-for="record in app.lock.records" :key="record.id">{{ record.title }} · {{ record.status === 'completed' ? '到期' : record.status === 'early' ? '提前解除' : '重启中断' }} · {{ duration(record.durationMs) }}<small>{{ new Date(record.startedAt).toLocaleString() }}</small></p></details>
     </template>
+    <NotificationSetting runtime-only />
     <div class="lock-help"><button class="text-button" @click="refresh">重新检查保护</button><button class="text-button" @click="recovery">帮助与故障恢复</button></div>
     <p v-if="error && !draft && !starting && !ending" role="alert" class="form-error">{{ error }}</p>
     <Sheet :open="!!draft" title="锁机配置" @close="!busy && (draft = null)"><form v-if="draft" @submit.prevent="save"><label>锁机名称<input v-model.trim="draft.name" maxlength="80" required /></label><label>锁机时长（分钟）<input v-model.number="draft.minutes" type="number" min="1" max="1440" required /></label><label class="switch"><span>使用独立白名单</span><input type="checkbox" :checked="draft.whitelist.source === 'custom'" @change="draft.whitelist = ($event.target as HTMLInputElement).checked ? { source: 'custom', packages: [...(app.data.preferences.protection?.globalWhitelist ?? [])] } : { source: 'global' }" /></label><template v-if="draft.whitelist.source === 'custom'"><button type="button" class="secondary wide" @click="whitelistOpen = true">编辑独立白名单 · {{ draft.whitelist.packages.length }} 个应用</button><p class="muted">独立名单替代全局名单；空名单也会保留，仅允许小猫和必要系统交互。</p></template><p v-else class="muted">每次开始使用最新全局名单。运行中修改配置只影响下一轮。</p><label class="switch"><span>严格锁机</span><input v-model="draft.strict" type="checkbox" /></label><p class="muted">严格锁机开始后不能暂停、取消或提前解除，到期自动结束。普通锁机可以确认后提前解除。帮助和故障恢复始终可进入。</p><p v-if="error" role="alert" class="form-error">{{ error }}</p><button class="primary wide" :disabled="busy">保存配置</button></form></Sheet>

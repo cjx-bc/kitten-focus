@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useApp } from '../stores/app'
 import StrictModeSetting from '../components/StrictModeSetting.vue'
 import DndSetting from '../components/DndSetting.vue'
+import NotificationSetting from '../components/NotificationSetting.vue'
 import { makeBackup, readBackup, type Backup } from '../domain/backup'
 import { dateKey } from '../domain/dates'
 import {
@@ -151,6 +152,7 @@ async function enableNotifications() {
     </div>
     <h3 class="settings-section-label">声音辅助</h3>
     <div class="settings-group sound-settings"><DndSetting /></div>
+    <div class="settings-group"><NotificationSetting /></div>
     <template v-if="native"
       ><h3 class="settings-section-label">系统提醒</h3>
       <div class="settings-group">

@@ -39,6 +39,14 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void grantTemporaryAccess(PluginCall call){resolve(call,()->control.grantTemporaryAccess(call.getData()));}
     @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
     @PluginMethod public void getDndStatus(PluginCall call){resolve(call,()->control.getDndStatus());}
+    @PluginMethod public void getNotificationStatus(PluginCall call){resolve(call,()->control.getNotificationStatus());}
+    @PluginMethod public void openNotificationAccessSettings(PluginCall call){resolve(call,()->{
+        getContext().startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        return null;
+    });}
+    @PluginMethod public void rebindNotificationListener(PluginCall call){resolve(call,()->{
+        FocusNotificationListener.rebind(getContext());return null;
+    });}
     @PluginMethod public void restoreDnd(PluginCall call){resolve(call,()->control.restoreDnd());}
     @PluginMethod public void openDndSettings(PluginCall call){resolve(call,()->{
         Intent intent=new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
