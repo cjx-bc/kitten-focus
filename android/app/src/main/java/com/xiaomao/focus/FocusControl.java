@@ -20,6 +20,7 @@ final class FocusControl {
     private final DndProtection dnd;
     private final FocusNavigation navigation;
     private final NotificationProtection notifications;
+    private final RecentTasksProtection recentTasks;
 
     FocusControl(Context context) {
         this(context, LocalStore.get(context), SessionClock.system(context));
@@ -40,6 +41,10 @@ final class FocusControl {
     }
     FocusControl(Context context, LocalStore store, SessionClock clock, NotificationSystem system) {
         this(context, store, clock, new FocusRecovery(context, store), null, new AndroidDndSystem(context), system);
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, RecentTasksSystem system) {
+        this(context, store, clock, new FocusRecovery(context, store), null, new AndroidDndSystem(context),
+            new AndroidNotificationSystem(context), launchTarget(context), FocusNavigation.android(context, null), system);
     }
 
     FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
@@ -78,6 +83,11 @@ final class FocusControl {
     FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
                  FocusProtection.AccessibilityState accessibility, DndSystem system,
                  NotificationSystem notificationSystem, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice) {
+        this(context, store, clock, recovery, accessibility, system, notificationSystem, targetLaunch, navigationDevice, new AndroidRecentTasksSystem(context));
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
+                 FocusProtection.AccessibilityState accessibility, DndSystem system,
+                 NotificationSystem notificationSystem, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice, RecentTasksSystem recentTasksSystem) {
         this.targetLaunch = targetLaunch;
         this.context = context.getApplicationContext();
         this.store = store;
@@ -90,6 +100,7 @@ final class FocusControl {
         navigation = new FocusNavigation(context, store, navigationDevice);
         dnd = new DndProtection(context, store.getDatabaseName(), system);
         notifications = new NotificationProtection(context, store.getDatabaseName(), clock, notificationSystem);
+        recentTasks = new RecentTasksProtection(context, store.getDatabaseName(), clock, recentTasksSystem);
         recovery.register(new FocusRecovery.RecoveryOperation() {
             public JSONObject preview() throws JSONException { return dnd.recoveryStep(); }
             public void restore() throws JSONException { dnd.restore(store.read("active")); }
@@ -97,6 +108,10 @@ final class FocusControl {
         recovery.register(new FocusRecovery.RecoveryOperation() {
             public JSONObject preview() throws JSONException { return notifications.recoveryStep(store.read("active")); }
             public void restore() throws JSONException { notifications.restore(store.read("active")); }
+        });
+        recovery.register(new FocusRecovery.RecoveryOperation() {
+            public JSONObject preview() throws JSONException { return recentTasks.recoveryStep(store.read("active")); }
+            public void restore() throws JSONException { recentTasks.restore(store.read("active")); }
         });
     }
 
@@ -125,11 +140,13 @@ final class FocusControl {
             started.put("notificationsRequested", protection != null && Boolean.TRUE.equals(protection.opt("interceptNotifications")));
             dnd.checkStart(started);
             notifications.checkStart(started);
+            recentTasks.checkStart(started);
             recovery.prepare(started);
             JSONObject result = focus.start(started);
             FocusProtection.executionSucceeded();
             dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
+            recentTasks.synchronize(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -151,6 +168,7 @@ final class FocusControl {
             if (remaining == null) navigation.release();
             dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
+            recentTasks.synchronize(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -170,11 +188,13 @@ final class FocusControl {
                 : FocusProtection.captureLock(context, store, configuration, accessibility));
             session.put("notificationsRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("interceptNotifications")));
             notifications.checkStart(session);
+            recentTasks.checkStart(session);
             recovery.prepare(session);
             rest.exit();
             JSONObject result = lock.start(session);
             FocusProtection.executionSucceeded();
             notifications.synchronize(store.read("active"));
+            recentTasks.synchronize(store.read("active"));
             return result;
         }
     }
@@ -185,6 +205,7 @@ final class FocusControl {
             recovery.releaseFinished(active == null ? null : active.optString("id"));
             dnd.synchronize(active);
             notifications.synchronize(active);
+            recentTasks.synchronize(active);
             return result;
         }
     }
@@ -193,6 +214,7 @@ final class FocusControl {
             JSONObject result = rest.start(recordId);
             dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
+            recentTasks.synchronize(store.read("active"));
             return result;
         }
     }
@@ -214,6 +236,7 @@ final class FocusControl {
             if (active == null) navigation.release();
             dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
+            recentTasks.synchronize(store.read("active"));
             return observeControl();
         }
     }
@@ -248,6 +271,7 @@ final class FocusControl {
 
                 .put("dnd", dnd.observe(active))
                 .put("notifications", notifications.observe(active))
+                .put("recentTasks", recentTasks.observe(active))
                 .put("needsReconcile", needsReconcile);
             return observation.put("navigation", navigation.observe(observation));
         }
@@ -368,6 +392,13 @@ final class FocusControl {
     JSONObject getNotificationStatus() throws JSONException {
         synchronized (store) { return notifications.observe(store.read("active")); }
     }
+    JSONObject getRecentTasksStatus() throws JSONException {
+        synchronized (store) {
+            JSONObject status = recentTasks.observe(store.read("active"));
+            JSONObject configured = new JSONObject().put("protection", FocusProtection.preferences(store));
+            return status.put("preferenceEnabled", RecentTasksProtection.requested(configured));
+        }
+    }
     void synchronizeNotifications() throws JSONException {
         synchronized (store) { notifications.synchronize(store.read("active")); }
     }
@@ -385,6 +416,9 @@ final class FocusControl {
                 throw new IllegalStateException("请先在声音辅助中撤销小猫规则，再替换备份");
             if (notifications.restore(null).optBoolean("recoveryPending"))
                 throw new IllegalStateException("原应用通知仍待系统释放，请先进入故障恢复核实，再替换备份");
+            recentTasks.restore(null);
+            if (recentTasks.observe(null).optBoolean("recoveryPending"))
+                throw new IllegalStateException("自身任务卡仍待恢复，请先进入故障恢复重试，再替换备份");
             store.saveData(data, true);
             Reminders.cancelFocus(context);
             Reminders.cancelRest(context);

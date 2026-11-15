@@ -14,8 +14,17 @@ import java.util.List;
 final class AndroidRecentTasksSystem implements RecentTasksSystem {
     private final Context context;
     AndroidRecentTasksSystem(Context context) { this.context = context.getApplicationContext(); }
+    public boolean recoveryAvailable() {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (!Reminders.notificationsAllowed(context) || !manager.areNotificationsEnabled()) return false;
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            android.app.NotificationChannel channel = manager.getNotificationChannel("focus-status");
+            if (channel != null && channel.getImportance() == NotificationManager.IMPORTANCE_NONE) return false;
+        }
+        return true;
+    }
     public boolean recoveryReachable() {
-        if (!Reminders.notificationsAllowed(context)) return false;
+        if (!recoveryAvailable()) return false;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (!manager.areNotificationsEnabled()) return false;
         for (StatusBarNotification item : manager.getActiveNotifications()) {
@@ -31,9 +40,16 @@ final class AndroidRecentTasksSystem implements RecentTasksSystem {
         Intent base = info.baseIntent;
         ComponentName component = base == null ? null : base.getComponent();
         if (component == null || !component.getPackageName().equals(context.getPackageName())
-            || !component.getClassName().equals(MainActivity.class.getName())) return null;
-        return new Task(info.id, component.flattenToString() + ":" + base.getAction() + ":" + base.getDataString(),
+            || !isMainActivity(component)) return null;
+        return new Task(info.persistentId, component.flattenToString() + ":" + base.getAction() + ":" + base.getDataString(),
             (base.getFlags() & Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS) != 0);
+    }
+    private boolean isMainActivity(ComponentName component) {
+        if (component.getClassName().equals(MainActivity.class.getName())) return true;
+        try {
+            android.content.pm.ActivityInfo info = context.getPackageManager().getActivityInfo(component, android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS);
+            return MainActivity.class.getName().equals(info.targetActivity);
+        } catch (android.content.pm.PackageManager.NameNotFoundException missing) { return false; }
     }
     public List<Task> ownTasks() {
         List<Task> tasks = new ArrayList<>();

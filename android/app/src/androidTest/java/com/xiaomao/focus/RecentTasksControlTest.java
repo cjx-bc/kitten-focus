@@ -19,6 +19,7 @@ public class RecentTasksControlTest {
     Context context; LocalStore store; FocusControl control; String database;
     final Clock clock = new Clock();
     final Tasks tasks = new Tasks();
+    int sequence;
     static class Clock implements SessionClock {
         long time = 1000000; int boot = 1;
         public long epoch() { return 1794729600000L + time; }
@@ -46,7 +47,14 @@ public class RecentTasksControlTest {
         recreate();
         control.replaceData(new JSONObject("{\"schemaVersion\":1,\"records\":[],\"deletedRecordIds\":[],\"preferences\":{\"sound\":false,\"vibration\":false}}"));
     }
-    void recreate() { control = new FocusControl(context, store, clock, tasks); }
+    void recreate() {
+        FocusProtection.AccessibilityState access = new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; }
+            public boolean connected() { return true; }
+        };
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), access,
+            new AndroidDndSystem(context), new AndroidNotificationSystem(context), target -> () -> {}, FocusNavigation.android(context, access), tasks);
+    }
     @After public void cleanup() {
         Reminders.cancelFocus(context); Reminders.cancelRest(context); store.close(); context.deleteDatabase(database);
         context.getSharedPreferences("catfocus-recents-" + database, 0).edit().clear().commit();
@@ -57,7 +65,7 @@ public class RecentTasksControlTest {
         store.saveData(data, false);
     }
     JSONObject session(String mode) throws Exception {
-        return new JSONObject().put("id", "recents-one").put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
+        return new JSONObject().put("id", "recents-" + (++sequence)).put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
             .put("title", "自由专注").put("mode", mode).put("targetMs", 60000).put("startedAt", clock.epoch())
             .put("timeZone", "UTC").put("segments", new JSONArray());
     }
@@ -103,5 +111,32 @@ public class RecentTasksControlTest {
         tasks.exclude(tasks.values.stream().filter(t -> t.id == 9).findFirst().get(), false);
         control.reconcile(); assertFalse(tasks.excluded(9));
         assertEquals("withdrawn", status().getString("phase"));
+    }
+    @Test public void rebootRestoresTheSamePersistedOwnTaskInsteadOfAssumingItVanished() throws Exception {
+        preference(true); control.startFocus(session("stopwatch"));
+        clock.time += 1000; control.focusAction("read"); clock.boot++; clock.time = 50;
+        recreate(); control.reconcile();
+        assertFalse(tasks.excluded(9)); assertTrue(tasks.excluded(10));
+        assertEquals("restored", status().getString("phase"));
+        assertTrue(control.observeControl().isNull("owner"));
+    }
+    @Test public void countdownExpiryAndOrdinaryLockBothRestoreOwnTaskWithoutAddingLockFocusTime() throws Exception {
+        preference(true); control.startFocus(session("countdown")); clock.time += 60000; control.reconcile();
+        assertFalse(tasks.excluded(9)); assertEquals("rest", control.observeControl().getString("owner"));
+        control.restAction("exit");
+        JSONObject data = control.loadData();
+        data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "lock-one").put("name", "阅读")
+            .put("minutes", 1).put("strict", false).put("whitelist", new JSONObject().put("source", "global"))));
+        store.saveData(data, false); control.startLock("lock-one"); assertTrue(tasks.excluded(9));
+        clock.time += 1000; control.lockAction("finish", true);
+        assertFalse(tasks.excluded(9)); assertTrue(tasks.excluded(10));
+        assertEquals(1, control.loadData().getJSONArray("records").length()); assertTrue(control.observeControl().isNull("owner"));
+    }
+    @Test public void lostNotificationRecoveryEntryRestoresTasksAndDoesNotHideAgainWhenItReturns() throws Exception {
+        preference(true); control.startFocus(session("stopwatch")); assertTrue(tasks.excluded(9));
+        tasks.reachable = false; control.reconcile();
+        assertFalse(tasks.excluded(9)); assertEquals("withdrawn", status().getString("phase"));
+        tasks.reachable = true; recreate(); control.reconcile();
+        assertFalse(tasks.excluded(9)); assertEquals("focus", control.observeControl().getString("owner"));
     }
 }

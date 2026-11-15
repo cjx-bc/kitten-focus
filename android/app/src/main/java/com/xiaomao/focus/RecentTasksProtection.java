@@ -36,6 +36,7 @@ final class RecentTasksProtection {
     void checkStart(JSONObject session) throws JSONException {
         if (!requested(session)) return;
         if (pending(journal())) throw new IllegalStateException("上一轮任务卡仍待恢复，请先进入故障恢复重试");
+        if (!system.recoveryAvailable()) throw new IllegalStateException("请先开启小猫通知，以保留控制及帮助恢复入口，再隐藏任务卡");
         // No system write here. A running status notification is checked again immediately before hiding.
         if (system.ownTasks().isEmpty()) throw new IllegalStateException("没有可核实的小猫主任务，未隐藏任务卡");
     }
@@ -56,13 +57,20 @@ final class RecentTasksProtection {
         }
         if (journal.optBoolean("withdrawn")) return;
         try {
-            if (!system.recoveryReachable()) throw new IllegalStateException("控制通知及帮助恢复入口不可达，未隐藏任务卡；请开启通知后重试");
+            if (!system.recoveryReachable()) {
+                if (pending(journal)) {
+                    save(journal.put("withdrawn", true));
+                    if (release(journal)) save(journal.put("error", "控制通知入口已失效，已恢复任务卡；本轮不再隐藏"));
+                    return;
+                }
+                throw new IllegalStateException("控制通知及帮助恢复入口不可达，未隐藏任务卡；请开启通知后重试");
+            }
             List<RecentTasksSystem.Task> currentTasks = system.ownTasks();
             JSONArray originals = journal.getJSONArray("tasks");
             for (int i = 0; i < originals.length(); i++) {
                 JSONObject original = originals.getJSONObject(i);
                 RecentTasksSystem.Task now = find(currentTasks, original);
-                if (original.optBoolean("applied") && now != null && !now.excluded) {
+                if ((original.optBoolean("applied") || original.optBoolean("excluded")) && now != null && !now.excluded) {
                     save(journal.put("withdrawn", true).put("phase", "withdrawn").put("error", "任务卡已有后续更改，已保留；本轮不再重新隐藏"));
                     release(journal); return;
                 }
@@ -91,7 +99,11 @@ final class RecentTasksProtection {
         }
     }
     private boolean release(JSONObject journal) throws JSONException {
-        if (!pending(journal)) return true;
+        if (!pending(journal)) {
+            if (!journal.optString("sessionId").isEmpty())
+                save(journal.put("phase", journal.optBoolean("withdrawn") ? "withdrawn" : "restored"));
+            return true;
+        }
         String error = "";
         try {
             List<RecentTasksSystem.Task> current = system.ownTasks();
@@ -100,8 +112,9 @@ final class RecentTasksProtection {
                 JSONObject original = tasks.getJSONObject(i);
                 if (original.optBoolean("restored")) continue;
                 try {
-                    RecentTasksSystem.Task task = journal.optInt("bootId") == clock.boot() ? find(current, original) : null;
-                    // Task IDs may be reused after reboot. New tasks use their own manifest defaults.
+                    // Android may retain a recent task (and its exclusion flag) across reboot.
+                    // Match the saved persistent ID and exact own base-intent identity on every boot.
+                    RecentTasksSystem.Task task = find(current, original);
                     if (task != null && task.excluded && original.optBoolean("applied"))
                         system.exclude(task, original.optBoolean("excluded"));
                     original.put("restored", true); save(journal);
@@ -132,16 +145,18 @@ final class RecentTasksProtection {
             if (!verified) { phase = "failed"; error = "实际任务卡状态已变化，请返回控制页核实"; }
         } catch (RuntimeException failure) { phase = "failed"; error = message(failure); }
         return new JSONObject().put("supported", true).put("requested", requested(active)).put("phase", phase)
+            .put("recoveryAvailable", system.recoveryAvailable())
             .put("active", verified).put("verified", verified).put("error", error)
             .put("recoveryPending", pending(journal) && (!requested(active) || journal.optBoolean("withdrawn") || phase.equals("restoration_failed")));
     }
-    JSONObject recoveryStep() throws JSONException {
+    JSONObject recoveryStep(JSONObject active) throws JSONException {
         JSONObject journal = journal();
         if (journal.optString("sessionId").isEmpty()) return null;
         boolean pending = pending(journal), failed = journal.optString("phase").equals("restoration_failed");
+        boolean roundEnabled = requested(active) && active.optString("id").equals(journal.optString("sessionId")) && !journal.optBoolean("withdrawn");
         return new JSONObject().put("sessionId", journal.optString("sessionId")).put("capability", KEY).put("title", "自身最近任务卡")
-            .put("status", !pending ? "restored" : failed ? "failed" : "active").put("withdrawn", journal.optBoolean("withdrawn"))
-            .put("reason", !pending ? "本轮任务卡更改已恢复；原先隐藏的任务保持原状"
+            .put("status", failed && pending ? "failed" : pending || roundEnabled ? "active" : "restored").put("withdrawn", journal.optBoolean("withdrawn"))
+            .put("reason", !pending && !roundEnabled ? "本轮任务卡更改已恢复；原先隐藏的任务保持原状"
                 : failed ? journal.optString("error") : "恢复本轮修改前的自身任务卡状态；专注或锁机计时和严格规则继续保留");
     }
     private static String message(RuntimeException failure) { return failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage(); }
