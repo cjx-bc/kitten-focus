@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import type { Theme, FocusItem, Mode } from '../domain/model'
@@ -9,12 +9,23 @@ import { statistics, itemToday } from '../domain/statistics'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
+import { protectionDriver } from '../platform/bridge'
+import type { ProtectionStatus } from '../domain/model'
 const app = useApp(),
   router = useRouter(),
   sheet = ref<'theme' | 'item' | 'free' | 'removeTheme' | null>(null),
   formError = ref(''),
   busy = ref(false),
   studyOpen = ref(false)
+const protectionState = ref<ProtectionStatus | null>(null)
+const protectionLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持' }
+async function refreshProtection() {
+  try { protectionState.value = await protectionDriver.status() } catch { protectionState.value = null }
+}
+function refreshWhenVisible() { if (!document.hidden) void refreshProtection() }
+onMounted(() => { void refreshProtection(); document.addEventListener('visibilitychange', refreshWhenVisible) })
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', refreshWhenVisible))
+watch([() => app.data.preferences.protection, () => app.focus.session?.id, () => studyOpen.value], refreshProtection)
 const today = dateKey(),
   todayStats = computed(() => statistics(app.data.records, today, today)),
   itemStats = computed(
@@ -125,7 +136,7 @@ function toggleTheme(theme: Theme) {
         </button>
       </div>
     </header>
-    <button class="study-entry secondary wide" @click="studyOpen = true"><span>学霸模式</span><span>{{ app.focus.session?.protection?.study ? '本轮已开启' : app.data.preferences.protection?.study ? '已开启偏好' : '未开启' }}</span></button>
+    <button class="study-entry secondary wide" @click="studyOpen = true"><span>学霸模式</span><span>{{ protectionState ? protectionLabels[protectionState.state] : '正在检查' }}</span></button>
     <StudyModeSheet v-if="studyOpen" :open="studyOpen" @close="studyOpen = false" />
     <div class="daily-line">
       <span>{{ readableDate(today) }} {{ weekdayName(today) }}</span

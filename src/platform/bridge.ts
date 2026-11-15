@@ -24,6 +24,7 @@ interface NativeBridge {
   startRest(options: { recordId: string }): Promise<RestSnapshot>
   restAction(options: { action: 'read' | 'exit' }): Promise<RestSnapshot>
   observeControl(): Promise<ControlSnapshot>
+  consumeFocusReturn(): Promise<{ requested: boolean }>
   protectionStatus(): Promise<ProtectionStatus>
   listProtectionApps(): Promise<{ apps: ProtectionApp[] }>
   openProtectionSettings(): Promise<void>
@@ -200,3 +201,5 @@ export const protectionDriver = {
     if (native) await plugin.openProtectionSettings()
   },
 }
+
+export const consumeFocusReturn = async () => native ? (await plugin.consumeFocusReturn()).requested : false

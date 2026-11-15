@@ -32,6 +32,12 @@ import java.util.Set;
 final class FocusProtection {
     private static long settingsUntil;
     private static String settingsPackage = "";
+    private static volatile String executionFailure = "";
+    private static long exceptionsChecked;
+    private static Set<String> cachedNecessary = new HashSet<>();
+    static void executionFailed(Exception error) { executionFailure = "无法显示应用阻挡页：" + error.getClass().getSimpleName(); }
+    static void executionSucceeded() { executionFailure = ""; }
+    static synchronized void invalidateNecessary() { exceptionsChecked = 0; }
 
     static JSONObject preferences(LocalStore store) throws JSONException {
         JSONObject data = store.read("data");
@@ -62,6 +68,7 @@ final class FocusProtection {
             if (value instanceof String && !((String) value).isEmpty()) packages.add((String) value);
         }
         packages.add(context.getPackageName());
+        executionFailure = "";
         return new JSONObject().put("study", study).put("source", "global")
             .put("whitelist", new JSONArray(packages));
     }
@@ -73,14 +80,15 @@ final class FocusProtection {
         JSONObject protection = session == null ? null : session.optJSONObject("protection");
         boolean requested = protection != null && protection.optBoolean("study");
         boolean current = requested && !observation.optBoolean("needsReconcile");
-        String state = current ? granted && connected ? "protecting" : "failed"
+        boolean effective = granted && connected && executionFailure.isEmpty();
+        String state = current ? effective ? "protecting" : "failed"
             : !preferred ? "off" : granted && connected ? "ready" : "authorization";
-        String reason = current && (!granted || !connected) ? "本轮应用限制已失效，请检查无障碍授权与服务连接"
+        String reason = current && !executionFailure.isEmpty() ? executionFailure : current && (!granted || !connected) ? "本轮应用限制已失效，请检查无障碍授权与服务连接"
             : !granted ? "尚未启用无障碍服务" : !connected ? "已授权，等待无障碍服务连接"
             : current ? "本轮有效白名单已固定；暂停计时仍限制应用"
             : preferred ? "开始专注后执行应用限制" : "应用限制未开启";
         return new JSONObject().put("supported", true).put("authorized", granted).put("connected", connected)
-            .put("active", current && granted && connected).put("preferenceEnabled", preferred)
+            .put("active", current && effective).put("preferenceEnabled", preferred)
             .put("state", state).put("reason", reason)
             .put("effectiveWhitelist", protection == null ? new JSONArray() : protection.optJSONArray("whitelist"));
     }
@@ -111,7 +119,9 @@ final class FocusProtection {
         return true;
     }
 
-    private static Set<String> necessaryPackages(Context context) {
+    private static synchronized Set<String> necessaryPackages(Context context) {
+        long now = SystemClock.elapsedRealtime();
+        if (exceptionsChecked > 0 && now - exceptionsChecked < 5000) return cachedNecessary;
         Set<String> result = new HashSet<>();
         result.add("com.android.phone");
         result.add("com.android.server.telecom");
@@ -123,6 +133,9 @@ final class FocusProtection {
             for (ResolveInfo info : pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY))
                 result.add(info.activityInfo.packageName);
         }
+        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo launcher = pm.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
+        if (launcher != null) result.add(launcher.activityInfo.packageName);
         String input = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
         ComponentName keyboard = input == null ? null : ComponentName.unflattenFromString(input);
         if (keyboard != null) result.add(keyboard.getPackageName());
@@ -130,6 +143,8 @@ final class FocusProtection {
             try { if ((pm.getApplicationInfo(permissionPackage, 0).flags & ApplicationInfo.FLAG_SYSTEM) != 0) result.add(permissionPackage); }
             catch (PackageManager.NameNotFoundException ignored) { }
         }
+        cachedNecessary = result;
+        exceptionsChecked = now;
         return result;
     }
 
