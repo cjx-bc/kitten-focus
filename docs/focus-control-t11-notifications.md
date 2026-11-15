@@ -26,7 +26,7 @@ T11 只执行当前确有固定截止的严格倒计时。普通可暂停倒计�
 
 宿主：`powershell -NoProfile -ExecutionPolicy Bypass -File tools/tests/notifications/test-policy.ps1`。首次 red 因缺失通知政策与系统边界符号失败；实现后 5 个字面期望例子通过，覆盖固定剩余时长、截止不再拦截、未连接、有效白名单与必要例外。
 
-原生：`com.xiaomao.focus.FocusNotificationTest` 从 `FocusControl` 公共协调边界验证固定截止、去重、独立于学霸模式、冻结名单、授权/连接/实际处理、只读观察、重建、共享恢复、严格计时保留、撤回与断连。首次 AndroidTest 编译 red 为 8 个缺失 FocusControl seam 符号；接通实现后初版 AndroidTest 编译绿色。后续完整运行结果见下文设备记录。
+原生：`com.xiaomao.focus.FocusNotificationTest` 从 `FocusControl` 公共协调边界验证固定截止、去重、独立于学霸模式、冻结名单、授权/连接/实际处理、只读观察、重建、共享恢复、严格计时保留、撤回与断连。首次 AndroidTest 编译 red 为 8 个缺失 FocusControl seam 符号；接通实现后编译绿色。API36 七项原生 seam 用例已通过，包含 posted 更新不能单凭回调声称恢复，以及系统提前重新显示同键时继续暂缓到原截止。
 
 真实双应用：`FocusNotificationDeviceTest` 需要独立 sender probe 安装且获 POST_NOTIFICATIONS、QA listener 获通知访问、QA 没有活动专注/休息或旧待恢复通知，再由执行者显式传入 `-e runNotificationDeviceFixture true`。测试不会自行安装或授予系统权限；它保存并恢复 QA 默认业务库和 journal，发送唯一合成消息、暂缓、更新、核对正常截止原 key/package/uid/PendingIntent/新 revision，再通过真实通知栏 AccessibilityNodeInfo click 验证 sender 收到 `content_intent_opened`。不使用 `PendingIntent.send()` 冒充用户点击，也不依赖可能被计时通知持续更新阻塞的 UI idle 等待。
 
@@ -34,6 +34,7 @@ T11 只执行当前确有固定截止的严格倒计时。普通可暂停倒计�
 
 ## 当前结果
 
-- 前端 32 项 Vitest、宿主通知政策 5 项通过；前端 TypeScript 与构建通过。
-- 初版原生主代码与 AndroidTest 编译通过；完整原生与当前 API36 双应用运行等待设备租约，未据编译结果冒充设备通过。
+- 合并 T07 后前端 33 项 Vitest、宿主通知政策 5 项通过；前端 TypeScript 与构建通过。
+- QA 主 APK 与 AndroidTest 最终构建通过，且包含集成分支 `b5f27a3` 的临时放行兼容。API36 七项原生控制 seam 用例通过。
+- 第一次双应用运行因 instrumentation 重启目标进程后 listener 未重连失败；执行器改为目标进程存在后只切换 QA listener，再调用公开 requestRebind。第二次原通知暂缓、更新到 revision2、原 key/package/uid/PendingIntent 正常截止均通过，但真实通知栏点击没有找到节点；该次仍记失败，证据保留在本机忽略目录 `artifacts/focus-control/t11-api36-first` 与 `t11-api36-green`。窗口检索与真实坐标输入修正等待最终设备复跑，不将 PendingIntent 保持偷换成真实点击通过。
 - 提前立即释放、开放式计时、普通暂停续期、重启/工作资料/OEM 完整矩阵仍由 T12 与后续组合验收承担，A06 尚未全部通过。
