@@ -5,6 +5,7 @@ import { useApp } from '../stores/app'
 import { timer, duration } from '../domain/dates'
 import Icon from '../components/Icon.vue'
 import DndSetting from '../components/DndSetting.vue'
+import NotificationSetting from '../components/NotificationSetting.vue'
 const app = useApp(),
   router = useRouter(),
   busy = ref(false)
@@ -151,6 +152,7 @@ async function rest() {
       <button class="primary" @click="router.replace('/tasks')">回到待办</button>
     </div>
     <DndSetting runtime-only />
+    <NotificationSetting runtime-only />
   </div>
 </template>
 <style scoped>
