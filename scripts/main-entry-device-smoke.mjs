@@ -24,13 +24,14 @@ try {
   const data = emptyData()
   data.preferences.sound = false; data.preferences.vibration = false
   data.preferences.protection = { ...defaultProtection(), enhancements: ['lockMainInterfaceRestricted'] }
-  data.lockConfigurations = [{ id: 'routing-lock', name: '入口限制验证', minutes: 1, strict: true, whitelist: { source: 'global' } }]
+  data.lockConfigurations = [{ id: 'routing-lock', name: '入口限制验证', minutes: 2, strict: true, whitelist: { source: 'global' } }]
   await native('replaceData', { data }); await qa.send('Page.reload')
   await until(() => evaluate('!!document.querySelector(".tabbar")'), 'original five-tab UI')
   assert.equal(await evaluate('document.querySelectorAll(".tabbar a").length'), 5)
   const started = (await native('startLock', { configurationId: 'routing-lock', strictLockConfirmed: true })).session
   for (const path of ['/tasks', '/statistics', '/settings', '/calendar', '/cat']) { await route(path); await at('/lock') }
   for (const path of ['/permissions', '/help', '/emergency', '/recovery']) { await route(path); await at(path); await until(() => text().then(value => value.includes('返回锁机控制')), 'safety page content') }
+  await until(() => evaluate('[...document.querySelectorAll("dialog[open] button")].some(button => button.textContent.trim() === "取消，保持现状")'), 'recovery preview modal is mounted')
   await click('取消，保持现状')
   await route('/help'); await at('/help')
   command('shell', 'input', 'keyevent', '3')
@@ -45,7 +46,12 @@ try {
 
   const edited = (await native('loadData')).data; edited.preferences.protection.enhancements = []
   await native('saveData', { data: edited }); await route('/settings'); await at('/lock')
-  await route('/permissions'); await at('/permissions'); await click('前往无障碍授权')
+  await route('/permissions'); await at('/permissions')
+  await until(() => evaluate('!!document.querySelector("[data-capability=applications] summary")'), 'current permission diagnostics')
+  await evaluate('document.querySelector("[data-capability=applications] summary").click()')
+  await evaluate('document.querySelector("[data-capability=applications] button").click()')
+  await until(() => evaluate('[...document.querySelectorAll("dialog[open] button")].some(button => button.textContent.trim() === "前往系统授权")'), 'permission purpose Sheet')
+  await click('前往系统授权')
   await until(() => /topResumedActivity=.*(?:Settings|Accessibility)/.test(command('shell', 'dumpsys', 'activity', 'activities')), 'actual Android authorization Activity')
   await ordinaryStart(); await route('/recovery'); await at('/recovery')
   await until(() => text().then(value => value.includes('锁机主界面入口限制 · 待撤销')), 'routing restoration registered')
@@ -63,17 +69,30 @@ try {
   await at('/tasks')
   await qa.screenshot('02-recovery-reopens-business-retains-strict-lock')
   results.push({ scenario: 'preference-edits-next-round-real-permission-cancel-and-confirm-recovery-durable-across-reload-same-strict-lock-id-deadline', passed: true })
-  await until(async () => (await native('lockAction', { action: 'read' })).session === null, 'strict natural expiry', 75000)
+  await until(async () => (await native('lockAction', { action: 'read' })).session === null, 'strict natural expiry', started.targetMs + 15000)
   await route('/statistics'); await at('/statistics'); assert.equal((await observe()).owner, null)
   assert.equal((await native('loadData')).data.records.length, 0)
   results.push({ scenario: 'natural-lock-expiry-restores-business-without-focus-record-or-rest', passed: true })
 
+  // The deliberately force-stopped package may keep its accessibility service
+  // unbound. Re-establish the actual test prerequisite for the next new round.
+  if (!(await native('protectionStatus')).connected) {
+    const service = qa.appId + '/com.xiaomao.focus.FocusAccessibilityService'
+    const others = baseline.services === 'null' ? [] : baseline.services.split(':').filter(value => value && value !== service)
+    command('shell', 'settings', others.length ? 'put' : 'delete', 'secure', 'enabled_accessibility_services', ...(others.length ? [others.join(':')] : []))
+    command('shell', 'settings', 'put', 'secure', 'enabled_accessibility_services', [...others, service].join(':'))
+    command('shell', 'settings', 'put', 'secure', 'accessibility_enabled', '1')
+    await until(async () => (await native('protectionStatus')).connected, 'actual service rebound for the next new round')
+  }
   edited.lockConfigurations[0].strict = false
   await native('saveData', { data: edited }); await native('startLock', { configurationId: 'routing-lock' }); await route('/settings'); await at('/settings')
   await native('lockAction', { action: 'finish', confirmed: true })
   edited.preferences.protection.enhancements = ['lockMainInterfaceRestricted']; await native('saveData', { data: edited })
   await native('startLock', { configurationId: 'routing-lock' }); await route('/tasks'); await at('/lock')
-  await click('提前解除'); await click('确认解除'); await until(async () => (await observe()).owner === null, 'ordinary UI unlock')
+  await until(() => evaluate('[...document.querySelectorAll("button")].some(button => button.textContent.trim() === "提前解除")'), 'ordinary lock controls rendered')
+  await click('提前解除')
+  await until(() => evaluate('[...document.querySelectorAll("dialog[open] button")].some(button => button.textContent.trim() === "确认解除" && !button.disabled)'), 'ordinary unlock confirmation rendered')
+  await click('确认解除'); await until(async () => (await observe()).owner === null, 'ordinary UI unlock')
   await route('/settings'); await at('/settings')
   results.push({ scenario: 'unselected-lock-allows-business-next-selected-ordinary-lock-intercepts-and-confirmed-end-restores', passed: true })
 
@@ -90,7 +109,7 @@ try {
   console.log(JSON.stringify({ serial: qa.serial, results }))
 } finally {
   await native('lockAction', { action: 'finish', confirmed: true }).catch(() => {})
-  if ((await observe()).lock.session?.strictMode) await until(async () => !(await native('lockAction', { action: 'read' })).session, 'cleanup strict expiry', 75000)
+  if ((await observe()).lock.session?.strictMode) await until(async () => !(await native('lockAction', { action: 'read' })).session, 'cleanup strict expiry', 135000)
   if (baseline.data) await native('replaceData', { data: baseline.data })
   for (const [key, value] of [['enabled_accessibility_services', baseline.services], ['accessibility_enabled', baseline.enabled]])
     command('shell', 'settings', value === 'null' ? 'delete' : 'put', 'secure', key, ...(value === 'null' ? [] : [value]))

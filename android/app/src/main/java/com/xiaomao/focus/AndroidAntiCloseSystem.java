@@ -45,9 +45,16 @@ final class AndroidAntiCloseSystem implements AntiCloseSystem {
                 AccessibilityNodeInfo child = node.getChild(i);
                 if (child != null) { AntiCloseWindow.Node read = read(child, pkg, depth + 1, count); if (read != null) children.add(read); }
             }
+            String viewId = node.getViewIdResourceName();
             CharSequence text = node.getText();
-            // No content descriptions, arbitrary extras, screenshots or persistent node payloads.
-            return new AntiCloseWindow.Node(pkg, node.getViewIdResourceName(), text == null || text.length() > 256 ? "" : text.toString(), children.toArray(new AntiCloseWindow.Node[0]));
+            // API36 exposes the accessibility page heading only as this exact system
+            // toolbar's title metadata. Never read arbitrary content descriptions.
+            if ((text == null || text.length() == 0) && "com.android.settings".equals(pkg)
+                && "com.android.settings:id/collapsing_toolbar".equals(viewId)) text = node.getContentDescription();
+            // No arbitrary descriptions/extras, screenshots or persistent node payloads.
+            CharSequence role = node.getClassName();
+            return new AntiCloseWindow.Node(pkg, viewId, text == null || text.length() > 256 ? "" : text.toString(),
+                role == null ? "" : role.toString(), children.toArray(new AntiCloseWindow.Node[0]));
         } finally { node.recycle(); }
     }
     public void returnToFocus() {
