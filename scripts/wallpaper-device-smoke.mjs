@@ -24,8 +24,8 @@ assert.equal(raw('shell', 'am', 'get-current-user').toString().trim(), String(us
 process.env.ADB = adb; process.env.ANDROID_SERIAL = serial; process.env.ANDROID_APP_ID = 'com.xiaomao.focus.qa'
 const output = resolve(arg('--output', 'artifacts/focus-control/t17-product'))
 mkdirSync(output, { recursive: true })
-const qa = await connectQa({ port: 9274, output, user })
-const native = qa.native, command = qa.command
+let qa = await connectQa({ port: 9274, output, user })
+const native = (method, options = {}) => qa.native(method, options), command = qa.command
 const main = () => command('shell', 'am', 'start', '--user', String(user), '-n', qa.appId + '/com.xiaomao.focus.MainActivity')
 const dump = () => {
   command('shell', 'uiautomator', 'dump', '--compressed', '/data/local/tmp/kitten-t17-window.xml')
@@ -51,6 +51,9 @@ async function selectWallpaper() {
   await tap('Set wallpaper')
   await tap(target === 'both' ? 'Home screen and lock screen' : 'Home screen')
   await delay(500); main()
+  // Wallpaper colors can recreate MainActivity/WebView. Rebind the actual
+  // disposable user's CDP session before reading the resulting native state.
+  qa.close(); qa = await connectQa({ port: 9274, output, user })
 }
 try {
   const before = await native('getWallpaperStatus')
