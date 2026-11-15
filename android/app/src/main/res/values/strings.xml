@@ -4,4 +4,5 @@
     <string name="title_activity_main">小猫专注</string>
     <string name="package_name">com.xiaomao.focus</string>
     <string name="custom_url_scheme">com.xiaomao.focus</string>
+<string name="focus_accessibility_description">仅在你开始学霸模式专注后，读取前台应用包名并显示本机阻挡页；不读取窗口正文、不上传使用内容。暂停仍限制，结束专注后解除。可在系统无障碍设置中关闭。</string>
 </resources>

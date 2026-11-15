@@ -38,6 +38,41 @@ export interface FocusRecord {
   segments: Segment[]
   status: 'completed' | 'early' | 'interrupted'
 }
+export interface ProtectionPreferences {
+  study: boolean
+  strict: boolean
+  interceptNotifications: boolean
+  dnd: boolean
+  globalWhitelist: string[]
+  enhancements: string[]
+}
+export const defaultProtection = (): ProtectionPreferences => ({
+  study: false, strict: false, interceptNotifications: false, dnd: false,
+  globalWhitelist: [], enhancements: [],
+})
+export interface ProtectionSnapshot {
+  study: boolean
+  source: 'global'
+  whitelist: string[]
+}
+export interface ProtectionStatus {
+  supported: boolean
+  authorized: boolean
+  connected: boolean
+  active: boolean
+  preferenceEnabled: boolean
+  state: 'off' | 'authorization' | 'ready' | 'protecting' | 'failed' | 'unsupported'
+  reason: string
+  effectiveWhitelist: string[]
+}
+export interface ProtectionApp {
+  packageName: string
+  name: string
+  icon: string | null
+  system: boolean
+  installed: boolean
+  fixed: boolean
+}
 export interface ActiveFocus {
   id: string
   itemId: string | null
@@ -49,6 +84,8 @@ export interface ActiveFocus {
   targetMs: number
   startedAt: number
   timeZone: string
+  protection?: ProtectionSnapshot
+  strictMode?: boolean
   state: 'running' | 'paused'
   elapsedMs: number
   pausedMs: number
@@ -134,6 +171,7 @@ export interface CourseException {
   end?: string
 }
 export interface Preferences {
+  protection?: ProtectionPreferences
   defaultMinutes: number
   sound: boolean
   vibration: boolean

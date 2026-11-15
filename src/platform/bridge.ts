@@ -8,6 +8,8 @@ import type {
   FocusSnapshot,
   RestSession,
   RestSnapshot,
+  ProtectionStatus,
+  ProtectionApp,
 } from '../domain/model'
 import { emptyData } from '../domain/model'
 import { elapsed, settle } from '../domain/focus'
@@ -22,6 +24,9 @@ interface NativeBridge {
   startRest(options: { recordId: string }): Promise<RestSnapshot>
   restAction(options: { action: 'read' | 'exit' }): Promise<RestSnapshot>
   observeControl(): Promise<ControlSnapshot>
+  protectionStatus(): Promise<ProtectionStatus>
+  listProtectionApps(): Promise<{ apps: ProtectionApp[] }>
+  openProtectionSettings(): Promise<void>
   exportFile(options: { text: string; name: string }): Promise<void>
   importFile(): Promise<{ text: string }>
   permissions(): Promise<{ notifications: boolean; exactAlarms: boolean }>
@@ -76,6 +81,8 @@ export const focusDriver = {
   async start(session: ActiveFocus): Promise<FocusSnapshot> {
     if (native) return plugin.startFocus({ session })
     const db = await webReadFocus()
+    if ((await repository.load()).preferences.protection?.study)
+      throw new Error('应用限制仅支持 Android 本机版本，请关闭学霸模式后继续')
     if (browserSession) throw new Error('请先结束当前专注')
     if ((await restDriver.read()).session?.state === 'running')
       throw new Error('请先退出休息，再开始新的专注')
@@ -179,3 +186,17 @@ export const requestNotifications = () =>
   native ? plugin.requestNotifications() : Promise.resolve({ notifications: false })
 export const openAlarmSettings = () => plugin.openAlarmSettings()
 export const syncReminders = () => (native ? plugin.syncReminders() : Promise.resolve())
+
+export const protectionDriver = {
+  async status(): Promise<ProtectionStatus> {
+    if (native) return plugin.protectionStatus()
+    return { supported: false, authorized: false, connected: false, active: false,
+      preferenceEnabled: false, state: 'unsupported', reason: '应用限制仅支持 Android 本机版本', effectiveWhitelist: [] }
+  },
+  async apps(): Promise<ProtectionApp[]> {
+    return native ? (await plugin.listProtectionApps()).apps : []
+  },
+  async openSettings() {
+    if (native) await plugin.openProtectionSettings()
+  },
+}
