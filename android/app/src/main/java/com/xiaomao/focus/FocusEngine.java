@@ -1,27 +1,33 @@
 package com.xiaomao.focus;
 
 import android.content.Context;
-import android.os.SystemClock;
-import android.provider.Settings;
 import org.json.JSONObject;
 import org.json.JSONArray;
 import org.json.JSONException;
 
 final class FocusEngine {
     private final Context context;private final LocalStore store;
-    FocusEngine(Context context){this.context=context.getApplicationContext();store=LocalStore.get(context);}
-    private int boot(){return Settings.Global.getInt(context.getContentResolver(),Settings.Global.BOOT_COUNT,0);}
+    private final SessionClock clock;private final RestEngine rest;
+    FocusEngine(Context context){this(context,LocalStore.get(context),SessionClock.system(context));}
+    FocusEngine(Context context,LocalStore store,SessionClock clock){this.context=context.getApplicationContext();this.store=store;this.clock=clock;rest=new RestEngine(context,store,clock);}
     JSONObject start(JSONObject session) throws JSONException {synchronized(store){return startLocked(session);}}
     private JSONObject startLocked(JSONObject session) throws JSONException {
         if(store.read("active")!=null)throw new IllegalStateException("请先结束当前专注");
-        JSONObject rest = new RestEngine(context).read().optJSONObject("session");
-        if(rest!=null&&rest.optString("state").equals("running"))throw new IllegalStateException("请先退出休息，再开始新的专注");
+        JSONObject resting = rest.read().optJSONObject("session");
+        if(resting!=null&&resting.optString("state").equals("running"))throw new IllegalStateException("请先退出休息，再开始新的专注");
         if(session.optLong("targetMs")<=0||(!session.optString("mode").equals("countdown")&&!session.optString("mode").equals("stopwatch")))throw new IllegalArgumentException("计时参数无效");
-        new RestEngine(context).exit();
-        session.put("anchorMono",SystemClock.elapsedRealtime());session.put("anchorEpoch",System.currentTimeMillis());session.put("startedAt",System.currentTimeMillis());session.put("bootId",boot());store.write("active",session);
+        rest.exit();
+        session.put("anchorMono",clock.mono());session.put("anchorEpoch",clock.epoch());session.put("startedAt",clock.epoch());session.put("bootId",clock.boot());store.write("active",session);
         Reminders.scheduleFocus(context,session);Reminders.showFocus(context,session,0);return snapshot(session,0,null);
     }
     private long elapsed(JSONObject s,long now){long ms=s.optLong("elapsedMs")+(s.optString("state").equals("running")?Math.max(0,now-s.optLong("anchorMono")):0);return s.optString("mode").equals("countdown")?Math.min(ms,s.optLong("targetMs")):ms;}
+    JSONObject observe() throws JSONException {
+        synchronized(store){
+            JSONObject session=store.read("active");long now=clock.mono();
+            boolean interrupted=session!=null&&(session.optInt("bootId")!=clock.boot()||now<session.optLong("anchorMono"));
+            return snapshot(session,session==null?0:interrupted?session.optLong("elapsedMs"):elapsed(session,now),null);
+        }
+    }
     private void checkpoint(JSONObject s,long now,long epoch) throws JSONException {
         long delta=Math.max(0,now-s.optLong("anchorMono"));if(s.optString("mode").equals("countdown"))delta=Math.min(delta,Math.max(0,s.optLong("targetMs")-s.optLong("elapsedMs")));
         if(delta>0){JSONArray segments=s.getJSONArray("segments");JSONObject last=segments.length()>0?segments.getJSONObject(segments.length()-1):null;
@@ -32,7 +38,7 @@ final class FocusEngine {
     JSONObject action(String action) throws JSONException {synchronized(store){return actionLocked(action);}}
     private JSONObject actionLocked(String action) throws JSONException {
         JSONObject s=store.read("active");if(s==null)return snapshot(null,0,store.read("lastFinished"));
-        long now=SystemClock.elapsedRealtime(),epoch=System.currentTimeMillis();boolean interrupted=s.optInt("bootId")!=boot()||now<s.optLong("anchorMono");
+        long now=clock.mono(),epoch=clock.epoch();boolean interrupted=s.optInt("bootId")!=clock.boot()||now<s.optLong("anchorMono");
         long value=interrupted?s.optLong("elapsedMs"):elapsed(s,now);
         boolean reached=s.optString("mode").equals("countdown")&&value>=s.optLong("targetMs");
         long completedAgo = reached ? Math.max(0,now-s.optLong("anchorMono")-Math.max(0,s.optLong("targetMs")-s.optLong("elapsedMs"))) : 0;
@@ -43,8 +49,8 @@ final class FocusEngine {
             JSONArray segments=s.getJSONArray("segments");long ended=interrupted||reached?(segments.length()>0?segments.getJSONObject(segments.length()-1).optLong("end"):s.optLong("startedAt")):epoch;
             JSONObject record=new JSONObject();for(String key:new String[]{"id","itemId","themeId","title","themeName","color","mode","targetMs","startedAt","timeZone","pausedMs","segments"})record.put(key,s.get(key));
             record.put("endedAt",ended);record.put("durationMs",s.optLong("elapsedMs"));record.put("status",status);
-            JSONObject nextRest = status.equals("completed") && record.optLong("durationMs")>0 ? RestEngine.create(context,record,epoch-completedAgo,now-completedAgo) : null;
-            store.finish(record,nextRest);Reminders.cancelFocus(context);if(reached)Reminders.showFinished(context,s);if(nextRest!=null)new RestEngine(context).sync();return snapshot(null,s.optLong("elapsedMs"),record.optLong("durationMs")>0?record:null);
+            JSONObject nextRest = status.equals("completed") && record.optLong("durationMs")>0 ? RestEngine.create(record,epoch-completedAgo,now-completedAgo,clock.boot()) : null;
+            store.finish(record,nextRest);Reminders.cancelFocus(context);if(reached)Reminders.showFinished(context,s);if(nextRest!=null)rest.sync();return snapshot(null,s.optLong("elapsedMs"),record.optLong("durationMs")>0?record:null);
         }
         if(action.equals("pause")&&s.optString("state").equals("running")){checkpoint(s,now,epoch);s.put("state","paused");s.put("anchorMono",now);Reminders.cancelFocusAlarm(context);}
         else if(action.equals("resume")&&s.optString("state").equals("paused")){s.put("pausedMs",s.optLong("pausedMs")+Math.max(0,now-s.optLong("anchorMono")));s.put("state","running");s.put("anchorMono",now);s.put("anchorEpoch",epoch);Reminders.scheduleFocus(context,s);}

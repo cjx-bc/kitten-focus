@@ -72,6 +72,12 @@ export interface RestSnapshot {
   session: RestSession | null
   remainingMs: number
 }
+export interface ControlSnapshot {
+  owner: 'focus' | 'rest' | null
+  focus: FocusSnapshot
+  rest: RestSnapshot
+  needsReconcile: boolean
+}
 export interface CalendarEvent {
   id: string
   title: string

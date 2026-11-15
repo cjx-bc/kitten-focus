@@ -23,17 +23,18 @@ import java.nio.charset.StandardCharsets;
 
 @CapacitorPlugin(name="CatFocus",permissions={@Permission(alias="notifications",strings={Manifest.permission.POST_NOTIFICATIONS})})
 public class CatFocusPlugin extends Plugin {
-    private FocusEngine engine;private LocalStore store;
-    @Override public void load(){engine=new FocusEngine(getContext());store=LocalStore.get(getContext());}
+    private FocusControl control;private LocalStore store;
+    @Override public void load(){control=new FocusControl(getContext());store=LocalStore.get(getContext());}
     private interface Operation { JSONObject run() throws Exception; }
     private void resolve(PluginCall call,Operation operation){try{JSONObject result=operation.run();call.resolve(result==null?new JSObject():new JSObject(result.toString()));}catch(Exception error){call.reject(error.getMessage(),error);}}
-    @PluginMethod public void loadData(PluginCall call){resolve(call,()->{new UpgradeBackups(getContext()).prepareStartup();JSONObject data=store.loadData();return new JSONObject().put("data",data==null?JSONObject.NULL:data);});}
+    @PluginMethod public void loadData(PluginCall call){resolve(call,()->{new UpgradeBackups(getContext()).prepareStartup();JSONObject data=control.loadData();return new JSONObject().put("data",data==null?JSONObject.NULL:data);});}
     @PluginMethod public void saveData(PluginCall call){resolve(call,()->{store.saveData(call.getObject("data"),false);return null;});}
-    @PluginMethod public void replaceData(PluginCall call){resolve(call,()->{if(store.read("active")!=null)throw new IllegalStateException("请先结束当前专注");store.saveData(call.getObject("data"),true);Reminders.cancelFocus(getContext());Reminders.cancelRest(getContext());return null;});}
-    @PluginMethod public void startFocus(PluginCall call){resolve(call,()->engine.start(call.getObject("session")));}
-    @PluginMethod public void focusAction(PluginCall call){resolve(call,()->engine.action(call.getString("action","read")));}
-    @PluginMethod public void startRest(PluginCall call){resolve(call,()->new RestEngine(getContext()).start(call.getString("recordId","")));}
-    @PluginMethod public void restAction(PluginCall call){resolve(call,()->{RestEngine rest=new RestEngine(getContext());if(call.getString("action","read").equals("exit"))rest.exit();return rest.read();});}
+    @PluginMethod public void replaceData(PluginCall call){resolve(call,()->{control.replaceData(call.getObject("data"));return null;});}
+    @PluginMethod public void startFocus(PluginCall call){resolve(call,()->control.startFocus(call.getObject("session")));}
+    @PluginMethod public void focusAction(PluginCall call){resolve(call,()->control.focusAction(call.getString("action","read")));}
+    @PluginMethod public void startRest(PluginCall call){resolve(call,()->control.startRest(call.getString("recordId","")));}
+    @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}
+    @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
     @PluginMethod public void syncReminders(PluginCall call){resolve(call,()->{Reminders.sync(getContext());return null;});}
     @PluginMethod public void permissions(PluginCall call){resolve(call,()->new JSONObject().put("notifications",Reminders.notificationsAllowed(getContext())).put("exactAlarms",Reminders.exactAllowed(getContext())));}
     @PluginMethod public void requestNotifications(PluginCall call){if(Build.VERSION.SDK_INT>=33&&!Reminders.notificationsAllowed(getContext()))requestPermissionForAlias("notifications",call,"notificationsResult");else notificationsResult(call);}
