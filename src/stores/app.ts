@@ -211,10 +211,10 @@ export const useApp = defineStore('app', () => {
       rest.value = await restDriver.exit()
     })
   }
-  async function startLock(configurationId: string) {
+  async function startLock(configurationId: string, strictLockConfirmed = false) {
     return sessionOperation(async () => {
       await writeQueue
-      lock.value = await lockDriver.start(configurationId)
+      lock.value = await lockDriver.start(configurationId, strictLockConfirmed)
     })
   }
   async function finishLock(confirmed: boolean) {
