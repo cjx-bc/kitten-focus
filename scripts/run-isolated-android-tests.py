@@ -51,7 +51,9 @@ def main():
     result = run([*device, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
                   args.class_name, package + '.test/androidx.test.runner.AndroidJUnitRunner'], timeout=180)
     (args.output / 'instrumentation.txt').write_text(result, encoding='utf-8')
-    metadata['passed'] = bool(re.search(r'OK \(\d+ tests?\)', result)) and 'FAILURES!!!' not in result
+    metadata['skipped'] = len(re.findall(r'INSTRUMENTATION_STATUS_CODE: -4\b', result))
+    metadata['passed'] = bool(re.search(r'OK \(\d+ tests?\)', result)) \
+        and 'FAILURES!!!' not in result and metadata['skipped'] == 0
     metadata['finishedAtUtc'] = datetime.now(timezone.utc).isoformat()
     (args.output / 'result.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     print(result[-2200:])
