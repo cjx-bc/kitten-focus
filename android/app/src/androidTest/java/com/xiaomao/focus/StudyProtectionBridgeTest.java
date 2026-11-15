@@ -12,6 +12,9 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import static org.junit.Assert.*;
 import static org.junit.Assume.assumeTrue;
 
@@ -128,31 +131,40 @@ public class StudyProtectionBridgeTest {
         Call finished = new Call(new JSObject().put("action", "finish")); plugin.focusAction(finished); assertNull(finished.rejection);
         Call exited = new Call(new JSObject().put("action", "exit")); plugin.restAction(exited); assertNull(exited.rejection);
     }
+    private void assertObservedPolicy(String source, String... packages) throws Exception {
+        JSONObject policy = observe().getJSONObject("focus").getJSONObject("session").getJSONObject("protection");
+        assertEquals(source, policy.getString("source"));
+        assertFalse(policy.getBoolean("study"));
+        assertFalse("Ordinary configuration edits do not withdraw this round's protection", policy.getBoolean("applicationsWithdrawn"));
+        Set<String> actual = new HashSet<>();
+        JSONArray whitelist = policy.getJSONArray("whitelist");
+        for (int i = 0; i < whitelist.length(); i++) actual.add(whitelist.getString(i));
+        assertEquals(new HashSet<>(Arrays.asList(packages)), actual);
+    }
     @Test public void savedCustomItemPolicyOverridesGlobalAndClientThenRemainsFrozen() throws Exception {
         JSONArray items = new JSONArray().put(new JSONObject().put("id", "reading")
             .put("whitelist", new JSONObject().put("source", "custom").put("packages", new JSONArray().put("missing.reader.tool"))));
         saveItems(new JSONArray().put("global.tool"), items);
-        JSONObject first = startItem("reading");
-        assertEquals("custom", first.getString("source"));
-        assertEquals(new JSONArray().put("missing.reader.tool").put(context.getPackageName()).toString(), first.getJSONArray("whitelist").toString());
+        startItem("reading");
+        assertObservedPolicy("custom", "missing.reader.tool", context.getPackageName());
         items.getJSONObject(0).put("whitelist", new JSONObject().put("source", "global"));
         saveItems(new JSONArray().put("new.global.tool"), items);
-        assertEquals(first.toString(), observe().getJSONObject("focus").getJSONObject("session").getJSONObject("protection").toString());
+        assertObservedPolicy("custom", "missing.reader.tool", context.getPackageName());
         endRound();
-        JSONObject following = startItem("reading");
-        assertEquals("global", following.getString("source"));
-        assertEquals(new JSONArray().put("new.global.tool").put(context.getPackageName()).toString(), following.getJSONArray("whitelist").toString());
+        startItem("reading");
+        assertObservedPolicy("global", "new.global.tool", context.getPackageName());
         endRound();
         items.getJSONObject(0).put("whitelist", new JSONObject().put("source", "custom").put("packages", new JSONArray()));
         items.put(new JSONObject().put("id", "math"));
         saveItems(new JSONArray().put("new.global.tool"), items);
-        JSONObject empty = startItem("reading");
-        assertEquals("custom", empty.getString("source"));
-        assertEquals(new JSONArray().put(context.getPackageName()).toString(), empty.getJSONArray("whitelist").toString());
+        startItem("reading");
+        assertObservedPolicy("custom", context.getPackageName());
         endRound();
-        assertEquals(following.toString(), startItem("math").toString());
+        startItem("math");
+        assertObservedPolicy("global", "new.global.tool", context.getPackageName());
         endRound();
-        assertEquals(following.toString(), startItem(null).toString());
+        startItem(null);
+        assertObservedPolicy("global", "new.global.tool", context.getPackageName());
     }
     @Test public void applicationPickerRetainsUninstalledPackagesFromIndependentItems() throws Exception {
         JSONArray items = new JSONArray().put(new JSONObject().put("id", "reading")
