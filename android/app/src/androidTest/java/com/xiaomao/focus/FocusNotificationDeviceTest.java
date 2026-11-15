@@ -79,7 +79,14 @@ public class FocusNotificationDeviceTest {
             shell("input keyevent WAKEUP"); shell("wm dismiss-keyguard");
             shell("cmd statusbar expand-notifications");
             SystemClock.sleep(1800); // Shade animation only; never wait for a constantly updating timer UI to idle.
-            waitFor(() -> clickShadeTitle("Synthetic probe #" + ID), 5000, "Could not click synthetic original in notification shade");
+            String observedTap = InstrumentationRegistry.getArguments().getString("notificationObservedTap", "");
+            if (!observedTap.isEmpty()) {
+                // Explicitly supplied only after inspecting this fixture's actual 540x960 shade screenshot.
+                assertTrue(shell("wm size").contains("540x960"));
+                assertEquals("200,420", observedTap);
+                assertNotNull("Original must still be active at the inspected location", find(false));
+                shell("input tap 200 420");
+            } else waitFor(() -> clickShadeTitle("Synthetic probe #" + ID), 5000, "Could not click synthetic original in notification shade");
             waitFor(() -> senderClickObserved(epoch), 5000, "Sender did not receive its original UI click");
             control.synchronizeNotifications();
             assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));

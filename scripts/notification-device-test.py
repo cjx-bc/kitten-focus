@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--serial', default='emulator-5580')
     parser.add_argument('--aapt', type=Path, default=Path('E:/codexseeson/fanqiezhong/.tools/android-sdk/build-tools/36.0.0/aapt.exe'))
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--observed-tap', choices=['200,420'], help='Only after visually inspecting the synthetic original card on this 540x960 fixture')
     args = parser.parse_args()
     if not re.fullmatch(r'emulator-\d+', args.serial):
         parser.error('Choose an explicit emulator serial')
@@ -71,16 +72,27 @@ def main():
         shell('am', 'start', '-n', qa + '/com.xiaomao.focus.MainActivity')
         command = [*device, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
                    'com.xiaomao.focus.FocusNotificationTest,com.xiaomao.focus.FocusNotificationDeviceTest',
-                   '-e', 'runNotificationDeviceFixture', 'true', qa + '.test/androidx.test.runner.AndroidJUnitRunner']
+                   '-e', 'runNotificationDeviceFixture', 'true']
+        if args.observed_tap:
+            command += ['-e', 'notificationObservedTap', args.observed_tap]
+        command += [qa + '.test/androidx.test.runner.AndroidJUnitRunner']
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, encoding='utf-8', errors='replace')
         timer = threading.Timer(180, process.kill)
         timer.start()
         lines = []
         reconnected = False
+        diagnostic = None
+        def capture_shade():
+            result = subprocess.run([*device, 'exec-out', 'screencap', '-p'], capture_output=True, timeout=10)
+            if result.returncode == 0:
+                (output / 'original-notification-shade.png').write_bytes(result.stdout)
         try:
             for line in process.stdout:
                 lines.append(line)
+                if 'test=originalNotificationReturnsAtDeadlineAndActualShadeClickOpensSender' in line and diagnostic is None:
+                    diagnostic = threading.Timer(10, capture_shade)
+                    diagnostic.start()
                 if not reconnected and line.strip() == 'INSTRUMENTATION_STATUS_CODE: 1':
                     # Instrumentation restarts the target process. Rebind this exact component after it exists.
                     shell('cmd', 'notification', 'disallow_listener', listener)
@@ -89,6 +101,8 @@ def main():
             process.wait(timeout=5)
         finally:
             timer.cancel()
+            if diagnostic is not None:
+                diagnostic.join(timeout=12)
         result = ''.join(lines)
         (output / 'instrumentation.txt').write_text(result, encoding='utf-8')
         passed = bool(re.search(r'OK \(8 tests\)', result)) and 'FAILURES!!!' not in result and 'INSTRUMENTATION_STATUS_CODE: -4' not in result
