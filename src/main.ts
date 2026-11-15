@@ -14,6 +14,7 @@ const router = createRouter({
     { path: '/settings', component: () => import('./views/SettingsView.vue') },
     { path: '/focus', component: () => import('./views/FocusView.vue') },
     { path: '/rest', component: () => import('./views/RestView.vue') },
+    { path: '/lock', component: () => import('./views/LockView.vue') },
   ],
 })
 createApp(App).use(createPinia()).use(router).mount('#app')

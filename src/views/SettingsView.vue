@@ -68,8 +68,8 @@ function previewImport(text: string) {
   }
 }
 async function chooseImport() {
-  if (app.focus.session) {
-    app.notify('请先结束当前专注，再恢复备份')
+  if (app.focus.session || app.lock.session) {
+    app.notify('请先结束当前专注或锁机，再恢复备份')
     return
   }
   if (native) {
@@ -146,6 +146,7 @@ async function enableNotifications() {
           @change="preference('vibration', $event)"
       /></label>
       <StrictModeSetting />
+      <RouterLink class="settings-row" to="/lock"><span class="row"><Icon name="clock" :size="20" />独立锁机</span><span class="row settings-value">{{ app.lock.session ? '进行中' : '配置与记录' }}<Icon name="right" :size="16" /></span></RouterLink>
       <button class="settings-row" @click="recovery"><span class="row"><Icon name="info" :size="20" />保护帮助与故障恢复</span><Icon name="right" :size="16" /></button>
     </div>
     <h3 class="settings-section-label">声音辅助</h3>
