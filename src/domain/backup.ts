@@ -107,6 +107,7 @@ export function readBackup(text: string): Backup {
     protection !== undefined &&
     (!protection ||
       typeof protection !== 'object' ||
+      Array.isArray(protection) ||
       ['study', 'strict', 'interceptNotifications', 'dnd'].some((key) => {
         const entry = (protection as unknown as Record<string, unknown>)[key]
         return entry !== undefined && typeof entry !== 'boolean'
