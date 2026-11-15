@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useApp } from '../stores/app'
 import StrictModeSetting from '../components/StrictModeSetting.vue'
+import DndSetting from '../components/DndSetting.vue'
 import { makeBackup, readBackup, type Backup } from '../domain/backup'
 import { dateKey } from '../domain/dates'
 import {
@@ -145,6 +146,8 @@ async function enableNotifications() {
       /></label>
       <StrictModeSetting />
     </div>
+    <h3 class="settings-section-label">声音辅助</h3>
+    <div class="settings-group sound-settings"><DndSetting /></div>
     <template v-if="native"
       ><h3 class="settings-section-label">系统提醒</h3>
       <div class="settings-group">
@@ -287,6 +290,7 @@ async function enableNotifications() {
   border-radius: 20px;
   padding: 0 17px;
 }
+.sound-settings { padding-top: 17px; padding-bottom: 17px; }
 .settings-row {
   display: flex;
   align-items: center;

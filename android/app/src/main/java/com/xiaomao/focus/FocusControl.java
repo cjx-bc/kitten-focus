@@ -12,17 +12,23 @@ final class FocusControl {
     private final SessionClock clock;
     private final FocusEngine focus;
     private final RestEngine rest;
+    private final DndProtection dnd;
 
     FocusControl(Context context) {
         this(context, LocalStore.get(context), SessionClock.system(context));
     }
 
     FocusControl(Context context, LocalStore store, SessionClock clock) {
+        this(context, store, clock, new AndroidDndSystem(context));
+    }
+
+    FocusControl(Context context, LocalStore store, SessionClock clock, DndSystem system) {
         this.context = context.getApplicationContext();
         this.store = store;
         this.clock = clock;
         focus = new FocusEngine(context, store, clock);
         rest = new RestEngine(context, store, clock);
+        dnd = new DndProtection(context, store.getDatabaseName(), system);
     }
 
     JSONObject startFocus(JSONObject session) throws JSONException { return startFocus(session, false); }
@@ -39,7 +45,10 @@ final class FocusControl {
             started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
                 .put("segments", new JSONArray());
             started.put("protection", FocusProtection.capture(context, store));
-            return focus.start(started);
+            started.put("dndRequested", protection != null && Boolean.TRUE.equals(protection.opt("dnd")));
+            JSONObject result = focus.start(started);
+            dnd.synchronize(store.read("active"));
+            return result;
         }
     }
     JSONObject focusAction(String action) throws JSONException {
@@ -49,10 +58,18 @@ final class FocusControl {
             if (!action.equals("read") && active != null && active.optBoolean("strictMode")
                 && active.optString("mode").equals("countdown") && !observation.optBoolean("needsReconcile"))
                 throw new IllegalStateException("严格倒计时不能暂停、取消或提前结束；请等待本轮到期，帮助和故障恢复仍可进入");
-            return focus.action(action);
+            JSONObject result = focus.action(action);
+            dnd.synchronize(store.read("active"));
+            return result;
         }
     }
-    JSONObject startRest(String recordId) throws JSONException { return rest.start(recordId); }
+    JSONObject startRest(String recordId) throws JSONException {
+        synchronized (store) {
+            JSONObject result = rest.start(recordId);
+            dnd.synchronize(store.read("active"));
+            return result;
+        }
+    }
     JSONObject restAction(String action) throws JSONException {
         synchronized (store) {
             if (action.equals("exit")) rest.exit();
@@ -65,6 +82,7 @@ final class FocusControl {
         synchronized (store) {
             focus.action("read");
             rest.sync();
+            dnd.synchronize(store.read("active"));
             return observeControl();
         }
     }
@@ -86,15 +104,26 @@ final class FocusControl {
             return new JSONObject()
                 .put("owner", active != null ? "focus" : runningRest ? "rest" : JSONObject.NULL)
                 .put("focus", focusSnapshot).put("rest", restSnapshot)
+                .put("dnd", dnd.observe(active))
                 .put("needsReconcile", needsReconcile);
         }
     }
 
     JSONObject loadData() throws JSONException { return store.loadData(); }
 
+    JSONObject getDndStatus() throws JSONException {
+        synchronized (store) { return dnd.observe(store.read("active")); }
+    }
+
+    JSONObject restoreDnd() throws JSONException {
+        synchronized (store) { return dnd.restore(store.read("active")); }
+    }
+
     void replaceData(JSONObject data) throws JSONException {
         synchronized (store) {
             if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注");
+            if (dnd.restore(null).optBoolean("recoveryPending"))
+                throw new IllegalStateException("请先在声音辅助中撤销小猫规则，再替换备份");
             store.saveData(data, true);
             Reminders.cancelFocus(context);
             Reminders.cancelRest(context);
