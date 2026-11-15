@@ -83,7 +83,8 @@ final class FocusNavigation {
         }
         String target = device.target(pkg, cls);
         if (target.isEmpty()) return false;
-        if (same && now - runtime.getLong("attemptMono", 0) < 1200) return true;
+        if (pending > now) return true;
+        if (same && !runtime.getString("failure", "").isEmpty() && now - runtime.getLong("attemptMono", 0) < 1200) return true;
         SharedPreferences.Editor edit = runtime.edit();
         if (!same) edit.clear();
         edit.putString("sessionId", id).putString("target", target).putLong("attemptMono", now)
