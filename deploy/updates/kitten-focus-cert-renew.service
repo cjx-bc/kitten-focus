@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Kitten Focus update HTTPS certificates
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/kitten-focus/renew-certificates.sh

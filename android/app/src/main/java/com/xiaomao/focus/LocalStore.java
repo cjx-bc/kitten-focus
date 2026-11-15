@@ -33,4 +33,49 @@ final class LocalStore extends SQLiteOpenHelper {
         }finally{db.endTransaction();}
     }
     synchronized void finish(JSONObject record) {SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{if(record!=null&&record.optLong("durationMs")>0){upsertRecord(record);write("lastFinished",record);}write("active",null);db.setTransactionSuccessful();}finally{db.endTransaction();}}
+
+    synchronized JSONObject snapshot() throws JSONException {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            JSONObject documents = new JSONObject();
+            JSONArray records = new JSONArray();
+            try (Cursor c = db.rawQuery("SELECT key,value FROM documents", null)) {
+                while (c.moveToNext()) documents.put(c.getString(0), new JSONObject(c.getString(1)));
+            }
+            try (Cursor c = db.rawQuery("SELECT value FROM focus_records", null)) {
+                while (c.moveToNext()) records.put(new JSONObject(c.getString(0)));
+            }
+            db.setTransactionSuccessful();
+            return new JSONObject().put("documents", documents).put("records", records);
+        } finally { db.endTransaction(); }
+    }
+
+    synchronized void restoreSnapshot(JSONObject snapshot) throws JSONException {
+        JSONObject documents = snapshot.getJSONObject("documents");
+        JSONArray records = snapshot.getJSONArray("records");
+        JSONObject data = documents.optJSONObject("data");
+        if (data == null || data.optInt("schemaVersion") != 1)
+            throw new IllegalArgumentException("此恢复副本与当前版本不兼容");
+        // Parse every row before entering the transaction; malformed backups never replace data.
+        for (int i = 0; i < records.length(); i++) {
+            if (records.getJSONObject(i).optString("id").isEmpty())
+                throw new IllegalArgumentException("恢复副本记录损坏");
+        }
+        java.util.Iterator<String> keys = documents.keys();
+        while (keys.hasNext()) documents.getJSONObject(keys.next());
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            db.delete("documents", null, null);
+            db.delete("focus_records", null, null);
+            keys = documents.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                if (!key.equals("active") && !key.equals("lastFinished")) write(key, documents.getJSONObject(key));
+            }
+            for (int i = 0; i < records.length(); i++) upsertRecord(records.getJSONObject(i));
+            db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+    }
 }

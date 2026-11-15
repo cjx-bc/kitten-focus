@@ -333,6 +333,7 @@ main {
   z-index: 20;
 }
 .tabbar a {
+  position: relative;
   min-height: 54px;
   min-width: 52px;
   display: flex;
@@ -345,6 +346,15 @@ main {
 }
 .tabbar a[aria-current='page'] svg {
   stroke-width: 2.4;
+}
+.nav-update-dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 .cat-placeholder {
   min-height: calc(100dvh - 90px);

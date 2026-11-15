@@ -6,7 +6,9 @@ import { native } from './platform/bridge'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
 import { createTabSwipe } from './navigation/tabSwipe'
+import { useUpdates } from './stores/updates'
 const app = useApp(),
+  updates = useUpdates(),
   route = useRoute(),
   router = useRouter(),
   full = computed(() => route.path === '/focus')
@@ -25,9 +27,14 @@ const swipe = createTabSwipe({
 })
 onMounted(async () => {
   await app.init()
+  void updates.init()
   if (native) {
     await CapacitorApp.addListener('appStateChange', (state) => {
-      if (state.isActive) void app.tick()
+      if (state.isActive) {
+        void app.tick()
+        void updates.refresh().catch(() => {})
+        void updates.check()
+      }
     })
     await CapacitorApp.addListener('backButton', () => {
       if (route.path === '/focus') void router.replace('/tasks')
@@ -49,7 +56,7 @@ onMounted(async () => {
     </div>
     <template v-else
       ><div v-if="app.error" role="alert" class="error-banner">
-        {{ app.error }}<button @click="app.error = ''">关闭</button>
+        {{ app.error }}<button v-if="app.ready" @click="app.error = ''">关闭</button>
       </div>
       <main
         @touchstart.passive="swipe.start"
@@ -64,9 +71,12 @@ onMounted(async () => {
           v-for="tab in tabs"
           :key="tab.path"
           :to="tab.path"
-          :aria-label="tab.label"
+          :aria-label="tab.path === '/settings' && updates.hasUpdate ? '我的，有新版本' : tab.label"
           :aria-current="route.path === tab.path ? 'page' : undefined"
-          ><Icon :name="tab.icon" :size="25"
+          ><Icon :name="tab.icon" :size="25" /><span
+            v-if="tab.path === '/settings' && updates.hasUpdate"
+            class="nav-update-dot"
+            aria-hidden="true"
         /></RouterLink></nav></template
     ><Transition name="toast"
       ><div v-if="app.toast" class="toast" role="status">{{ app.toast }}</div></Transition

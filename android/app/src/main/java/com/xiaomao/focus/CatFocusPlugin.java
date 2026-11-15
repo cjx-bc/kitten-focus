@@ -27,7 +27,7 @@ public class CatFocusPlugin extends Plugin {
     @Override public void load(){engine=new FocusEngine(getContext());store=LocalStore.get(getContext());}
     private interface Operation { JSONObject run() throws Exception; }
     private void resolve(PluginCall call,Operation operation){try{JSONObject result=operation.run();call.resolve(result==null?new JSObject():new JSObject(result.toString()));}catch(Exception error){call.reject(error.getMessage(),error);}}
-    @PluginMethod public void loadData(PluginCall call){resolve(call,()->new JSONObject().put("data",store.loadData()==null?JSONObject.NULL:store.loadData()));}
+    @PluginMethod public void loadData(PluginCall call){resolve(call,()->{new UpgradeBackups(getContext()).prepareStartup();JSONObject data=store.loadData();return new JSONObject().put("data",data==null?JSONObject.NULL:data);});}
     @PluginMethod public void saveData(PluginCall call){resolve(call,()->{store.saveData(call.getObject("data"),false);return null;});}
     @PluginMethod public void replaceData(PluginCall call){resolve(call,()->{if(store.read("active")!=null)throw new IllegalStateException("请先结束当前专注");store.saveData(call.getObject("data"),true);Reminders.cancelFocus(getContext());return null;});}
     @PluginMethod public void startFocus(PluginCall call){resolve(call,()->engine.start(call.getObject("session")));}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 6,
+    "versionName": "0.2.0",
+    "minSdk": 24,
+    "url": "https://47.251.9.162/releases/xiaomao-focus-0.2.0.apk",
+    "size": 4687065,
+    "sha256": "05cee0bdb7c946e6082de73128289b5d41a0900c972746ac38ba8d2aa46b9bdf",
+    "notes": "新增应用内更新：手动检查、每日后台红点提醒、系统后台下载和安装确认。升级前自动保留最近三份本地恢复副本；专注中推迟更新，保留已有待办、日程、课表和专注记录。"
+  }
+}

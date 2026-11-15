@@ -29,7 +29,8 @@ export const useApp = defineStore('app', () => {
   const items = computed(() =>
     data.value.items.filter((t) => !t.deleted).sort((a, b) => a.order - b.order),
   )
-  let writeQueue: Promise<void> = Promise.resolve(),
+  let dataLoaded = false,
+    writeQueue: Promise<void> = Promise.resolve(),
     timerHandle: ReturnType<typeof setInterval> | undefined,
     toastHandle: ReturnType<typeof setTimeout>,
     ticking = false
@@ -51,6 +52,7 @@ export const useApp = defineStore('app', () => {
     return writeQueue
   }
   async function mutate(update: (next: AppData) => void) {
+    if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
     const next = structuredClone(data.value)
     update(next)
     data.value = JSON.parse(JSON.stringify(next)) as AppData
@@ -82,6 +84,7 @@ export const useApp = defineStore('app', () => {
   async function init() {
     try {
       data.value = await repository.load()
+      dataLoaded = true
       await tick()
       await syncReminders()
       ready.value = true
@@ -100,6 +103,7 @@ export const useApp = defineStore('app', () => {
     mode = item?.mode || 'countdown',
     minutes = item?.minutes || data.value.preferences.defaultMinutes,
   ) {
+    if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
     if (focus.value.session) throw new Error('已有一条未结束的专注，请先返回或结束它')
     if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes))
       throw new Error('请填写正整数分钟')

@@ -1,0 +1,58 @@
+{
+  "version": "0.2.0",
+  "status": "candidate, awaiting release approval",
+  "environment": "isolated Android 15 MuMu emulator",
+  "domainTests": 14,
+  "androidTests": 18,
+  "upgrade": {
+    "passed": [
+      "0.1.4 to bootstrap cover-install",
+      "all business data retained",
+      "daily HTTPS check",
+      "badge without modal",
+      "paused focus blocks download",
+      "in-app offer",
+      "metered confirmation if required",
+      "background download",
+      "APK verification",
+      "source permission guidance",
+      "backup before install",
+      "system installer confirmation",
+      "0.2.0 to 0.2.1-qa installation",
+      "post-upgrade data equality"
+    ],
+    "runtimeErrors": [],
+    "installed": "0.2.1-qa2",
+    "backups": [
+      {
+        "id": "upgrade-6-7.json",
+        "createdAt": 1794717326789,
+        "from": 6,
+        "to": 7
+      },
+      {
+        "id": "upgrade-0-6.json",
+        "createdAt": 1794717313335,
+        "from": 0,
+        "to": 6
+      }
+    ]
+  },
+  "stableUi": {
+    "currentVersion": "0.2.0",
+    "stableChannel": "no release",
+    "viewport": {
+      "width": 375,
+      "height": 820,
+      "scrollWidth": 375
+    },
+    "runtimeErrors": []
+  },
+  "physicalDeviceTested": false,
+  "limitations": [
+    "No physical phone",
+    "Cellular consent not exercised on emulator Wi-Fi",
+    "Network failure verified by native IOException injection",
+    "Android 7–14 not exercised"
+  ]
+}

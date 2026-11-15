@@ -1,35 +1,28 @@
 {
-  "version": "0.1.4",
-  "versionCode": 5,
-  "type": "debug testing build",
+  "version": "0.2.0",
+  "versionCode": 6,
+  "type": "debug internal testing candidate",
+  "status": "draft; stable update channel unchanged",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
-      "name": "xiaomao-focus-0.1.4-debug.apk",
-      "size": 4597501,
-      "sha256": "93ea0f3e4aa24d5a6500c2c272f5a89afb5a06a0693330e52858d59ff5579466"
+      "name": "xiaomao-focus-0.2.0-debug.apk",
+      "size": 4687065,
+      "sha256": "05cee0bdb7c946e6082de73128289b5d41a0900c972746ac38ba8d2aa46b9bdf"
     },
     {
-      "name": "xiaomao-focus-0.1.4-source.zip",
-      "size": 9315094,
-      "sha256": "efebff2318d64bb2f445e6d8fcc89f2f8442aacc8e911c2ba85898131895cd97"
+      "name": "xiaomao-focus-0.2.0-source.zip",
+      "size": 9351948,
+      "sha256": "e8450ddfb19f9731db9a2725dfcd47840ea6e0b873a5367884b282826b16d5be"
     }
   ],
-  "sourceFileCount": 126,
+  "sourceFileCount": 147,
   "verified": {
-    "focusStyleA": "passed: 9 actual form controls, no size shift, keyboard focus visible",
-    "navigationLastRun": {
-      "version": "0.1.3",
-      "swipeNavigationTests": 3,
-      "iconNavigationUi": "passed"
-    },
-    "fullSuiteLastRun": {
-      "version": "0.1.2",
-      "domainTests": 14,
-      "androidTests": 12
-    },
-    "androidUiSmoke": "v0.1.0 passed; full smoke not rerun for v0.1.4",
-    "androidEnvironment": "Android 15 emulator",
+    "domainTests": 14,
+    "androidTests": 18,
+    "fullInAppUpgrade": "passed; 0.1.4 -> 0.2.0 QA -> 0.2.1-qa2",
+    "businessDataRetained": true,
+    "serverHTTPS": "passed",
     "physicalDeviceTested": false
   },
   "repository": "cjx-bc/kitten-focus"
