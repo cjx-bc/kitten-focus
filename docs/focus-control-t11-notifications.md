@@ -1,5 +1,7 @@
 # T11 固定截止原通知暂缓
 
+本文保留 T11 切片完成时的边界与历史证据。后续普通生命周期、有限租期及提前释放实现见 [T12 原通知生命周期](focus-control-t12-notifications.md)；下文的 `lifecycle_pending` 是当时状态。
+
 T11 / #12 在既有 `FocusControl`、会话与 `FocusRecovery` 中接入普通 Android `NotificationListenerService`。代码独立实现，没有复制 Curbox、NotiFilter 或其他 GPL 通知引擎，也没有另建会话引擎或业务数据库。
 
 ## 本轮边界

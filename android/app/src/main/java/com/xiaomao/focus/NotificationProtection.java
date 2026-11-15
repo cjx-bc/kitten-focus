@@ -211,8 +211,8 @@ final class NotificationProtection {
             .put("title", "原应用通知暂缓").put("withdrawn", journal.optBoolean("withdrawn"))
             .put("status", pending > 0 ? status.optInt("releaseFailedCount") > 0 ? "failed" : "limited" : controlling ? "active" : "restored")
             .put("reason", pending > 0 ? journal.optBoolean("withdrawn")
-                ? "已停止新拦截，仍保留原通知责任；本版本等待原截止并核实，提前改期释放由后续实现完成，可重试核实"
-                : "撤销会停止新拦截，但尚在系统暂缓的原通知仍需等待原截止并核实；计时和严格约束保留"
+                ? "已停止新拦截；原通知释放请求与失败分别保留，只有系统确认原通知再次出现才记为恢复。可重试；断连时等待授权、重连或有限租期结束后核实"
+                : "撤销将停止新拦截，并对系统仍持有的原通知请求立即改期释放；请求不等于已恢复，计时和严格约束保留"
                 : controlling ? "停止本轮通知拦截；计时和严格约束保留" : status.optString("reason"));
     }
     /** No preferences, journal, timer or system writes. */
@@ -244,6 +244,6 @@ final class NotificationProtection {
             .put("snoozedCount", snoozed).put("releaseRequestedCount", releaseRequested).put("releaseFailedCount", releaseFailed)
             .put("leaseDurationMs", journal.optBoolean("fixedDeadline") ? 0 : LEASE_MS)
             .put("recoveryPending", pending > 0).put("error", error)
-            .put("reason", "固定截止严格专注的原通知由 Android 暂缓和恢复；请求返回不等于实际恢复。普通可暂停倒计时、正计时、锁机与提前立即释放仍待后续实现。");
+            .put("reason", "原通知与点击动作始终由 Android 保留。普通专注、暂停、正计时和普通锁机使用最长 60 秒的滚动暂缓；监听失联会让有限租期到期。结束、休息或故障恢复会请求立即改期释放，实际恢复需由系统核实；不同系统可能受限。");
     }
 }

@@ -133,7 +133,7 @@ public class FocusNotificationDeviceTest {
         return false;
     }
     private static boolean clickShadeTitle(String text) {
-        UiAutomation automation = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        UiAutomation automation = InstrumentationRegistry.getInstrumentation().getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES);
         AccessibilityServiceInfo info = automation.getServiceInfo();
         info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         automation.setServiceInfo(info);
@@ -167,7 +167,7 @@ public class FocusNotificationDeviceTest {
         fail(message);
     }
     private static String shell(String command) throws Exception {
-        try (ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command);
+        try (ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation().getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES).executeShellCommand(command);
              java.io.InputStream stream = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
              java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
             byte[] buffer = new byte[4096]; int count;

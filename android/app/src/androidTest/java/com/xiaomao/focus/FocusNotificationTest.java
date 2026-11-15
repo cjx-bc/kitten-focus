@@ -14,11 +14,11 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class FocusNotificationTest {
     Context context; LocalStore store; FocusControl control; String database;
-    long now = 1000000; final FakeNotifications system = new FakeNotifications();
+    long now = 1000000; int bootId = 1; final FakeNotifications system = new FakeNotifications();
     final SessionClock clock = new SessionClock() {
         public long epoch() { return 1794729600000L + now; }
         public long mono() { return now; }
-        public int boot() { return 1; }
+        public int boot() { return bootId; }
     };
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -187,6 +187,41 @@ public class FocusNotificationTest {
         assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
         assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
     }
+    @Test public void silentReleaseFailureCanBeRetriedAfterBackoffWithoutClaimingRestoration() throws Exception {
+        control.startFocus(session(), true); control.notificationPosted(notice("silent", "other.app", false));
+        JSONObject preview = control.previewRecovery(); control.confirmRecovery(preview.getString("revision"));
+        assertEquals(1, system.releaseRequests); assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        for (int i = 0; i < 5; i++) { control.observeControl(); control.getNotificationStatus(); control.previewRecovery(); }
+        assertEquals("Read-only status must not retry OS changes", 1, system.releaseRequests);
+        now += 5001; preview = control.previewRecovery(); control.confirmRecovery(preview.getString("revision"));
+        assertEquals("A successful call with no OS effect must remain retryable", 2, system.releaseRequests);
+        assertEquals(1, control.getNotificationStatus().getInt("releaseRequestedCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+    }
+    @Test public void permissionLossAndRebootRetainOldDutyBlockConflictAndReportAbsentTruthfully() throws Exception {
+        control.startFocus(session(), true); control.notificationPosted(notice("old", "other.app", false));
+        system.granted = false; system.connected = false; now += 60000; control.reconcile(); control.restAction("exit");
+        assertTrue(control.getNotificationStatus().getBoolean("recoveryPending"));
+        try { control.startFocus(session().put("id", "conflict"), true); fail("Do not overwrite old original responsibility"); }
+        catch (IllegalStateException expected) { }
+        bootId++; system.granted = true; system.connected = true; system.snoozed.clear(); control.reconcile();
+        assertEquals(1, control.getNotificationStatus().getInt("absentCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+    }
+    @Test public void temporaryApplicationGrantDoesNotReleaseOrWhitelistItsNotifications() throws Exception {
+        JSONObject data = control.loadData(); data.getJSONObject("preferences").getJSONObject("protection").put("strict", false).put("study", true);
+        store.saveData(data, false);
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; } public boolean connected() { return true; }
+        }, new AndroidDndSystem(context), system, target -> () -> {});
+        control.startFocus(session()); control.notificationPosted(notice("before-grant", "other.app", false));
+        assertEquals("granted", control.grantTemporaryAccess(new JSONObject().put("sessionId", "notice-round").put("targetPackage", "other.app")
+            .put("durationMinutes", 1).put("requestId", "notification-boundary")).getString("status"));
+        control.notificationPosted(notice("during-grant", "other.app", false));
+        assertEquals(2, system.snoozed.size()); assertEquals(0, system.releaseRequests);
+        assertFalse(control.observeControl().getJSONObject("focus").getJSONObject("session").getJSONObject("protection").getJSONArray("whitelist").toString().contains("other.app"));
+    }
     @Test public void postedUpdateWhileSnoozedIsNotReportedAsRestoredAndEarlySurfaceIsHeldToOriginalDeadline() throws Exception {
         control.startFocus(session(), true);
         control.notificationPosted(notice("updated", "other.app", false));
@@ -260,7 +295,7 @@ public class FocusNotificationTest {
         assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
     }
     static final class FakeNotifications implements NotificationSystem {
-        boolean granted = true, connected = true, failRelease; int calls;
+        boolean granted = true, connected = true, failRelease; int calls, releaseRequests;
         final Map<String, Long> requests = new LinkedHashMap<>();
         final List<Notice> active = new ArrayList<>(), snoozed = new ArrayList<>();
         public boolean supported() { return true; }
@@ -270,6 +305,7 @@ public class FocusNotificationTest {
         public List<Notice> snoozed() { return new ArrayList<>(snoozed); }
         public void snooze(String key, long ms) {
             if (ms == 1 && failRelease) throw new SecurityException("Synthetic OS failure");
+            if (ms == 1) releaseRequests++;
             calls++; requests.put(key, ms);
             Notice value = active.stream().filter(n -> n.key.equals(key)).findFirst().orElse(new Notice(key, "other.app", 10001, "", false));
             active.removeIf(n -> n.key.equals(key)); snoozed.removeIf(n -> n.key.equals(key)); snoozed.add(value);
