@@ -20,7 +20,7 @@ import { elapsed, settle } from '../domain/focus'
 import { makeRest, readRest, REST_DURATION_MS } from '../domain/rest'
 
 interface NativeBridge {
-  startLock(options: { configurationId: string }): Promise<LockSnapshot>
+  startLock(options: { configurationId: string; strictLockConfirmed: boolean }): Promise<LockSnapshot>
   lockAction(options: { action: 'read' | 'finish'; confirmed: boolean }): Promise<LockSnapshot>
   loadData(): Promise<{ data: AppData | null }>
   saveData(options: { data: AppData }): Promise<void>
@@ -52,9 +52,9 @@ interface NativeBridge {
 export const native = Capacitor.isNativePlatform()
 const plugin = registerPlugin<NativeBridge>('CatFocus')
 export const lockDriver = {
-  async start(configurationId: string): Promise<LockSnapshot> {
+  async start(configurationId: string, strictLockConfirmed = false): Promise<LockSnapshot> {
     if (!native) throw new Error('独立锁机仅支持 Android 本机版本，请在手机上开始')
-    return plugin.startLock({ configurationId })
+    return plugin.startLock({ configurationId, strictLockConfirmed })
   },
   async read(): Promise<LockSnapshot> {
     return native ? plugin.lockAction({ action: 'read', confirmed: false }) : { session: null, remainingMs: 0, records: [] }

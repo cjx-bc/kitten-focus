@@ -33,7 +33,7 @@ function close() { if (!busy.value) emit('close') }
   <Sheet :open="open" title="保护帮助与故障恢复" @close="close">
     <div class="recovery-stack" :aria-busy="busy">
       <p>保护异常时，可以撤销本轮已施加的限制。下面列出实际登记的恢复项目；取消或关闭此页不会操作。</p>
-      <p class="notice">专注计时继续，严格倒计时仍不能暂停或提前结束。保存的白名单、保护偏好和专注记录保留。本轮主动撤销的能力不会因服务重连再次开启；下一轮重新按偏好检查。</p>
+      <p class="notice">专注或锁机计时继续，严格倒计时和严格锁机仍不能暂停、取消或提前结束。保存的白名单、保护偏好和记录保留。本轮主动撤销的能力不会因服务重连再次开启；下一轮重新按偏好检查。</p>
       <p v-if="busy" role="status">{{ confirmed ? '正在重试恢复…' : '正在检查或执行恢复…' }}</p>
       <p v-if="snapshot && !snapshot.supported" class="notice">Android 本机版本提供系统保护与故障恢复。浏览器版本没有施加系统限制。</p>
       <div v-for="step in snapshot?.steps" :key="`${step.sessionId}:${step.capability}`" class="recovery-step">

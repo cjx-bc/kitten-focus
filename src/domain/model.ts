@@ -180,6 +180,7 @@ export interface LockConfiguration {
   id: string
   name: string
   minutes: number
+  strict?: boolean
   whitelist: WhitelistConfiguration
 }
 export interface LockSession {
@@ -188,6 +189,7 @@ export interface LockSession {
   title: string
   targetMs: number
   startedAt: number
+  strictMode: boolean
   protection: ProtectionSnapshot
 }
 export interface LockRecord {

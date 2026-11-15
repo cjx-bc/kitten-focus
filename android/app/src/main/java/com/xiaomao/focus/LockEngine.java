@@ -32,7 +32,8 @@ final class LockEngine {
             .put("configurationId", configuration.getString("id")).put("title", configuration.getString("name"))
             .put("mode", "countdown").put("state", "running").put("targetMs", configuration.getLong("minutes") * 60000)
             .put("elapsedMs", 0).put("anchorMono", clock.mono()).put("anchorEpoch", clock.epoch())
-            .put("startedAt", clock.epoch()).put("bootId", clock.boot()).put("strictMode", false);
+            .put("startedAt", clock.epoch()).put("bootId", clock.boot())
+            .put("strictMode", Boolean.TRUE.equals(configuration.opt("strict")));
     }
     JSONObject start(JSONObject session) throws JSONException {
         store.write("active", session);
@@ -51,9 +52,15 @@ final class LockEngine {
             .put("records", history == null ? new JSONArray() : history.getJSONArray("records"));
     }
     JSONObject action(String action, boolean confirmed) throws JSONException {
-        if (!action.equals("read") && !action.equals("finish")) throw new IllegalArgumentException("锁机操作无效");
-        JSONObject session = store.read("active"); if (!owns(session)) return observe();
+        JSONObject session = store.read("active");
+        if (!owns(session)) {
+            if (!action.equals("read") && !action.equals("finish")) throw new IllegalArgumentException("锁机操作无效");
+            return observe();
+        }
         boolean interrupted = interrupted(session); long elapsed = elapsed(session); boolean reached = elapsed >= session.optLong("targetMs");
+        if (!action.equals("read") && session.optBoolean("strictMode") && !interrupted && !reached)
+            throw new IllegalStateException("严格锁机不能暂停、取消或提前解除；请等待本轮到期，帮助和故障恢复仍可进入");
+        if (!action.equals("read") && !action.equals("finish")) throw new IllegalArgumentException("锁机操作无效");
         if (action.equals("finish") && !confirmed && !interrupted && !reached)
             throw new IllegalStateException("提前解除锁机需要确认；取消后本轮继续");
         if (interrupted || reached || action.equals("finish")) {
