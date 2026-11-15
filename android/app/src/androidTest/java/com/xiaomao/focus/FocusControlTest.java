@@ -55,6 +55,45 @@ public class FocusControlTest {
             .put("elapsedMs", 0).put("pausedMs", 0).put("segments", new JSONArray());
     }
 
+    @Test public void lockNavigationUsesSupportAndAuthorizationPreflightBeforeOwnership() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").put("protection", new JSONObject().put("study", false)
+            .put("enhancements", new JSONArray().put("navigationHomeRecents")));
+        data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "navigation-lock")
+            .put("name", "锁机导航门禁").put("minutes", 1).put("whitelist", new JSONObject().put("source", "global"))));
+        control.replaceData(data);
+        boolean[] gates = {false, true, true};
+        FocusNavigation.Device device = new FocusNavigation.Device() {
+            public boolean supported() { return gates[0]; }
+            public boolean authorized() { return gates[1]; }
+            public boolean connected() { return gates[2]; }
+            public String target(String pkg, String cls) { return "launcher".equals(pkg) ? "home" : ""; }
+            public void returnToFocus(String target) { }
+        };
+        FocusProtection.AccessibilityState available = new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; }
+            public boolean connected() { return true; }
+        };
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), available,
+            new AndroidDndSystem(context), packageName -> () -> {}, device);
+        for (int missing = 0; missing < 3; missing++) {
+            gates[0] = gates[1] = gates[2] = true; gates[missing] = false;
+            try { control.startLock("navigation-lock"); fail("An unavailable requested navigation capability must reject lock start"); }
+            catch (IllegalStateException expected) { }
+            assertTrue("Rejected start must not acquire the active owner", control.observeControl().isNull("owner"));
+        }
+        gates[0] = gates[1] = gates[2] = true;
+        control.startLock("navigation-lock");
+        assertEquals("lock", control.observeControl().getString("owner"));
+        assertTrue(control.observeControl().getJSONObject("navigation").getBoolean("requested"));
+        assertTrue(control.navigationWindow("launcher", "Home"));
+        control.navigationWindow(context.getPackageName(), "com.xiaomao.focus.MainActivity");
+        assertEquals("protecting", control.observeControl().getJSONObject("navigation").getString("state"));
+        control.lockAction("finish", true);
+        assertTrue(control.observeControl().isNull("owner"));
+        assertFalse(control.observeControl().getJSONObject("navigation").getBoolean("requested"));
+        assertFalse(control.observeControl().getJSONObject("navigation").getBoolean("active"));
+    }
     @Test public void navigationChoiceIsIndependentAndFixedWhilePausedThenRecoverable() throws Exception {
         JSONObject data = control.loadData();
         data.getJSONObject("preferences").put("protection", new JSONObject().put("study", false)

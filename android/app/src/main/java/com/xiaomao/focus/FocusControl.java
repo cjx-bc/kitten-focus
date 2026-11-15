@@ -232,6 +232,7 @@ final class FocusControl {
             session.put("protection", accessibility == null
                 ? FocusProtection.captureLock(context, store, configuration)
                 : FocusProtection.captureLock(context, store, configuration, accessibility));
+            navigation.checkStart(session);
             antiClose.checkStart(session);
             JSONArray selected = new JSONArray(session.getJSONObject("protection").getJSONArray("enhancements").toString());
             JSONArray preferred = FocusProtection.preferences(store).optJSONArray("enhancements");
@@ -260,7 +261,7 @@ final class FocusControl {
             JSONObject result = lock.action(action, confirmed);
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
-            if (active == null) antiClose.release();
+            if (active == null) { navigation.release(); antiClose.release(); }
             dnd.synchronize(active);
             notifications.synchronize(active);
             recentTasks.synchronize(active);

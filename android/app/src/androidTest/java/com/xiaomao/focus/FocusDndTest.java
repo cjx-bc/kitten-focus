@@ -73,7 +73,7 @@ public class FocusDndTest {
             data.getJSONObject("preferences").getJSONObject("protection")
                 .put("study", false).put("strict", true).put("interceptNotifications", false).put("dnd", true);
             data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "sound-lock")
-                .put("name", "??????").put("minutes", 1).put("strict", strict)
+                .put("name", "锁机声音保护").put("minutes", 1).put("strict", strict)
                 .put("whitelist", new JSONObject().put("source", "global"))));
             store.saveData(data, false); control = lockControl();
             control.startLock("sound-lock", strict);
@@ -239,7 +239,7 @@ public class FocusDndTest {
     }
 
     private void shell(String command) throws Exception {
-        try (ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command);
+        try (ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation().getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES).executeShellCommand(command);
              java.io.InputStream stream = new ParcelFileDescriptor.AutoCloseInputStream(descriptor)) {
             byte[] bytes = new byte[1024];
             while (stream.read(bytes) != -1) { }
