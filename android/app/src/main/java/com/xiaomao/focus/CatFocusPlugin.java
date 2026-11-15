@@ -30,7 +30,7 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void loadData(PluginCall call){resolve(call,()->{new UpgradeBackups(getContext()).prepareStartup();JSONObject data=control.loadData();return new JSONObject().put("data",data==null?JSONObject.NULL:data);});}
     @PluginMethod public void saveData(PluginCall call){resolve(call,()->{store.saveData(call.getObject("data"),false);return null;});}
     @PluginMethod public void replaceData(PluginCall call){resolve(call,()->{control.replaceData(call.getObject("data"));return null;});}
-    @PluginMethod public void startFocus(PluginCall call){resolve(call,()->control.startFocus(call.getObject("session")));}
+    @PluginMethod public void startFocus(PluginCall call){resolve(call,()->control.startFocus(call.getObject("session"),Boolean.TRUE.equals(call.getBoolean("strictModeConfirmed",false))));}
     @PluginMethod public void focusAction(PluginCall call){resolve(call,()->control.focusAction(call.getString("action","read")));}
     @PluginMethod public void startRest(PluginCall call){resolve(call,()->control.startRest(call.getString("recordId","")));}
     @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}

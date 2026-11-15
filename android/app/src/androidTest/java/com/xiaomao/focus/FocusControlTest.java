@@ -55,6 +55,20 @@ public class FocusControlTest {
             .put("elapsedMs", 0).put("pausedMs", 0).put("segments", new JSONArray());
     }
 
+    @Test public void strictCountdownRequiresConfirmationBeforeStart() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").put("protection", new JSONObject().put("strict", true));
+        control.replaceData(data);
+        try {
+            control.startFocus(session("countdown").put("strictMode", false));
+            fail("Strict countdown must be confirmed before it can start");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("确认"));
+        }
+        assertTrue(control.observeControl().isNull("owner"));
+        assertEquals(0, control.loadData().getJSONArray("records").length());
+    }
+
     @Test public void observationDoesNotSettleAnExpiredCountdown() throws Exception {
         control.startFocus(session("countdown"));
         clock.advance(90000);
