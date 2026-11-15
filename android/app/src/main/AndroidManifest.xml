@@ -37,6 +37,13 @@
         <activity android:name=".FocusBlockActivity" android:exported="false"
             android:excludeFromRecents="true" android:launchMode="singleTop"
             android:theme="@style/AppTheme.NoActionBar" />
+        <activity android:name=".WallpaperConfirmationActivity" android:exported="false"
+            android:theme="@style/AppTheme.NoActionBar" />
+        <service android:name=".FocusWallpaperService" android:exported="true"
+            android:label="小猫专注壁纸辅助" android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter><action android:name="android.service.wallpaper.WallpaperService" /></intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/focus_wallpaper" />
+        </service>
         <service android:name=".FocusAccessibilityService" android:exported="true"
             android:label="${focusAppLabel}" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
@@ -68,6 +75,8 @@
     </application>
 
     <queries>
+        <intent><action android:name="android.service.wallpaper.WallpaperService" /></intent>
+        <intent><action android:name="android.service.wallpaper.CHANGE_LIVE_WALLPAPER" /></intent>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /></intent>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
         <intent><action android:name="android.intent.action.DIAL" /><data android:scheme="tel" /></intent>
@@ -82,5 +91,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Android <=13 requires this for original live component visibility; no package enumeration here. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" android:maxSdkVersion="33" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 </manifest>

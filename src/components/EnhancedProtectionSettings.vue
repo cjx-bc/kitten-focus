@@ -8,6 +8,7 @@ import AntiCloseSettings from './AntiCloseSettings.vue'
 import RecentTasksSetting from './RecentTasksSetting.vue'
 import LauncherSetting from './LauncherSetting.vue'
 import LockMainEntrySetting from './LockMainEntrySetting.vue'
+import WallpaperSetting from './WallpaperSetting.vue'
 
 const app = useApp()
 const option = 'navigationHomeRecents'
@@ -72,6 +73,7 @@ async function authorize() {
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
     <RecentTasksSetting />
     <LauncherSetting />
+    <WallpaperSetting />
     <AntiCloseSettings />
     <LockMainEntrySetting />
 

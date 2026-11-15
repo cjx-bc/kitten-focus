@@ -23,6 +23,7 @@ final class FocusControl {
     private final NotificationProtection notifications;
     private final RecentTasksProtection recentTasks;
     private final LauncherProtection launcher;
+    private final WallpaperProtection wallpaper;
 
     FocusControl(Context context) {
         this(context, LocalStore.get(context), SessionClock.system(context));
@@ -47,6 +48,11 @@ final class FocusControl {
     FocusControl(Context context, LocalStore store, SessionClock clock, LauncherSystem system) {
         this(context, store, clock, new FocusRecovery(context, store), null, new AndroidDndSystem(context),
             new AndroidNotificationSystem(context), launchTarget(context), FocusNavigation.android(context, null), new AndroidRecentTasksSystem(context), system);
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, WallpaperSystem system) {
+        this(context, store, clock, new FocusRecovery(context, store), null, new AndroidDndSystem(context),
+            new AndroidNotificationSystem(context), launchTarget(context), FocusNavigation.android(context, null),
+            new AndroidRecentTasksSystem(context), new AndroidAntiCloseSystem(context, null), new AndroidLauncherSystem(context), system);
     }
     FocusControl(Context context, LocalStore store, SessionClock clock, RecentTasksSystem system) {
         this(context, store, clock, new FocusRecovery(context, store), null, new AndroidDndSystem(context),
@@ -122,6 +128,13 @@ final class FocusControl {
                  FocusProtection.AccessibilityState accessibility, DndSystem system,
                  NotificationSystem notificationSystem, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice,
                  RecentTasksSystem recentTasksSystem, AntiCloseSystem antiCloseSystem, LauncherSystem launcherSystem) {
+        this(context, store, clock, recovery, accessibility, system, notificationSystem, targetLaunch, navigationDevice,
+            recentTasksSystem, antiCloseSystem, launcherSystem, new AndroidWallpaperSystem(context));
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
+                 FocusProtection.AccessibilityState accessibility, DndSystem system,
+                 NotificationSystem notificationSystem, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice,
+                 RecentTasksSystem recentTasksSystem, AntiCloseSystem antiCloseSystem, LauncherSystem launcherSystem, WallpaperSystem wallpaperSystem) {
         this.targetLaunch = targetLaunch;
         this.context = context.getApplicationContext();
         this.store = store;
@@ -138,6 +151,7 @@ final class FocusControl {
         notifications = new NotificationProtection(context, store.getDatabaseName(), clock, notificationSystem);
         recentTasks = new RecentTasksProtection(context, store.getDatabaseName(), clock, recentTasksSystem);
         launcher = new LauncherProtection(context, store.getDatabaseName(), clock, launcherSystem);
+        wallpaper = new WallpaperProtection(context, store.getDatabaseName(), clock, wallpaperSystem);
         recovery.register(new FocusRecovery.RecoveryOperation() {
             public JSONObject preview() throws JSONException { return dnd.recoveryStep(); }
             public void restore() throws JSONException { dnd.restore(store.read("active")); }
@@ -153,6 +167,10 @@ final class FocusControl {
         recovery.register(new FocusRecovery.RecoveryOperation() {
             public JSONObject preview() throws JSONException { return launcher.recoveryStep(store.read("active")); }
             public void restore() throws JSONException { launcher.restore(store.read("active")); }
+        });
+        recovery.register(new FocusRecovery.RecoveryOperation() {
+            public JSONObject preview() throws JSONException { return wallpaper.recoveryStep(store.read("active")); }
+            public void restore() throws JSONException { wallpaper.restore(store.read("active")); }
         });
     }
 
@@ -185,6 +203,7 @@ final class FocusControl {
             notifications.checkStart(started);
             recentTasks.checkStart(started);
             launcher.checkStart(started);
+            wallpaper.checkStart(started);
             recovery.prepare(started);
             JSONObject result = focus.start(started);
             FocusProtection.executionSucceeded();
@@ -192,6 +211,7 @@ final class FocusControl {
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
             launcher.synchronize(store.read("active"));
+            wallpaper.synchronize(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -215,6 +235,7 @@ final class FocusControl {
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
             launcher.synchronize(store.read("active"));
+            wallpaper.synchronize(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -242,6 +263,7 @@ final class FocusControl {
             notifications.checkStart(session);
             recentTasks.checkStart(session);
             launcher.checkStart(session);
+            wallpaper.checkStart(session);
             recovery.prepare(session);
             rest.exit();
             JSONObject result = lock.start(session);
@@ -249,6 +271,7 @@ final class FocusControl {
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
             launcher.synchronize(store.read("active"));
+            wallpaper.synchronize(store.read("active"));
             return result;
         }
     }
@@ -262,6 +285,7 @@ final class FocusControl {
             notifications.synchronize(active);
             recentTasks.synchronize(active);
             launcher.synchronize(active);
+            wallpaper.synchronize(active);
             return result;
         }
     }
@@ -272,6 +296,7 @@ final class FocusControl {
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
             launcher.synchronize(store.read("active"));
+            wallpaper.synchronize(store.read("active"));
             return result;
         }
     }
@@ -295,6 +320,7 @@ final class FocusControl {
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
             launcher.synchronize(store.read("active"));
+            wallpaper.synchronize(store.read("active"));
             return observeControl();
         }
     }
@@ -332,6 +358,7 @@ final class FocusControl {
                 .put("notifications", notifications.observe(active))
                 .put("recentTasks", recentTasks.observe(active))
                 .put("launcher", launcher.observe(active))
+                .put("wallpaper", getWallpaperStatus())
                 .put("needsReconcile", needsReconcile);
             return observation.put("navigation", navigation.observe(observation)).put("antiClose", antiClose.observe(observation))
                 .put("mainEntry", mainEntryStatus(observation));
@@ -486,6 +513,45 @@ final class FocusControl {
             return status.put("preferenceEnabled", LauncherProtection.requested(new JSONObject().put("protection", FocusProtection.preferences(store))));
         }
     }
+    JSONObject getWallpaperStatus() throws JSONException {
+        synchronized (store) {
+            return wallpaper.observe(store.read("active")).put("preferenceEnabled",
+                WallpaperProtection.requested(new JSONObject().put("protection", FocusProtection.preferences(store))))
+                .put("lastAssociation", WallpaperLifecycle.observation(context));
+        }
+    }
+    JSONObject prepareWallpaper(boolean limitsAccepted, boolean originalMatches) throws JSONException {
+        synchronized (store) {
+            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注或锁机，再保存新原壁纸");
+            wallpaper.prepare(limitsAccepted, originalMatches); return getWallpaperStatus();
+        }
+    }
+    JSONObject wallpaperPickerReturned(String pickerToken) throws JSONException {
+        synchronized (store) { wallpaper.pickerReturned(store.read("active"), pickerToken); return getWallpaperStatus(); }
+    }
+    JSONObject requestWallpaperPicker(boolean original) throws JSONException {
+        synchronized (store) { wallpaper.requestPicker(store.read("active"), original); return getWallpaperStatus(); }
+    }
+    JSONObject importWallpaperOriginal(String uri, boolean lockSource) throws JSONException {
+        synchronized (store) {
+            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注或锁机，再选择原图");
+            wallpaper.importOriginal(uri, lockSource); return getWallpaperStatus();
+        }
+    }
+    JSONObject confirmWallpaperManualRecovery(boolean acknowledged) throws JSONException {
+        synchronized (store) { wallpaper.confirmManualRecovery(acknowledged); return getWallpaperStatus(); }
+    }
+    /** A real framework callback reconnects the existing owner; it never starts a round. */
+    JSONObject wallpaperEngineCreated(boolean preview) throws JSONException {
+        synchronized (store) {
+            wallpaper.engineCreated(preview);
+            if (preview) return observeControl();
+            JSONObject result = reconcile();
+            WallpaperLifecycle.record(context, "existing_session_reconciled", false, result);
+            return result;
+        }
+    }
+    void wallpaperPreviewDestroyed() throws JSONException { synchronized (store) { wallpaper.previewDestroyed(); } }
     void restoreLauncher() throws JSONException { synchronized (store) { launcher.restore(store.read("active")); } }
     void synchronizeNotifications() throws JSONException {
         synchronized (store) { notifications.synchronize(store.read("active")); }

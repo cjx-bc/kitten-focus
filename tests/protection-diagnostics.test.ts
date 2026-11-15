@@ -19,6 +19,7 @@ beforeEach(() => {
     getNotificationStatus: { supported: true, authorized: true, connected: true, requested: false, active: false, phase: 'off', pendingCount: 0, snoozedCount: 0, restoredCount: 0, absentCount: 0, releaseFailedCount: 0, error: '', reason: '' },
     getRecentTasksStatus: { supported: true, requested: false, active: false, verified: false, phase: 'off', recoveryPending: false, error: '' },
     getLauncherStatus: { supported: true, requested: false, active: false, verified: false, phase: 'off', recoveryPending: false, recoveryAvailable: true, error: '' },
+    getWallpaperStatus: { supported: true, requested: false, active: false, verified: false, selected: false, phase: 'off', recoveryPending: false, error: '' },
     previewRecovery: { supported: true, revision: '1', pending: false, steps: [] },
   }
 })
@@ -30,12 +31,12 @@ it('reports pending adapter recovery from the existing shared recovery journal',
   expect(result.capabilities.find(row => row.id === 'applications')).toMatchObject({ state: 'failed', recoveryPending: true, reason: expect.stringContaining('本轮撤销失败') })
 })
 
-it('keeps authorized idle protection off and labels unintegrated wallpaper honestly', async () => {
+it('keeps authorized idle protection off and reports native wallpaper support without claiming selection', async () => {
   const { readProtectionDiagnostics } = await import('../src/platform/protectionDiagnostics')
   const result = await readProtectionDiagnostics(defaultProtection())
   expect(result.state).toBe('off')
   expect(result.capabilities.find(row => row.id === 'applications')).toMatchObject({ state: 'off', authorized: true, connected: true, requested: false, active: false })
-  expect(result.capabilities.find(row => row.id === 'wallpaper')).toMatchObject({ supported: false, verified: false, active: false })
+  expect(result.capabilities.find(row => row.id === 'wallpaper')).toMatchObject({ supported: true, verified: false, active: false })
 })
 
 it('separates a configured permission gate from a disconnected active round', async () => {
@@ -75,4 +76,15 @@ it('keeps withdrawn protections off and unresolved notification release visible 
   const result = await readProtectionDiagnostics({ ...defaultProtection(), interceptNotifications: true, enhancements: ['navigationHomeRecents'] })
   expect(result.capabilities.find(row => row.id === 'navigation')).toMatchObject({ state: 'off', active: false })
   expect(result.capabilities.find(row => row.id === 'notifications')).toMatchObject({ state: 'failed', recoveryPending: true, effect: expect.stringContaining('不存在不等于已恢复') })
+})
+it('keeps wallpaper preview unverified and restoration responsibility visible until an observed later choice resolves it', async () => {
+  const { readProtectionDiagnostics } = await import('../src/platform/protectionDiagnostics')
+  const preferences = { ...defaultProtection(), enhancements: ['wallpaperProtection'] }
+  Object.assign(device.values.getWallpaperStatus as object, { requested: true, phase: 'picker_preview', selected: false })
+  const row = async () => (await readProtectionDiagnostics(preferences)).capabilities.find(value => value.id === 'wallpaper')
+  expect(await row()).toMatchObject({ state: 'ready', verified: false, active: false })
+  Object.assign(device.values.getWallpaperStatus as object, { phase: 'recovery_pending', selected: true, recoveryPending: true })
+  expect(await row()).toMatchObject({ state: 'failed', recoveryPending: true, active: false })
+  Object.assign(device.values.getWallpaperStatus as object, { phase: 'user_choice_preserved', selected: false, recoveryPending: false })
+  expect(await row()).toMatchObject({ state: 'off', recoveryPending: false, active: false })
 })

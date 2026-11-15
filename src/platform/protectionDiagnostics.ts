@@ -29,8 +29,8 @@ export interface ProtectionDiagnostics {
   capabilities: CapabilityDiagnostic[]
   identity: string
 }
-const failurePhases = ['failed', 'error', 'restoration_failed', 'disconnected', 'inactive', 'missing', 'user_disabled', 'user_modified']
-const withdrawnPhases = ['recovered', 'withdrawn', 'restored', 'released']
+const failurePhases = ['failed', 'error', 'restoration_failed', 'recovery_pending', 'disconnected', 'inactive', 'missing', 'user_disabled', 'user_modified']
+const withdrawnPhases = ['recovered', 'withdrawn', 'restored', 'released', 'user_choice_preserved', 'declined']
 
 function entryState(row: CapabilityDiagnostic): ProtectionEntryState {
   if (row.recoveryPending && (!row.requested || withdrawnPhases.includes(row.phase))) return 'failed'
@@ -44,9 +44,10 @@ function entryState(row: CapabilityDiagnostic): ProtectionEntryState {
 
 /** Read-only aggregation: a failing OS module must not hide results from other capabilities. */
 export async function readProtectionDiagnostics(preferences: ProtectionPreferences): Promise<ProtectionDiagnostics> {
-  const [protection, control, notifications, dnd, recentTasks, launcher, recovery] = await Promise.allSettled([
+  const [protection, control, notifications, dnd, recentTasks, launcher, recovery, wallpaper] = await Promise.allSettled([
     protectionDriver.status(), controlDriver.observe(), notificationDriver.read(), dndDriver.read(),
     protectionDriver.recentTasks(), protectionDriver.launcher(), recoveryDriver.preview(),
+    protectionDriver.wallpaper(),
   ])
   const rows: CapabilityDiagnostic[] = []
   function add(id: string, title: string, selected: boolean, values: Partial<CapabilityDiagnostic>) {
@@ -134,13 +135,18 @@ export async function readProtectionDiagnostics(preferences: ProtectionPreferenc
     unavailable('mainEntry', '锁机时限制主界面入口', enhanced('lockMainInterfaceRestricted'), control)
     unavailable('strict', '严格计时约束', preferences.strict, control)
   }
-  add('wallpaper', '壁纸辅助保护', enhanced('wallpaperProtection'), { supported: false, verified: false,
-    phase: 'unsupported', reason: '此版本尚未接入壁纸保护与原状态恢复。技术探针不等于产品能力；实际重连增益及设备兼容性仍待验证。',
-    effect: '本页不会更换壁纸，也不宣称保活或防强停。' })
+  if (wallpaper.status === 'fulfilled') {
+    const value = wallpaper.value
+    add('wallpaper', '壁纸辅助保护', enhanced('wallpaperProtection'), { supported: value.supported,
+      requested: value.requested, verified: value.verified, active: value.active, recoveryPending: value.recoveryPending,
+      phase: value.phase, reason: value.error || '先保存可恢复的原状态，再经 Android 确认选择；原动态组件恢复仍需系统确认。裁剪与私有设置不能保证。',
+      effect: value.selected ? '系统观察到小猫主屏动态壁纸；实际服务关联与普通进程重连需设备证据，不代表防强停。' : '系统未观察到小猫主屏动态壁纸。预览与本轮请求不等于选择成功。',
+    })
+  } else unavailable('wallpaper', '壁纸辅助保护', enhanced('wallpaperProtection'), wallpaper)
   if (recovery.status === 'fulfilled') {
     const ids: Record<string, string> = { applicationRestriction: 'applications', navigationRestriction: 'navigation',
       preciseAntiClose: 'antiClose', lockMainInterfaceRestricted: 'mainEntry', notificationInterception: 'notifications',
-      soundDnd: 'dnd', recentTasksHidden: 'recentTasks', launcherIconHidden: 'launcher' }
+      soundDnd: 'dnd', recentTasksHidden: 'recentTasks', launcherIconHidden: 'launcher', wallpaperProtection: 'wallpaper' }
     for (const step of recovery.value.steps) {
       const row = rows.find(value => value.id === ids[step.capability])
       if (!row || step.status === 'restored') continue

@@ -5,4 +5,5 @@
     <string name="package_name">com.xiaomao.focus</string>
     <string name="custom_url_scheme">com.xiaomao.focus</string>
 <string name="focus_accessibility_description">仅在你主动开始本轮保护后识别前台应用并显示本机阻挡页。精确防关闭另在系统设置与已知系统安装器的特定页面，短暂、有界地读取本应用标题、包名和按钮以识别强退、撤权与卸载入口；不读取其他应用正文，不保存、记录或上传节点内容。普通授权不能保证防强停或卸载。暂停仍限制，结束、休息或故障恢复后解除；可从本应用进入必要授权或恢复。</string>
+<string name="focus_wallpaper_description">需主动系统确认的壁纸辅助；保留本轮恢复责任。不能保证防强停，原图裁剪和第三方设置需核对。</string>
 </resources>

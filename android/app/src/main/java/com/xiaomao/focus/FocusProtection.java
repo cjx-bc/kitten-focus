@@ -114,7 +114,7 @@ final class FocusProtection {
         if (enhancements != null) for (int i = 0; i < enhancements.length(); i++) {
             String value = enhancements.optString(i);
             if ("navigationHomeRecents".equals(value) || RecentTasksProtection.KEY.equals(value)
-                || LauncherProtection.KEY.equals(value) || FocusAntiClose.OPTION.equals(value)) selected.put(value);
+                || LauncherProtection.KEY.equals(value) || FocusAntiClose.OPTION.equals(value) || WallpaperProtection.KEY.equals(value)) selected.put(value);
         }
         return selected;
     }
