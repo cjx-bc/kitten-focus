@@ -8,6 +8,7 @@ const app = useApp(),
   router = useRouter(),
   busy = ref(false)
 const session = computed(() => app.focus.session),
+  strict = computed(() => session.value?.mode === 'countdown' && session.value.strictMode === true),
   result = computed(() => app.lastResult),
   display = computed(() =>
     session.value?.mode === 'countdown'
@@ -29,6 +30,8 @@ async function finish() {
   busy.value = true
   try {
     await app.action('finish')
+  } catch (e) {
+    app.notify(e instanceof Error ? e.message : String(e))
   } finally {
     busy.value = false
   }
@@ -80,8 +83,8 @@ async function rest() {
         </p>
       </div>
       <div class="focus-bottom">
-        <p>只做眼前这一件事。</p>
-        <div class="focus-controls">
+        <p>{{ strict ? '严格倒计时 · 不能暂停或提前结束' : '只做眼前这一件事。' }}</p>
+        <div v-if="!strict" class="focus-controls">
           <button
             class="pause-control"
             :aria-label="session.state === 'paused' ? '继续专注' : '暂停专注'"

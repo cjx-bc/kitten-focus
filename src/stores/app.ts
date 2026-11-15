@@ -25,6 +25,20 @@ export const useApp = defineStore('app', () => {
     error = ref(''),
     toast = ref('')
   const lastResult = shallowRef<FocusSnapshot['record']>(undefined)
+  const startConfirmation = shallowRef<{
+    title: string
+    mode: ActiveFocus['mode']
+    minutes: number
+    strict: boolean
+    study: boolean
+    whitelistCount: number
+  } | null>(null)
+  let resolveStartConfirmation: ((accepted: boolean) => void) | undefined
+  function confirmStart(accepted: boolean) {
+    startConfirmation.value = null
+    resolveStartConfirmation?.(accepted)
+    resolveStartConfirmation = undefined
+  }
   const themes = computed(() =>
     data.value.themes.filter((t) => !t.deleted).sort((a, b) => a.order - b.order),
   )
@@ -128,6 +142,24 @@ export const useApp = defineStore('app', () => {
       if (rest.value.session?.state === 'running') throw new Error('请先退出休息，再开始新的专注')
       if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes))
         throw new Error('请填写正整数分钟')
+      await writeQueue
+      let strictModeConfirmed = false
+      const protection = data.value.preferences.protection
+      if (protection?.strict || protection?.study) {
+        const accepted = await new Promise<boolean>((resolve) => {
+          resolveStartConfirmation = resolve
+          startConfirmation.value = {
+            title: item?.title || '自由专注',
+            mode,
+            minutes,
+            strict: !!protection.strict,
+            study: !!protection.study,
+            whitelistCount: new Set(protection.globalWhitelist).size,
+          }
+        })
+        if (!accepted) throw new Error('已取消开始专注')
+        strictModeConfirmed = true
+      }
       const theme = data.value.themes.find((t) => t.id === item?.themeId),
         now = Date.now()
       const session: ActiveFocus = {
@@ -150,7 +182,7 @@ export const useApp = defineStore('app', () => {
         segments: [],
       }
       lastResult.value = undefined
-      await acceptSnapshot(await focusDriver.start(session))
+      await acceptSnapshot(await focusDriver.start(session, strictModeConfirmed))
       rest.value = { session: null, remainingMs: 0 }
     })
   }
@@ -369,6 +401,8 @@ export const useApp = defineStore('app', () => {
     error,
     toast,
     lastResult,
+    startConfirmation,
+    confirmStart,
     themes,
     items,
     init,

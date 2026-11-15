@@ -2,6 +2,7 @@ package com.xiaomao.focus;
 
 import android.content.Context;
 import org.json.JSONException;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** One native boundary for session ownership, lifecycle commands and observation. */
@@ -24,8 +25,33 @@ final class FocusControl {
         rest = new RestEngine(context, store, clock);
     }
 
-    JSONObject startFocus(JSONObject session) throws JSONException { return focus.start(session); }
-    JSONObject focusAction(String action) throws JSONException { return focus.action(action); }
+    JSONObject startFocus(JSONObject session) throws JSONException { return startFocus(session, false); }
+    JSONObject startFocus(JSONObject session, boolean strictModeConfirmed) throws JSONException {
+        synchronized (store) {
+            JSONObject data = store.read("data");
+            JSONObject preferences = data == null ? null : data.optJSONObject("preferences");
+            JSONObject protection = preferences == null ? null : preferences.optJSONObject("protection");
+            boolean strict = protection != null && Boolean.TRUE.equals(protection.opt("strict"))
+                && session.optString("mode").equals("countdown");
+            if (strict && !strictModeConfirmed)
+                throw new IllegalStateException("请先确认严格倒计时：开始后不能暂停、取消或提前结束");
+            JSONObject started = new JSONObject(session.toString()).put("strictMode", strict);
+            started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
+                .put("segments", new JSONArray());
+            started.put("protection", FocusProtection.capture(context, store));
+            return focus.start(started);
+        }
+    }
+    JSONObject focusAction(String action) throws JSONException {
+        synchronized (store) {
+            JSONObject observation = observeControl();
+            JSONObject active = observation.getJSONObject("focus").optJSONObject("session");
+            if (!action.equals("read") && active != null && active.optBoolean("strictMode")
+                && active.optString("mode").equals("countdown") && !observation.optBoolean("needsReconcile"))
+                throw new IllegalStateException("严格倒计时不能暂停、取消或提前结束；请等待本轮到期，帮助和故障恢复仍可进入");
+            return focus.action(action);
+        }
+    }
     JSONObject startRest(String recordId) throws JSONException { return rest.start(recordId); }
     JSONObject restAction(String action) throws JSONException {
         synchronized (store) {

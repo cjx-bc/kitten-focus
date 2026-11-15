@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useApp } from '../stores/app'
+import StrictModeSetting from '../components/StrictModeSetting.vue'
 import { makeBackup, readBackup, type Backup } from '../domain/backup'
 import { dateKey } from '../domain/dates'
 import {
@@ -142,6 +143,7 @@ async function enableNotifications() {
           :checked="app.data.preferences.vibration"
           @change="preference('vibration', $event)"
       /></label>
+      <StrictModeSetting />
     </div>
     <template v-if="native"
       ><h3 class="settings-section-label">系统提醒</h3>
