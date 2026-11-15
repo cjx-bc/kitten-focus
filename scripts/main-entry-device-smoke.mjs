@@ -89,7 +89,10 @@ try {
   await native('lockAction', { action: 'finish', confirmed: true })
   edited.preferences.protection.enhancements = ['lockMainInterfaceRestricted']; await native('saveData', { data: edited })
   await native('startLock', { configurationId: 'routing-lock' }); await route('/tasks'); await at('/lock')
-  await click('提前解除'); await click('确认解除'); await until(async () => (await observe()).owner === null, 'ordinary UI unlock')
+  await until(() => evaluate('[...document.querySelectorAll("button")].some(button => button.textContent.trim() === "提前解除")'), 'ordinary lock controls rendered')
+  await click('提前解除')
+  await until(() => evaluate('[...document.querySelectorAll("dialog[open] button")].some(button => button.textContent.trim() === "确认解除" && !button.disabled)'), 'ordinary unlock confirmation rendered')
+  await click('确认解除'); await until(async () => (await observe()).owner === null, 'ordinary UI unlock')
   await route('/settings'); await at('/settings')
   results.push({ scenario: 'unselected-lock-allows-business-next-selected-ordinary-lock-intercepts-and-confirmed-end-restores', passed: true })
 
