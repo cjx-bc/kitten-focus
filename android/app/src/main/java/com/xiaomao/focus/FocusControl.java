@@ -238,7 +238,9 @@ final class FocusControl {
             if (preferred != null) for (int i = 0; i < preferred.length(); i++)
                 if (FocusRecovery.MAIN_ENTRY.equals(preferred.optString(i))) { selected.put(FocusRecovery.MAIN_ENTRY); break; }
             session.put("originalEnhancedProtectionSettings", selected);
+            session.put("dndRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("dnd")));
             session.put("notificationsRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("interceptNotifications")));
+            dnd.checkStart(session);
             notifications.checkStart(session);
             recentTasks.checkStart(session);
             launcher.checkStart(session);
@@ -246,6 +248,7 @@ final class FocusControl {
             rest.exit();
             JSONObject result = lock.start(session);
             FocusProtection.executionSucceeded();
+            dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
             launcher.synchronize(store.read("active"));
