@@ -194,6 +194,9 @@ final class NotificationProtection {
                 } else if (active.containsKey(key)) {
                     if (controlling && !saved.optBoolean("exempt")) renew(journal, saved);
                     else saved.put("phase", saved.optBoolean("observedHeld") ? "restored" : "present").put("observedMono", clock.mono());
+                } else if (saved.optBoolean("releaseRequested") && clock.mono() - saved.optLong("releaseRequestMono") < 2000) {
+                    // Android removes a held original before publishing it again. A brief empty
+                    // snapshot during that release handoff cannot establish sender withdrawal.
                 } else if (saved.optBoolean("observedHeld") || clock.mono() - saved.optLong("requestMono") >= 2000 || journal.optInt("bootId") != clock.boot())
                     saved.put("phase", "absent");
             }

@@ -112,6 +112,118 @@ public class FocusNotificationDeviceTest {
             else journal.edit().putString("journal", journalBaseline).commit();
         }
     }
+    @Test public void necessaryUpdateAndSameKeyRepostsRetainOriginalIdentityAndTruthfulHistory() throws Exception {
+        assumeTrue("Runner must explicitly prepare isolated sender and listener authorization",
+            InstrumentationRegistry.getArguments().getString("runNotificationDeviceFixture", "false").equals("true"));
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        assertTrue(context.getPackageName().endsWith(".qa"));
+        NotificationSystem system = new AndroidNotificationSystem(context);
+        assertTrue(system.authorized()); FocusNotificationListener.rebind(context);
+        waitFor(() -> system.connected(), 15000, "Listener did not connect");
+        LocalStore store = LocalStore.get(context); FocusControl control = new FocusControl(context);
+        assertNull("Preserve any existing QA owner", store.read("active"));
+        JSONObject resting = store.read("rest");
+        assertFalse(resting != null && resting.optString("state").equals("running"));
+        assertFalse(control.previewRecovery().getBoolean("pending"));
+        JSONObject baseline = store.snapshot();
+        assertNotNull(baseline.getJSONObject("documents").optJSONObject("data"));
+        android.content.SharedPreferences journal = context.getSharedPreferences("catfocus-notifications-" + store.getDatabaseName(), 0);
+        String journalBaseline = journal.getString("journal", null);
+        String sessionId = "notification-updates-" + System.nanoTime();
+        try {
+            JSONObject data = control.loadData();
+            data.getJSONObject("preferences").put("sound", false).put("vibration", false).put("protection", new JSONObject()
+                .put("strict", false).put("study", false).put("dnd", false).put("interceptNotifications", true)
+                .put("globalWhitelist", new JSONArray()));
+            store.saveData(data, false);
+            control.startFocus(new JSONObject().put("id", sessionId).put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
+                .put("title", "原通知必要更新与重投验证").put("themeName", "自由专注").put("color", "#222222")
+                .put("mode", "countdown").put("targetMs", 60000).put("startedAt", System.currentTimeMillis()).put("timeZone", "UTC"));
+            sender("post", 1);
+            waitFor(() -> find(true) != null, 4000, "Initial ordinary original was not held");
+            control.synchronizeNotifications();
+            JSONObject heldStatus = control.getNotificationStatus();
+            assertEquals("Verify the held responsibility before exercising its release: " + heldStatus,
+                1, heldStatus.getInt("snoozedCount"));
+            StatusBarNotification original = find(true);
+            String originalKey = original.getKey(); int originalUid = original.getUid();
+            PendingIntent originalClick = original.getNotification().contentIntent;
+            long updateStarted = SystemClock.elapsedRealtime();
+            sender("update", 2, "ongoing");
+            waitFor(() -> {
+                control.synchronizeNotifications();
+                StatusBarNotification active = find(false);
+                return active != null && active.getNotification().extras.getInt("probe_revision") == 2;
+            }, 10000, "Necessary update did not become reachable before the ordinary lease deadline");
+            long updateLatency = SystemClock.elapsedRealtime() - updateStarted;
+            StatusBarNotification necessary = find(false);
+            assertEquals(originalKey, necessary.getKey()); assertEquals(originalUid, necessary.getUid());
+            assertEquals(SENDER, necessary.getPackageName());
+            assertTrue((necessary.getNotification().flags & android.app.Notification.FLAG_ONGOING_EVENT) != 0);
+            assertEquals(originalClick, necessary.getNotification().contentIntent);
+            assertNull(find(true)); control.synchronizeNotifications();
+            assertEquals("Necessary original restoration history: " + control.getNotificationStatus(),
+                1, control.getNotificationStatus().getInt("restoredCount"));
+            assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+            android.util.Log.i("FocusNotificationDeviceTest", "necessary_original_release_verified latencyMs=" + updateLatency);
+            long necessaryPostTime = necessary.getPostTime();
+            sender("withdraw", 2);
+            waitFor(() -> find(false) == null && find(true) == null, 4000, "Necessary original was not withdrawn");
+            control.synchronizeNotifications();
+            sender("post", 3);
+            waitFor(() -> { control.synchronizeNotifications(); return find(true) != null; }, 4000,
+                "New ordinary posting after the restored original's withdrawal was not held");
+            control.synchronizeNotifications();
+            assertEquals("Verify the new held responsibility: " + control.getNotificationStatus(),
+                1, control.getNotificationStatus().getInt("snoozedCount"));
+            StatusBarNotification second = find(true);
+            assertEquals(originalKey, second.getKey()); assertEquals(originalUid, second.getUid());
+            assertNotEquals(necessaryPostTime, second.getPostTime());
+            assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+            assertEquals(1, control.getNotificationStatus().getInt("pendingCount"));
+            assertEquals(3, second.getNotification().extras.getInt("probe_revision"));
+            control.focusAction("finish");
+            waitFor(() -> find(false) != null && find(true) == null, 4000, "The new original was not released at early finish");
+            StatusBarNotification released = find(false);
+            assertEquals(originalKey, released.getKey()); assertEquals(originalUid, released.getUid());
+            assertEquals(SENDER, released.getNotification().contentIntent.getCreatorPackage());
+            assertEquals(3, released.getNotification().extras.getInt("probe_revision"));
+            control.synchronizeNotifications();
+            assertEquals(2, control.getNotificationStatus().getInt("restoredCount"));
+            assertEquals(0, control.getNotificationStatus().getInt("absentCount"));
+            assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+            android.util.Log.i("FocusNotificationDeviceTest", "necessary_update_and_reused_key_verified necessaryUpdateLatencyMs="
+                + updateLatency + " originalUid=" + originalUid + " restoredCount=2 absentCount=0");
+        } catch (Exception | AssertionError failure) {
+            android.util.Log.e("FocusNotificationDeviceTest", "notification_update_fixture_failure", failure);
+            throw failure;
+        } finally {
+            JSONObject active = store.read("active");
+            if (active != null && sessionId.equals(active.optString("id"))) control.focusAction("finish");
+            // Settle the fixture's control before cancellation; Android can retain a canceled
+            // snoozed record until its requested release reaches the active notification set.
+            long cleanupUntil = SystemClock.elapsedRealtime() + 10000;
+            do {
+                control.synchronizeNotifications();
+                sender("withdraw", 4);
+                if (find(false) == null && find(true) == null) break;
+                SystemClock.sleep(100);
+            } while (SystemClock.elapsedRealtime() < cleanupUntil);
+            waitFor(() -> { control.synchronizeNotifications(); return !control.getNotificationStatus().getBoolean("recoveryPending"); },
+                4000, "Keep unresolved original responsibility for inspection");
+            assertFalse("Do not overwrite unresolved original responsibility", control.getNotificationStatus().getBoolean("recoveryPending"));
+            Reminders.cancelFocus(context); Reminders.cancelRest(context);
+            store.restoreSnapshot(baseline);
+            JSONObject docs = baseline.getJSONObject("documents");
+            store.write("lastFinished", docs.optJSONObject("lastFinished")); store.write("rest", docs.optJSONObject("rest"));
+            if (journalBaseline == null) journal.edit().remove("journal").commit();
+            else journal.edit().putString("journal", journalBaseline).commit();
+        }
+    }
+    private static void sender(String op, int revision, String kind) throws Exception {
+        shell("am broadcast -n " + SENDER + "/.CommandReceiver --es op " + op + " --ei id " + ID
+            + " --ei revision " + revision + " --es kind " + kind);
+    }
     private static StatusBarNotification find(boolean held) {
         try {
             StatusBarNotification[] values = held ? FocusNotificationListener.require().getSnoozedNotifications() : FocusNotificationListener.require().getActiveNotifications();

@@ -41,6 +41,22 @@ public class FocusNotificationTest {
     NotificationSystem.Notice notice(String key, String pkg, boolean necessary) {
         return new NotificationSystem.Notice(key, pkg, 10001, "", necessary);
     }
+    @Test public void necessaryReleaseWaitsThroughAndroidHandoffGapBeforeVerifyingRestoration() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("handoff", "other.app", false));
+        control.notificationPosted(notice("handoff", "other.app", true));
+        assertEquals(Long.valueOf(1), system.requests.get("handoff"));
+        system.snoozed.clear();
+        control.synchronizeNotifications();
+        assertTrue("A release handoff gap is still awaiting system confirmation",
+            control.getNotificationStatus().getBoolean("recoveryPending"));
+        assertEquals(0, control.getNotificationStatus().getInt("absentCount"));
+        now += 100;
+        system.active.add(notice("handoff", "other.app", true));
+        control.synchronizeNotifications();
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+    }
     @Test public void newPostingAfterNecessaryOriginalWithdrawalPreservesVerifiedRestorationHistory() throws Exception {
         control.startFocus(session(), true);
         NotificationSystem.Notice first = new NotificationSystem.Notice("released-reuse", "other.app", 10001, "", false, 1001);
