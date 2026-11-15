@@ -84,7 +84,7 @@ final class LocalStore extends SQLiteOpenHelper {
             keys = documents.keys();
             while (keys.hasNext()) {
                 String key = keys.next();
-                if (!key.equals("active") && !key.equals("lastFinished") && !key.equals("rest")) write(key, documents.getJSONObject(key));
+                if (key.equals("data") || key.equals("lockHistory")) write(key, documents.getJSONObject(key));
             }
             for (int i = 0; i < records.length(); i++) upsertRecord(records.getJSONObject(i));
             db.setTransactionSuccessful();

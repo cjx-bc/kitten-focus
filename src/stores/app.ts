@@ -14,7 +14,16 @@ import type {
   LockSnapshot,
 } from '../domain/model'
 import { emptyData, uid, effectiveWhitelist } from '../domain/model'
-import { focusDriver, restDriver, lockDriver, repository, syncReminders } from '../platform/bridge'
+import {
+  focusDriver,
+  restDriver,
+  lockDriver,
+  repository,
+  syncReminders,
+  protectionDriver,
+  permissionStatus,
+} from '../platform/bridge'
+import { makeBackup, readBackup } from '../domain/backup'
 import { validateEvent } from '../domain/calendar'
 import { dateKey, weekday } from '../domain/dates'
 
@@ -121,6 +130,11 @@ export const useApp = defineStore('app', () => {
     try {
       data.value = await repository.load()
       dataLoaded = true
+      await Promise.allSettled([
+        protectionDriver.apps(),
+        protectionDriver.status(),
+        permissionStatus(),
+      ])
       await tick()
       await syncReminders()
       ready.value = true
@@ -218,7 +232,9 @@ export const useApp = defineStore('app', () => {
     })
   }
   async function finishLock(confirmed: boolean) {
-    return sessionOperation(async () => { lock.value = await lockDriver.finish(confirmed) })
+    return sessionOperation(async () => {
+      lock.value = await lockDriver.finish(confirmed)
+    })
   }
   async function saveTheme(theme: Theme) {
     if (!theme.name.trim()) throw new Error('请填写主题名称')
@@ -393,16 +409,28 @@ export const useApp = defineStore('app', () => {
     })
   }
   async function restore(next: AppData) {
-    if (lock.value.session) throw new Error('请先结束当前锁机再恢复数据')
-    if (focus.value.session) throw new Error('请先结束当前专注再恢复数据')
-    const restored = JSON.parse(JSON.stringify(next)) as AppData
-    await writeQueue
-    await repository.replace(restored)
-    data.value = restored
-    await syncReminders()
-    lastResult.value = undefined
-    rest.value = { session: null, remainingMs: 0 }
-    notify('备份已恢复')
+    return sessionOperation(async () => {
+      if (lock.value.session) throw new Error('请先结束当前锁机再恢复数据')
+      if (focus.value.session) throw new Error('请先结束当前专注再恢复数据')
+      const restored = readBackup(makeBackup(next)).data
+      await writeQueue
+      await repository.replace(restored)
+      data.value = restored
+      dataLoaded = true
+      const checks = await Promise.allSettled([
+        syncReminders(),
+        protectionDriver.apps(),
+        protectionDriver.status(),
+        permissionStatus(),
+      ])
+      lastResult.value = undefined
+      rest.value = { session: null, remainingMs: 0 }
+      notify(
+        checks.some((check) => check.status === 'rejected')
+          ? '备份已恢复；提醒、应用或权限检查未完成，请进入设置重试'
+          : '备份已恢复，已重新检查本机应用与权限',
+      )
+    })
   }
   function itemRecordsToday(id: string) {
     return data.value.records.filter((r) => r.itemId === id && dateKey(r.startedAt) === dateKey())

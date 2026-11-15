@@ -502,20 +502,21 @@ final class FocusControl {
 
     void replaceData(JSONObject data) throws JSONException {
         synchronized (store) {
-            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注");
-            if (dnd.restore(null).optBoolean("recoveryPending"))
-                throw new IllegalStateException("请先在声音辅助中撤销小猫规则，再替换备份");
-            if (notifications.restore(null).optBoolean("recoveryPending"))
-                throw new IllegalStateException("原应用通知仍待系统释放，请先进入故障恢复核实，再替换备份");
-            recentTasks.restore(null);
-            if (recentTasks.observe(null).optBoolean("recoveryPending"))
-                throw new IllegalStateException("自身任务卡仍待恢复，请先进入故障恢复重试，再替换备份");
-            launcher.restore(null);
-            if (launcher.observe(null).optBoolean("recoveryPending"))
-                throw new IllegalStateException("桌面入口仍待恢复，请先进入故障恢复重试，再替换备份");
-            store.saveData(data, true);
+            BusinessBackupData.validate(data);
+            JSONObject portable = BusinessBackupData.portable(data);
+            prepareDataReplacement();
+            store.saveData(portable, true);
             Reminders.cancelFocus(context);
             Reminders.cancelRest(context);
+        }
+    }
+    /** All backup replacement paths use the registered cleanup contract before writing data. */
+    void prepareDataReplacement() throws JSONException {
+        synchronized (store) {
+            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注或锁机，再恢复备份");
+            JSONObject preview = recovery.preview();
+            if (recovery.confirm(preview.optString("revision")).optBoolean("pending"))
+                throw new IllegalStateException("保护仍有待恢复项目，请先进入故障恢复修复，再恢复备份；原数据已保留");
         }
     }
 }

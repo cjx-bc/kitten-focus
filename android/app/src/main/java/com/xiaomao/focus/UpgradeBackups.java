@@ -19,11 +19,16 @@ final class UpgradeBackups {
     private final LocalStore store;
     private final File directory;
     private final SharedPreferences preferences;
+    private final FocusControl control;
 
     UpgradeBackups(Context context) {
+        this(context, LocalStore.get(context), new FocusControl(context));
+    }
+    UpgradeBackups(Context context, LocalStore store, FocusControl control) {
         this.context = context.getApplicationContext();
-        store = LocalStore.get(context);
-        directory = new File(context.getFilesDir(), "upgrade-backups");
+        this.store = store;
+        this.control = control;
+        directory = new File(context.getFilesDir(), store.getDatabaseName().equals("xiaomao-focus.db") ? "upgrade-backups" : "upgrade-backups-" + store.getDatabaseName());
         preferences = context.getSharedPreferences("upgrade-protection", Context.MODE_PRIVATE);
     }
 
@@ -42,7 +47,7 @@ final class UpgradeBackups {
         if (!directory.isDirectory() && !directory.mkdirs()) throw new IllegalStateException("无法建立升级恢复副本");
         String name = "upgrade-" + from + "-" + to + ".json";
         File file = new File(directory, name);
-        JSONObject snapshot = store.snapshot();
+        JSONObject snapshot = BusinessBackupData.snapshot(store.snapshot());
         JSONObject value = new JSONObject().put("format", 1).put("from", from).put("to", to)
             .put("createdAt", System.currentTimeMillis()).put("snapshot", snapshot);
         AtomicFile atomic = new AtomicFile(file);
@@ -96,7 +101,7 @@ final class UpgradeBackups {
     }
 
     synchronized JSONObject export(String name) throws Exception {
-        JSONObject value = read(name), snapshot = value.getJSONObject("snapshot");
+        JSONObject value = read(name), snapshot = BusinessBackupData.snapshot(value.getJSONObject("snapshot"));
         JSONObject data = snapshot.getJSONObject("documents").optJSONObject("data");
         if (data == null) throw new IllegalStateException("此副本尚无业务数据");
         data.put("records", snapshot.getJSONArray("records"));
@@ -107,11 +112,19 @@ final class UpgradeBackups {
 
     synchronized void restore(String name) throws Exception {
         synchronized (store) {
-            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注");
+            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注或锁机，再恢复备份");
             JSONObject value = read(name);
+            // Older local snapshots may contain arbitrary runtime documents. Ignore them.
+            JSONObject portable = BusinessBackupData.snapshot(value.getJSONObject("snapshot"));
+            BusinessBackupData.validate(portable.getJSONObject("documents").optJSONObject("data"));
+            JSONArray records = portable.getJSONArray("records");
+            for (int i = 0; i < records.length(); i++)
+                if (records.getJSONObject(i).optString("id").isEmpty()) throw new IllegalArgumentException("恢复副本记录损坏");
+            control.prepareDataReplacement();
             // Keep a safety snapshot of current data before replacing anything.
             create(BuildConfig.VERSION_CODE, BuildConfig.VERSION_CODE);
-            store.restoreSnapshot(value.getJSONObject("snapshot"));
+            store.restoreSnapshot(portable);
+            Reminders.cancelFocus(context);
             Reminders.cancelRest(context);
         }
     }
