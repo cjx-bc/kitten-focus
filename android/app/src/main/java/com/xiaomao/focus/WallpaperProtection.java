@@ -206,7 +206,8 @@ final class WallpaperProtection {
             }
             boolean homeOwned = owned != null && sameHome(owned, current) && selected(current);
             boolean lockOwned = owned != null && sameLock(owned, current) && selectedLock(current);
-            if (value.optBoolean("restoreAttempted") && !sameHome(owned, current)) value.put("uncertain", true);
+            if (value.optBoolean("restoreAttempted") && (!sameHome(owned, current) || !sameLock(owned, current)))
+                value.put("uncertain", true);
             if (value.optBoolean("uncertain")) {
                 save(value.put("phase", "restoration_failed").put("error", "此前恢复写入可能部分成功；当前壁纸保持，请在系统中核对后明确确认手动恢复")); return;
             }
@@ -254,7 +255,8 @@ final class WallpaperProtection {
                 : "主屏后续选择已保留；仍需在系统壁纸设置恢复小猫锁屏"));
         } catch (Exception error) {
             if (value.optBoolean("restoreAttempted")) try {
-                if (!sameHome(value.optJSONObject("owned"), system.current())) value.put("uncertain", true);
+                JSONObject afterFailure = system.current(), owned = value.optJSONObject("owned");
+                if (!sameHome(owned, afterFailure) || !sameLock(owned, afterFailure)) value.put("uncertain", true);
             } catch (Exception unreadable) { value.put("uncertain", true); }
             save(value.put("phase", "restoration_failed").put("error", message(error)));
         }
