@@ -52,6 +52,8 @@ const data = emptyData(); data.preferences.sound = false; data.preferences.vibra
 const configure = async enabled => {
   data.preferences.protection = { ...defaultProtection(), enhancements: enabled ? ['launcherIconHidden'] : [] }
   await native('replaceData', { data })
+  await qa.send('Page.reload')
+  await until(() => qa.evaluate('!!document.querySelector(".tabbar") && !document.querySelector(".boot")'), 'fixture loaded into app store')
 }
 const results = []
 try {
