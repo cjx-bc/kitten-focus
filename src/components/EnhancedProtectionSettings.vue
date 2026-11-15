@@ -5,6 +5,7 @@ import { defaultProtection } from '../domain/model'
 import type { NavigationProtectionStatus } from '../domain/model'
 import { protectionDriver } from '../platform/bridge'
 import RecentTasksSetting from './RecentTasksSetting.vue'
+import LauncherSetting from './LauncherSetting.vue'
 const app = useApp()
 const option = 'navigationHomeRecents'
 const selected = computed(() => app.data.preferences.protection?.enhancements.includes(option) ?? false)
@@ -67,6 +68,7 @@ async function authorize() {
     </div>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
     <RecentTasksSetting />
+    <LauncherSetting />
   </section>
 </template>
 <style scoped>

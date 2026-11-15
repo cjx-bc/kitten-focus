@@ -40,6 +40,7 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
     @PluginMethod public void getDndStatus(PluginCall call){resolve(call,()->control.getDndStatus());}
     @PluginMethod public void getNotificationStatus(PluginCall call){resolve(call,()->control.getNotificationStatus());}
+    @PluginMethod public void getLauncherStatus(PluginCall call){resolve(call,()->control.getLauncherStatus());}
     @PluginMethod public void getRecentTasksStatus(PluginCall call){resolve(call,()->control.getRecentTasksStatus());}
     @PluginMethod public void openNotificationAccessSettings(PluginCall call){resolve(call,()->{
         getContext().startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

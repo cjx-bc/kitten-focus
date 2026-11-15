@@ -113,7 +113,7 @@ final class FocusProtection {
         JSONArray enhancements = prefs.optJSONArray("enhancements"), selected = new JSONArray();
         if (enhancements != null) for (int i = 0; i < enhancements.length(); i++) {
             String value = enhancements.optString(i);
-            if ("navigationHomeRecents".equals(value) || RecentTasksProtection.KEY.equals(value)) selected.put(value);
+            if ("navigationHomeRecents".equals(value) || RecentTasksProtection.KEY.equals(value) || LauncherProtection.KEY.equals(value)) selected.put(value);
         }
         return selected;
     }
