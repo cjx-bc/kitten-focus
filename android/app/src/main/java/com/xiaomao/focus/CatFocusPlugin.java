@@ -35,6 +35,15 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void startRest(PluginCall call){resolve(call,()->control.startRest(call.getString("recordId","")));}
     @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}
     @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
+    @PluginMethod public void consumeFocusReturn(PluginCall call){resolve(call,()->{
+        Intent intent=getActivity()==null?null:getActivity().getIntent();
+        boolean requested=intent!=null&&intent.getBooleanExtra("returnToFocus",false);
+        if(intent!=null)intent.removeExtra("returnToFocus");
+        return new JSONObject().put("requested",requested);
+    });}
+    @PluginMethod public void protectionStatus(PluginCall call){resolve(call,()->FocusProtection.status(getContext(),store,control.observeControl()));}
+    @PluginMethod public void listProtectionApps(PluginCall call){resolve(call,()->new JSONObject().put("apps",FocusProtection.apps(getContext(),store)));}
+    @PluginMethod public void openProtectionSettings(PluginCall call){resolve(call,()->{FocusProtection.openSettings(getContext());return null;});}
     @PluginMethod public void syncReminders(PluginCall call){resolve(call,()->{Reminders.sync(getContext());return null;});}
     @PluginMethod public void permissions(PluginCall call){resolve(call,()->new JSONObject().put("notifications",Reminders.notificationsAllowed(getContext())).put("exactAlarms",Reminders.exactAllowed(getContext())));}
     @PluginMethod public void requestNotifications(PluginCall call){if(Build.VERSION.SDK_INT>=33&&!Reminders.notificationsAllowed(getContext()))requestPermissionForAlias("notifications",call,"notificationsResult");else notificationsResult(call);}

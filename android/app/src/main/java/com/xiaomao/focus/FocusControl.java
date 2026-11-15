@@ -24,7 +24,13 @@ final class FocusControl {
         rest = new RestEngine(context, store, clock);
     }
 
-    JSONObject startFocus(JSONObject session) throws JSONException { return focus.start(session); }
+    JSONObject startFocus(JSONObject session) throws JSONException {
+        synchronized (store) {
+            JSONObject prepared = new JSONObject(session.toString());
+            prepared.put("protection", FocusProtection.capture(context, store));
+            return focus.start(prepared);
+        }
+    }
     JSONObject focusAction(String action) throws JSONException { return focus.action(action); }
     JSONObject startRest(String recordId) throws JSONException { return rest.start(recordId); }
     JSONObject restAction(String action) throws JSONException {
