@@ -39,7 +39,16 @@ public final class ProbeActivity extends Activity {
         TextView title = text(body, "T03 · Wallpaper auxiliary probe", 24);
         title.setContentDescription("Wallpaper probe recovery entry");
         text(body, "Separate test app · ordinary application identity · no root/device-owner. It records Android wallpaper service callbacks; it cannot guarantee process survival or immunity to force-stop. Production focus data is not touched.", 16);
-        stateView = text(body, "", 15);
+        button(body, "Fixture - set known static original", v -> fixture(false, false));
+        button(body, "Fixture - choose known live original", v -> {
+            if (!environment.fixtureUserAllowed()) { showFixtureFailure("Live test fixture is blocked for system user 0."); return; }
+            if (session.snapshot().unresolved) { showFixtureFailure("Resolve the existing experiment first."); return; }
+            launchPicker(new ComponentName(this, BaselineWallpaperService.class), true);
+        });
+        button(body, "Fixture - later home choice", v -> fixture(false, true));
+        button(body, "Fixture - later lock choice", v -> fixture(true, true));
+        stateView = new TextView(this);
+        stateView.setTextSize(15);
         button(body, "1 · Capture original wallpaper state", v -> capture());
         if (Build.VERSION.SDK_INT <= 32)
             button(body, "Optional · grant image-read permission", v -> requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, 41));
@@ -63,6 +72,7 @@ public final class ProbeActivity extends Activity {
             .setPositiveButton("Stop / restore", (d, which) -> restore()).show());
         button(body, "Open system wallpaper settings for manual recovery", v -> openWallpaperSettings());
         button(body, "Confirm manual recovery / recheck", v -> { session.confirmManualRestore(); render(); });
+        body.addView(stateView);
         text(body, "Evidence (private local files; run-as export instructions in README)", 18);
         evidenceView = text(body, "", 12);
         setContentView(scroll);
@@ -84,6 +94,20 @@ public final class ProbeActivity extends Activity {
         super.onRequestPermissionsResult(request, permissions, grants);
         environment.event("read_permission_result", grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED ? "granted" : "denied");
         render();
+    }
+
+    private void fixture(boolean lockOnly, boolean later) {
+        new AlertDialog.Builder(this).setTitle("Disposable test user only")
+            .setMessage("This explicitly replaces " + (lockOnly ? "lock" : "home") + " wallpaper with a generated known-source test image. Continue only inside the disposable Android test user; never on the owner's original wallpaper.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Set test fixture", (d, w) -> {
+                try { environment.installStaticFixture(lockOnly, later); render(); }
+                catch (Exception e) { showFixtureFailure(e.toString()); }
+            }).show();
+    }
+
+    private void showFixtureFailure(String detail) {
+        environment.event("fixture_failed", detail);
+        new AlertDialog.Builder(this).setTitle("Fixture refused").setMessage(detail).setPositiveButton("OK", null).show();
     }
 
     private void capture() {

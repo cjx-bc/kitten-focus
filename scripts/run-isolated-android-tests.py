@@ -19,7 +19,11 @@ def main():
     parser.add_argument('--app-apk', type=Path, default=root / 'android/app/build/outputs/apk/debug/app-debug.apk')
     parser.add_argument('--test-apk', type=Path, default=root / 'android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--timeout', type=int, default=180,
+                        help='Maximum instrumentation duration in seconds')
     args = parser.parse_args()
+    if not 1 <= args.timeout <= 900:
+        parser.error('--timeout must be between 1 and 900 seconds')
     if not args.serial or not re.fullmatch(r'(?:emulator-\d+|127\.0\.0\.1:\d+)', args.serial):
         parser.error('Specify an emulator serial using --serial or ANDROID_SERIAL')
     adb = Path(os.environ.get('ADB') or configured.get('adb') or root / '.tools/android-sdk/platform-tools/adb.exe')
@@ -51,7 +55,7 @@ def main():
         result = run([*device, 'install', '-r', apk])
         (args.output / (label + '-install.txt')).write_text(result, encoding='utf-8')
     result = run([*device, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
-                  args.class_name, package + '.test/androidx.test.runner.AndroidJUnitRunner'], timeout=180)
+                  args.class_name, package + '.test/androidx.test.runner.AndroidJUnitRunner'], timeout=args.timeout)
     (args.output / 'instrumentation.txt').write_text(result, encoding='utf-8')
     metadata['skipped'] = len(re.findall(r'INSTRUMENTATION_STATUS_CODE: -4\b', result))
     metadata['passed'] = bool(re.search(r'OK \(\d+ tests?\)', result)) \

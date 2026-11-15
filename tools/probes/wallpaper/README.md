@@ -8,8 +8,8 @@ The launcher is always available as a recovery entry. The app has no root, shell
 
 - Host public-command contract: **passed**, including cancellation, process reconstruction, later wallpaper choice, and a partial restoration write interrupted before recovery.
 - All Android Java sources compiled with `javac` against Android API 36: **passed**.
-- APK build: queued for the root agent's Gradle lease; **not run by this worker**.
-- Actual device service selection/reconnect, static/live visual restoration and reboot: **not yet verified**. No device commands, installation, wallpaper changes or device restarts were performed by this worker. These checks remain required; an API return cannot pass A11.
+- Standalone APK builds and final measured build: **passed**. Final SHA256 `d1096512bfb27c204ef4851ae86fdc157f22ae3363916791a479457d80d5d656`.
+- Official API36 emulator: actual Android picker cancel/select, matched ordinary-process controls, two real reboots, supplied static-source and original live-component visual restoration, later home/lock choices and exact disposable-user cleanup are **measured**. See `RESULTS.md` for evidence and unexecuted combinations. Production T17 and physical/OEM/other-API coverage remain separate requirements.
 
 Root's read-only MuMu baseline was reported as system `ImageWallpaper`, system ID 2, no separate lock entry. Shell UID 2000 could not read `/data/system/users/0/wallpaper*`. This metadata is not a pixel/crop backup. **Keep the disposable-baseline checkbox OFF and do not activate the probe on that existing wallpaper unless a complete external recovery source has first been preserved.** A blocked activation is useful limitation evidence, not a reason to grant broader privileges.
 
@@ -82,7 +82,7 @@ adb shell dumpsys wallpaper
 
 `events.jsonl` contains timestamps, API/model, PID/process token, boot count, lifecycle events and state reasons. It has no notification content or production data. Static image backups stay in this app's private `files/wallpaper-probe/` folder with Android backup disabled. Its state and images must not be imported into a production backup.
 
-Record for every matrix row: build commit/APK hash, device/API/OEM, ordinary identity, baseline type/home+lock IDs, source backup availability, confirmation/cancellation, before/after screenshots and wallpaper dumps, event log, actual reconnection latency, restoration outcome and remaining responsibility. Required rows are static/live × refusal/selection × ordinary process death/reboot × unchanged/later home choice/later lock choice. Mark unexecuted rows **pending**, unsupported rows **limited**, and incomplete restoration **failed/limited**. T03/A11 is not passed by the host contract or a denied metadata check.
+The API36 continuation records a representative matrix rather than every Cartesian combination; unexecuted combinations remain explicit in RESULTS. Record for every executed matrix row: build commit/APK hash, device/API/OEM, ordinary identity, baseline type/home+lock IDs, source backup availability, confirmation/cancellation, before/after screenshots and wallpaper dumps, event log, actual reconnection latency, restoration outcome and remaining responsibility. Required rows are static/live × refusal/selection × ordinary process death/reboot × unchanged/later home choice/later lock choice. Mark unexecuted rows **pending**, unsupported rows **limited**, and incomplete restoration **failed/limited**. T03/A11 is not passed by the host contract or a denied metadata check.
 
 ## Official API basis (checked 2026-11-15)
 
@@ -91,3 +91,25 @@ Record for every matrix row: build commit/APK hash, device/API/OEM, ordinary ide
 - [WallpaperService.Engine](https://developer.android.com/reference/android/service/wallpaper/WallpaperService.Engine): preview, visibility and surface lifecycle observations.
 
 No undocumented guarantee is inferred from these APIs. API24/25/26+ and physical-device OEM/launcher behavior still require separate results; the MuMu API35 check cannot stand in for them.
+
+## API36 disposable secondary-user fixtures
+
+The continuation uses a newly created full secondary Android user and records its exact id/name before switching. Only that created user may be removed. System user 0 is never a fixture target: both generated static-fixture writes and the known-live-original picker entry refuse `UserManager.isSystemUser()`.
+
+The probe can explicitly install a known static original through its confirmation UI. It saves the generated PNG before its public `WallpaperManager.setStream` call, records the returned id, and accepts that source during capture only if the current wallpaper id still equals the receipt. It never calls this a read of an arbitrary Android 13+ original image. The original fixture writes both home and lock in one public API call so the lock shares that known source; a later lock-only choice writes only the lock. Clearing a lock after a home write is deliberately avoided because it can change the home identity on API36. Source receipts cannot authorize an unrelated later wallpaper.
+
+The purple `BaselineWallpaperService` is an independent fixture in the `:baseline` process. It has no settings or private provider state. Restoration must still use Android's picker. Its process cannot be mistaken for the main lifecycle probe process in the unselected control. These fixtures are absent from production.
+
+To compare actual ordinary process death, first background the probe, record its exact main-process PID, then use debug `run-as com.xiaomao.focus.wallpaperprobe --user <created-id> kill -9 <own-main-pid>`. This uses only the probe UID and kills no other package. Record both PID disappearance and subsequent callbacks before manually opening its activity. `am kill` refusing a bound process and force-stop are separate cases.
+
+Do not uninstall while an unresolved restoration journal remains. Export the fixtures, receipts, journal, events, wallpaper dumps and screenshots first. Restore or preserve the explicit later user choice, switch back to user 0, verify its original wallpaper identity, then remove only the recorded disposable user and the otherwise unused probe package.
+
+
+Reproduce a process control only after acquiring the shared device lease and creating the recorded secondary user:
+
+```powershell
+python tools/probes/wallpaper/measure-process.py --adb D:/KittenFocus-Android/sdk/platform-tools/adb.exe --serial emulator-5580 --user <created-user-id> --condition unselected --seconds 15 --out <evidence-dir>
+# After actual Android selection, repeat with --condition selected and a different evidence directory.
+```
+
+The command never opens the probe Activity after the kill. Inspect the captured actual Home before/after screenshots as well as its metadata verdict. The first observed new PID is an observation bound, not a universal framework restart-time guarantee.

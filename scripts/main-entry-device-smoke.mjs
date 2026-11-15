@@ -31,6 +31,7 @@ try {
   const started = (await native('startLock', { configurationId: 'routing-lock', strictLockConfirmed: true })).session
   for (const path of ['/tasks', '/statistics', '/settings', '/calendar', '/cat']) { await route(path); await at('/lock') }
   for (const path of ['/permissions', '/help', '/emergency', '/recovery']) { await route(path); await at(path); await until(() => text().then(value => value.includes('返回锁机控制')), 'safety page content') }
+  await until(() => evaluate('[...document.querySelectorAll("dialog[open] button")].some(button => button.textContent.trim() === "取消，保持现状")'), 'recovery preview modal is mounted')
   await click('取消，保持现状')
   await route('/help'); await at('/help')
   command('shell', 'input', 'keyevent', '3')

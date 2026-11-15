@@ -1,31 +1,46 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { protectionDriver } from '../platform/bridge'
+import { useApp } from '../stores/app'
+import { protectionHelpSections as sections } from '../content/protectionHelp'
 import RecoverySheet from '../components/RecoverySheet.vue'
+import ProtectionDiagnostics from '../components/ProtectionDiagnostics.vue'
 import Icon from '../components/Icon.vue'
-const route = useRoute(), error = ref(''), recoveryOpen = ref(false)
-const title = computed(() => ({ '/permissions': '权限与保护状态', '/help': '锁机帮助', '/emergency': '紧急与必要交互', '/recovery': '故障恢复' })[route.path] ?? '保护帮助')
-async function authorize() {
-  try { await protectionDriver.openSettings() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+const route = useRoute(), app = useApp(), recoveryOpen = ref(false)
+const title = computed(() => ({ '/permissions': '权限与保护状态', '/help': '保护帮助', '/emergency': '紧急与必要交互', '/recovery': '故障恢复' })[route.path] ?? '保护帮助')
+const returnPath = computed(() => app.lock.session ? '/lock' : app.focus.session ? '/focus' : '/settings')
+function goToSection(id: string) {
+  const target = document.getElementById(`help-${id}`)
+  target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: 'start' })
 }
 watch(() => route.path, path => { recoveryOpen.value = path === '/recovery' })
 onMounted(() => { recoveryOpen.value = route.path === '/recovery' })
 </script>
 <template>
   <div class="page protection-help-page">
-    <header class="page-header"><RouterLink to="/lock" class="icon-button" aria-label="返回锁机控制"><Icon name="back" /></RouterLink><h1>{{ title }}</h1></header>
-    <template v-if="route.path === '/permissions'"><p>无障碍服务用于识别前台应用并显示应用限制页，不读取窗口正文。授权后返回应用重新检查；服务失效不会暂停本轮计时。</p><button class="secondary wide" @click="authorize">前往无障碍授权</button></template>
-    <template v-else-if="route.path === '/emergency'"><p>电话、来电、紧急拨号、输入法和必要系统交互保持可用。可使用系统锁屏上的紧急呼叫入口；请按所在地与实际情况选择号码。</p><a class="secondary wide" href="tel:">打开电话拨号</a></template>
-    <template v-else-if="route.path === '/recovery'"><p>恢复前先查看逐项清单；取消不操作。确认会撤销本轮保护并恢复普通入口，同一轮不会因重新打开应用或服务重连再次限制入口。锁机和严格计时继续，到期自动结束。</p><button class="secondary wide" @click="recoveryOpen = true">查看本轮恢复项目</button></template>
-    <template v-else><p>锁机独立于待办和专注统计，结束后不会自动休息。普通锁机可确认后提前解除；严格锁机到期自动结束。</p><p>开启主界面限制后，本轮普通启动和业务路由都返回锁机控制页。权限、帮助、紧急和故障恢复始终可进入。设置修改仅用于下一轮，恢复不会结束严格锁机。</p></template>
-    <div class="safety-links"><RouterLink to="/permissions">权限与保护状态</RouterLink><RouterLink to="/help">锁机帮助</RouterLink><RouterLink to="/emergency">紧急与必要交互</RouterLink><RouterLink to="/recovery">故障恢复</RouterLink><RouterLink to="/lock">返回锁机控制</RouterLink></div>
-    <p v-if="error" role="alert" class="form-error">{{ error }}</p>
+    <header class="page-header"><RouterLink :to="returnPath" class="icon-button" aria-label="返回当前控制或设置"><Icon name="back" /></RouterLink><h1>{{ title }}</h1></header>
+    <nav class="safety-links" aria-label="保护帮助导航"><RouterLink to="/permissions" :aria-current="route.path === '/permissions' ? 'page' : undefined">权限与保护状态</RouterLink><RouterLink to="/help" :aria-current="route.path === '/help' ? 'page' : undefined">离线帮助</RouterLink><RouterLink to="/recovery" :aria-current="route.path === '/recovery' ? 'page' : undefined">故障恢复</RouterLink><RouterLink to="/emergency" :aria-current="route.path === '/emergency' ? 'page' : undefined">紧急与必要交互</RouterLink></nav>
+    <ProtectionDiagnostics v-if="route.path === '/permissions'" />
+    <template v-else-if="route.path === '/emergency'"><p>电话、来电、紧急拨号、输入法和必要系统交互保留为例外。可使用系统锁屏上的紧急呼叫入口；请按所在地与实际情况选择号码。</p><p>实际可达性仍受设备、运营商和系统权限影响，模拟器测试不能代替真实通话验证。遇到保护异常，可直接进入故障恢复，不必先解除严格计时。</p><a class="secondary wide" href="tel:">打开电话拨号</a></template>
+    <template v-else-if="route.path === '/recovery'"><p>恢复前先查看逐项清单；取消不操作。确认撤销本轮已施加的保护后，主动撤销的能力同一轮不会因服务重连再次开启。</p><p>专注与锁机计时、严格约束、名单、偏好和记录保留。失败或系统受限会继续显示，可重试未恢复项目。</p><button class="secondary wide" @click="recoveryOpen = true">查看本轮恢复项目</button><RouterLink class="secondary wide" to="/permissions">查看逐项状态与失败原因</RouterLink></template>
+    <template v-else>
+      <p class="muted">这些正文随应用提供，无需联网。实际支持与保护效果请到权限页逐项检查。</p>
+      <nav class="help-contents" aria-label="帮助目录"><a v-for="section in sections" :key="section.id" :href="`#help-${section.id}`" @click.prevent="goToSection(section.id)">{{ section.title }}</a></nav>
+      <section v-for="section in sections" :id="`help-${section.id}`" :key="section.id" class="help-section" tabindex="-1"><h2>{{ section.title }}</h2><p v-for="paragraph in section.paragraphs" :key="paragraph">{{ paragraph }}</p></section>
+      <RouterLink class="secondary wide" to="/recovery">查看本轮恢复清单</RouterLink>
+    </template>
+    <RouterLink :to="returnPath" class="secondary wide">{{ app.lock.session ? '返回锁机控制' : app.focus.session ? '返回专注计时' : '返回我的' }}</RouterLink>
     <RecoverySheet :open="recoveryOpen" @close="recoveryOpen = false" />
   </div>
 </template>
 <style scoped>
-.protection-help-page, .safety-links { display: grid; gap: 20px; }
-p { line-height: 1.8; } .safety-links a { min-height: 44px; display: flex; align-items: center; }
+.protection-help-page { display: grid; gap: 24px; padding-bottom: 36px; }
+.page-header { gap: 10px; margin-bottom: 0; } .page-header h1 { font-size: 25px; }
+p { font-size: 14px; line-height: 1.9; overflow-wrap: anywhere; }
+.safety-links { display: flex; flex-wrap: wrap; gap: 4px 20px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.safety-links a, .help-contents a { min-height: 44px; display: flex; align-items: center; font-size: 13px; }
+.safety-links a[aria-current='page'] { font-weight: 700; text-decoration: underline; text-underline-offset: 6px; }
+.help-contents { display: grid; padding: 10px 18px; background: var(--surface); border-radius: 18px; }
+.help-section { display: grid; gap: 14px; scroll-margin-top: 24px; }
+.help-section h2 { font-size: 19px; line-height: 1.6; } .help-section:focus { outline: 2px solid var(--focus); outline-offset: 8px; border-radius: 4px; }
 </style>
