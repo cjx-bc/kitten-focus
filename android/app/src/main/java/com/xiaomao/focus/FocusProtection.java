@@ -89,14 +89,20 @@ final class FocusProtection {
             if (value instanceof String && !((String) value).isEmpty()) packages.add((String) value);
         }
         packages.add(context.getPackageName());
+        JSONArray enhancements = prefs.optJSONArray("enhancements");
+        JSONArray selectedEnhancements = new JSONArray();
+        if (enhancements != null) for (int i = 0; i < enhancements.length(); i++) {
+            String value = enhancements.optString(i);
+            if ("navigationHomeRecents".equals(value)) selectedEnhancements.put(value);
+        }
         return new JSONObject().put("study", study).put("source", source)
-            .put("whitelist", new JSONArray(packages));
+            .put("whitelist", new JSONArray(packages)).put("enhancements", selectedEnhancements);
     }
 
     static JSONObject status(Context context, LocalStore store, JSONObject observation) throws JSONException {
         boolean granted = authorized(context), connected = FocusAccessibilityService.connected();
         boolean preferred = preferences(store).optBoolean("study", false);
-        JSONObject session = observation.getJSONObject("focus").optJSONObject("session");
+        JSONObject session = ControlSession.from(observation);
         JSONObject protection = session == null ? null : session.optJSONObject("protection");
         boolean requested = protection != null && protection.optBoolean("study");
         boolean withdrawn = protection != null && protection.optBoolean("applicationsWithdrawn");
@@ -111,7 +117,15 @@ final class FocusProtection {
         return new JSONObject().put("supported", true).put("authorized", granted).put("connected", connected)
             .put("active", current && effective).put("preferenceEnabled", preferred)
             .put("state", state).put("reason", reason)
-            .put("effectiveWhitelist", protection == null ? new JSONArray() : protection.optJSONArray("whitelist"));
+            .put("effectiveWhitelist", protection == null ? new JSONArray() : protection.optJSONArray("whitelist"))
+            .put("navigation", observation.optJSONObject("navigation"));
+    }
+
+    static boolean navigationRequested(JSONObject protection) {
+        JSONArray enhancements = protection == null ? null : protection.optJSONArray("enhancements");
+        if (enhancements == null) return false;
+        for (int i = 0; i < enhancements.length(); i++) if ("navigationHomeRecents".equals(enhancements.optString(i))) return true;
+        return false;
     }
 
     static void openSettings(Context context) {
@@ -125,11 +139,11 @@ final class FocusProtection {
     /** Uses only observeControl(), never the lifecycle read/settlement command. */
     static boolean shouldBlock(Context context, JSONObject observation, String packageName, String className) {
         if (packageName == null || packageName.isEmpty() || observation.optBoolean("needsReconcile")
-            || !"focus".equals(observation.optString("owner"))) return false;
-        JSONObject focus = observation.optJSONObject("focus");
-        JSONObject session = focus == null ? null : focus.optJSONObject("session");
+            || !("focus".equals(observation.optString("owner")) || "lock".equals(observation.optString("owner")))) return false;
+        JSONObject session = ControlSession.from(observation);
         JSONObject protection = session == null ? null : session.optJSONObject("protection");
-        if (protection == null || !protection.optBoolean("study") || protection.optBoolean("applicationsWithdrawn") || context.getPackageName().equals(packageName)) return false;
+        if (protection == null || context.getPackageName().equals(packageName)) return false;
+        if (!protection.optBoolean("study") || protection.optBoolean("applicationsWithdrawn")) return false;
         JSONObject temporary = session.optJSONObject("temporaryAccess");
         if (temporary != null && temporary.optLong("remainingMs") > 0 && packageName.equals(temporary.optString("targetPackage"))) return false;
         JSONArray whitelist = protection.optJSONArray("whitelist");

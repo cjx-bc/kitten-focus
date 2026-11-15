@@ -55,6 +55,69 @@ public class FocusControlTest {
             .put("elapsedMs", 0).put("pausedMs", 0).put("segments", new JSONArray());
     }
 
+    @Test public void navigationChoiceIsIndependentAndFixedWhilePausedThenRecoverable() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").put("protection", new JSONObject().put("study", false)
+            .put("enhancements", new JSONArray().put("navigationHomeRecents")));
+        control.replaceData(data);
+        FocusProtection.AccessibilityState available = new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; }
+            public boolean connected() { return true; }
+        };
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), available);
+        JSONObject started = control.startFocus(session("countdown"));
+        assertEquals("navigationHomeRecents", started.getJSONObject("session").getJSONObject("protection")
+            .getJSONArray("enhancements").getString(0));
+        assertFalse(started.getJSONObject("session").getJSONObject("protection").getBoolean("study"));
+        data.getJSONObject("preferences").getJSONObject("protection").put("enhancements", new JSONArray());
+        store.saveData(data, false);
+        clock.advance(1000);
+        control.focusAction("pause");
+        assertTrue(control.observeControl().getJSONObject("navigation").getBoolean("requested"));
+        JSONObject recovery = control.previewRecovery();
+        assertEquals("navigationRestriction", recovery.getJSONArray("steps").getJSONObject(0).getString("capability"));
+        control.confirmRecovery(recovery.getString("revision"));
+        assertEquals("recovered", control.observeControl().getJSONObject("navigation").getString("state"));
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), available);
+        assertFalse(control.observeControl().getJSONObject("navigation").getBoolean("active"));
+        assertEquals("paused", control.observeControl().getJSONObject("focus").getJSONObject("session").getString("state"));
+        assertEquals(0, control.loadData().getJSONArray("records").length());
+    }
+
+    @Test public void navigationReportsObservedReturnAndStopsAtDeadlineWithoutSettling() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").put("protection", new JSONObject()
+            .put("enhancements", new JSONArray().put("navigationHomeRecents")));
+        control.replaceData(data);
+        int[] returns = {0};
+        FocusNavigation.Device device = new FocusNavigation.Device() {
+            public boolean supported() { return true; }
+            public boolean authorized() { return true; }
+            public boolean connected() { return true; }
+            public String target(String pkg, String cls) { return "launcher".equals(pkg) && "Home".equals(cls) ? "home" : ""; }
+            public void returnToFocus(String target) { returns[0]++; }
+        };
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), null,
+            new AndroidDndSystem(context), packageName -> () -> {}, device);
+        control.startFocus(session("countdown"));
+        assertEquals("armed", control.observeControl().getJSONObject("navigation").getString("state"));
+        assertFalse(control.navigationWindow("com.android.phone", "Dialer"));
+        assertFalse(control.navigationWindow("com.android.settings", "Settings"));
+        assertTrue(control.navigationWindow("launcher", "Home"));
+        assertEquals(1, returns[0]);
+        assertFalse(control.observeControl().getJSONObject("navigation").getBoolean("active"));
+        control.navigationWindow(context.getPackageName(), "com.xiaomao.focus.MainActivity");
+        assertEquals("protecting", control.observeControl().getJSONObject("navigation").getString("state"));
+        clock.advance(60000);
+        assertTrue(control.observeControl().getBoolean("needsReconcile"));
+        assertFalse(control.navigationWindow("launcher", "Home"));
+        assertFalse(control.observeControl().getJSONObject("navigation").getBoolean("active"));
+        assertEquals(0, control.loadData().getJSONArray("records").length());
+        control.reconcile();
+        assertEquals("rest", control.observeControl().getString("owner"));
+        assertFalse(control.previewRecovery().getBoolean("pending"));
+    }
+
     @Test public void strictCountdownRequiresConfirmationBeforeStart() throws Exception {
         JSONObject data = control.loadData();
         data.getJSONObject("preferences").put("protection", new JSONObject().put("strict", true));

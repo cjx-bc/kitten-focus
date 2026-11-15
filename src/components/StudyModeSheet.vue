@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
@@ -9,6 +9,7 @@ import Icon from './Icon.vue'
 import StrictModeSetting from './StrictModeSetting.vue'
 import AppWhitelistEditor from './AppWhitelistEditor.vue'
 import DndSetting from './DndSetting.vue'
+import EnhancedProtectionSettings from './EnhancedProtectionSettings.vue'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const app = useApp()
@@ -57,6 +58,7 @@ async function authorize() {
       <label class="switch"><span>学霸模式<small>限制其他应用使用</small></span><input type="checkbox" :checked="prefs.study" :disabled="busy" @change="toggleStudy" /></label>
       <StrictModeSetting />
       <DndSetting />
+      <EnhancedProtectionSettings />
       <div class="protection-state" role="status">
         <strong>{{ status ? stateLabels[status.state] : '正在检查能力' }}</strong>
         <p>{{ status?.reason }}</p>

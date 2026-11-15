@@ -54,6 +54,8 @@ export const defaultProtection = (): ProtectionPreferences => ({
 })
 export interface ProtectionSnapshot {
   applicationsWithdrawn?: boolean
+  navigationWithdrawn?: boolean
+  enhancements?: string[]
   study: boolean
   source: 'global' | 'custom'
   whitelist: string[]
@@ -64,7 +66,20 @@ export function effectiveWhitelist(data: AppData, itemId: string | null): Pick<P
   return { source: custom ? 'custom' : 'global',
     whitelist: [...new Set(custom ? custom.packages : data.preferences.protection?.globalWhitelist ?? [])] }
 }
+export interface NavigationProtectionStatus {
+  supported: boolean
+  authorized: boolean
+  connected: boolean
+  active: boolean
+  preferenceEnabled: boolean
+  requested: boolean
+  state: 'off' | 'authorization' | 'ready' | 'armed' | 'protecting' | 'failed' | 'unsupported' | 'recovered'
+  reason: string
+  lastReturnedAt: number | null
+  lastTarget: 'home' | 'recents' | null
+}
 export interface ProtectionStatus {
+  navigation?: NavigationProtectionStatus
   supported: boolean
   authorized: boolean
   connected: boolean

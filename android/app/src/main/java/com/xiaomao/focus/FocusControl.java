@@ -17,6 +17,7 @@ final class FocusControl {
     private final FocusRecovery recovery;
     private final FocusProtection.AccessibilityState accessibility;
     private final DndProtection dnd;
+    private final FocusNavigation navigation;
 
     FocusControl(Context context) {
         this(context, LocalStore.get(context), SessionClock.system(context));
@@ -54,6 +55,10 @@ final class FocusControl {
     }
     FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
                  FocusProtection.AccessibilityState accessibility, DndSystem system, TargetLaunch targetLaunch) {
+        this(context, store, clock, recovery, accessibility, system, targetLaunch, FocusNavigation.android(context, accessibility));
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
+                 FocusProtection.AccessibilityState accessibility, DndSystem system, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice) {
         this.targetLaunch = targetLaunch;
         this.context = context.getApplicationContext();
         this.store = store;
@@ -62,6 +67,7 @@ final class FocusControl {
         rest = new RestEngine(context, store, clock);
         this.recovery = recovery;
         this.accessibility = accessibility;
+        navigation = new FocusNavigation(context, store, navigationDevice);
         dnd = new DndProtection(context, store.getDatabaseName(), system);
         recovery.register(new FocusRecovery.RecoveryOperation() {
             public JSONObject preview() throws JSONException { return dnd.recoveryStep(); }
@@ -88,6 +94,7 @@ final class FocusControl {
                 .put("segments", new JSONArray());
             started.put("protection", accessibility == null ? FocusProtection.capture(context, store, session) : FocusProtection.capture(context, store, session, accessibility));
             started.put("dndRequested", protection != null && Boolean.TRUE.equals(protection.opt("dnd")));
+            navigation.checkStart(started);
             dnd.checkStart(started);
             recovery.prepare(started);
             JSONObject result = focus.start(started);
@@ -106,6 +113,7 @@ final class FocusControl {
             JSONObject result = focus.action(action);
             JSONObject remaining = result.optJSONObject("session");
             recovery.releaseFinished(remaining == null ? null : remaining.optString("id"));
+            if (remaining == null) navigation.release();
             dnd.synchronize(store.read("active"));
             return projectTemporary(result);
         }
@@ -131,6 +139,7 @@ final class FocusControl {
             rest.sync();
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
+            if (active == null) navigation.release();
             dnd.synchronize(store.read("active"));
             return observeControl();
         }
@@ -142,8 +151,10 @@ final class FocusControl {
             JSONObject focusSnapshot = focus.observe();
             JSONObject restSnapshot = rest.observe();
             JSONObject active = focusSnapshot.optJSONObject("session");
-            if (active != null && active.optJSONObject("protection") != null)
+            if (active != null && active.optJSONObject("protection") != null) {
                 active.getJSONObject("protection").put("applicationsWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.APPLICATIONS));
+                active.getJSONObject("protection").put("navigationWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.NAVIGATION));
+            }
             JSONObject resting = restSnapshot.optJSONObject("session");
             boolean runningRest = resting != null && resting.optString("state").equals("running");
             boolean needsReconcile = active != null && (
@@ -152,11 +163,12 @@ final class FocusControl {
                     && focusSnapshot.optLong("elapsedMs") >= active.optLong("targetMs"));
             needsReconcile |= runningRest && (resting.optInt("bootId") != clock.boot()
                 || restSnapshot.optLong("remainingMs") == 0);
-            return new JSONObject()
+            JSONObject observation = new JSONObject()
                 .put("owner", active != null ? "focus" : runningRest ? "rest" : JSONObject.NULL)
                 .put("focus", projectTemporary(focusSnapshot)).put("rest", restSnapshot)
                 .put("dnd", dnd.observe(active))
                 .put("needsReconcile", needsReconcile);
+            return observation.put("navigation", navigation.observe(observation));
         }
     }
 
@@ -254,8 +266,16 @@ final class FocusControl {
     }
 
     JSONObject loadData() throws JSONException { return store.loadData(); }
+    /** OS-event command; callers must supply actual package/class from accessibility. */
+    boolean navigationWindow(String packageName, String className) throws JSONException {
+        synchronized (store) { return navigation.window(observeControl(), packageName, className); }
+    }
     JSONObject previewRecovery() throws JSONException { synchronized (store) { return recovery.preview(); } }
-    JSONObject confirmRecovery(String revision) throws JSONException { synchronized (store) { return recovery.confirm(revision); } }
+    JSONObject confirmRecovery(String revision) throws JSONException { synchronized (store) {
+        JSONObject result = recovery.confirm(revision);
+        navigation.release();
+        return result;
+    } }
 
     JSONObject getDndStatus() throws JSONException {
         synchronized (store) { return dnd.observe(store.read("active")); }

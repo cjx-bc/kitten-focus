@@ -93,7 +93,10 @@ export const focusDriver = {
   async start(session: ActiveFocus, strictModeConfirmed = false): Promise<FocusSnapshot> {
     if (native) return plugin.startFocus({ session, strictModeConfirmed })
     const db = await webReadFocus()
-    if ((await repository.load()).preferences.protection?.study)
+    const preferredProtection = (await repository.load()).preferences.protection
+    if (preferredProtection?.enhancements?.includes('navigationHomeRecents'))
+      throw new Error('桌面与最近任务限制仅支持 Android 本机版本，请关闭此增强后继续')
+    if (preferredProtection?.study)
       throw new Error('应用限制仅支持 Android 本机版本，请关闭学霸模式后继续')
     if (browserSession) throw new Error('请先结束当前专注')
     if ((await restDriver.read()).session?.state === 'running')
@@ -214,7 +217,7 @@ export const protectionDriver = {
   async status(): Promise<ProtectionStatus> {
     if (native) return plugin.protectionStatus()
     return { supported: false, authorized: false, connected: false, active: false,
-      preferenceEnabled: false, state: 'unsupported', reason: '应用限制仅支持 Android 本机版本', effectiveWhitelist: [] }
+      preferenceEnabled: false, state: 'unsupported', reason: '应用限制仅支持 Android 本机版本', effectiveWhitelist: [], navigation: { supported: false, authorized: false, connected: false, active: false, preferenceEnabled: false, requested: false, state: 'unsupported', reason: 'Android only', lastReturnedAt: null, lastTarget: null } }
   },
   async apps(): Promise<ProtectionApp[]> {
     return native ? (await plugin.listProtectionApps()).apps : []
