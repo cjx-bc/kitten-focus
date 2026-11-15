@@ -32,7 +32,7 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void replaceData(PluginCall call){resolve(call,()->{control.replaceData(call.getObject("data"));return null;});}
     @PluginMethod public void startFocus(PluginCall call){resolve(call,()->control.startFocus(call.getObject("session"),Boolean.TRUE.equals(call.getBoolean("strictModeConfirmed",false))));}
     @PluginMethod public void focusAction(PluginCall call){resolve(call,()->control.focusAction(call.getString("action","read")));}
-    @PluginMethod public void startLock(PluginCall call){resolve(call,()->control.startLock(call.getString("configurationId","")));}
+    @PluginMethod public void startLock(PluginCall call){resolve(call,()->control.startLock(call.getString("configurationId",""),Boolean.TRUE.equals(call.getBoolean("strictLockConfirmed",false))));}
     @PluginMethod public void lockAction(PluginCall call){resolve(call,()->control.lockAction(call.getString("action","read"),Boolean.TRUE.equals(call.getBoolean("confirmed",false))));}
     @PluginMethod public void startRest(PluginCall call){resolve(call,()->control.startRest(call.getString("recordId","")));}
     @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}
