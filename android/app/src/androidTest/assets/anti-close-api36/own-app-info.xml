@@ -1,0 +1,56 @@
+<?xml version='1.0' encoding='utf-8'?>
+<hierarchy>
+  <node text="" resource-id="" class="android.widget.FrameLayout" package="com.android.settings">
+    <node text="" resource-id="" class="android.widget.LinearLayout" package="com.android.settings">
+      <node text="" resource-id="android:id/content" class="android.widget.FrameLayout" package="com.android.settings">
+        <node text="" resource-id="" class="androidx.compose.ui.platform.ComposeView" package="com.android.settings">
+          <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+            <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+              <node text="" resource-id="" class="android.widget.ScrollView" package="com.android.settings">
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="小猫专注 QA" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                </node>
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="Archive" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                  <node text="" resource-id="" class="android.widget.Button" package="com.android.settings" />
+                </node>
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="Uninstall" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                  <node text="" resource-id="" class="android.widget.Button" package="com.android.settings" />
+                </node>
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="Force stop" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                  <node text="" resource-id="" class="android.widget.Button" package="com.android.settings" />
+                </node>
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="Notifications" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                  <node text="Off" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                </node>
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="Permissions" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                  <node text="No permissions granted" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                </node>
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="Storage &amp; cache" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                  <node text="19.12 MB used in internal storage" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+                </node>
+              </node>
+              <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="" resource-id="" class="android.view.View" package="com.android.settings" />
+                  <node text="" resource-id="" class="android.widget.Button" package="com.android.settings" />
+                </node>
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings" />
+                <node text="" resource-id="" class="android.view.View" package="com.android.settings">
+                  <node text="" resource-id="" class="android.view.View" package="com.android.settings" />
+                  <node text="" resource-id="" class="android.widget.Button" package="com.android.settings" />
+                </node>
+                <node text="App info" resource-id="" class="android.widget.TextView" package="com.android.settings" />
+              </node>
+            </node>
+          </node>
+        </node>
+      </node>
+    </node>
+  </node>
+</hierarchy>

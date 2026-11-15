@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='utf-8'?>
+<hierarchy>
+  <node text="" resource-id="" class="android.widget.FrameLayout" package="com.google.android.packageinstaller">
+    <node text="" resource-id="" class="android.widget.FrameLayout" package="com.google.android.packageinstaller">
+      <node text="" resource-id="android:id/content" class="android.widget.FrameLayout" package="com.google.android.packageinstaller">
+        <node text="" resource-id="android:id/parentPanel" class="android.widget.LinearLayout" package="com.google.android.packageinstaller">
+          <node text="" resource-id="android:id/topPanel" class="android.widget.LinearLayout" package="com.google.android.packageinstaller">
+            <node text="" resource-id="android:id/title_template" class="android.widget.LinearLayout" package="com.google.android.packageinstaller">
+              <node text="小猫专注 QA" resource-id="android:id/alertTitle" class="android.widget.TextView" package="com.google.android.packageinstaller" />
+            </node>
+            <node text="" resource-id="android:id/titleDividerNoCustom" class="android.view.View" package="com.google.android.packageinstaller" />
+          </node>
+          <node text="" resource-id="android:id/contentPanel" class="android.widget.FrameLayout" package="com.google.android.packageinstaller">
+            <node text="" resource-id="android:id/scrollView" class="android.widget.ScrollView" package="com.google.android.packageinstaller">
+              <node text="" resource-id="" class="android.widget.LinearLayout" package="com.google.android.packageinstaller">
+                <node text="Do you want to uninstall this app?" resource-id="android:id/message" class="android.widget.TextView" package="com.google.android.packageinstaller" />
+              </node>
+            </node>
+          </node>
+          <node text="" resource-id="android:id/buttonPanel" class="android.widget.ScrollView" package="com.google.android.packageinstaller">
+            <node text="" resource-id="" class="android.widget.LinearLayout" package="com.google.android.packageinstaller">
+              <node text="Cancel" resource-id="android:id/button2" class="android.widget.Button" package="com.google.android.packageinstaller" />
+              <node text="OK" resource-id="android:id/button1" class="android.widget.Button" package="com.google.android.packageinstaller" />
+            </node>
+          </node>
+        </node>
+      </node>
+    </node>
+  </node>
+</hierarchy>

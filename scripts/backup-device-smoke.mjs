@@ -14,6 +14,7 @@ const click = label => evaluate(`(() => {
   button.click();
 })()`)
 const text = () => evaluate('document.body.innerText')
+const restoreReady = () => until(() => evaluate('[...document.querySelectorAll("dialog[open] button")].some(button => button.textContent.trim() === "确认恢复此备份" && !button.disabled)'), 'enabled restoration confirmation')
 const importJson = value => evaluate(`(() => {
   const input = document.querySelector('input[aria-label="选择小猫专注备份"]');
   const files = new DataTransfer();
@@ -33,7 +34,7 @@ try {
   await qa.send('Page.reload')
   await until(() => evaluate('!!document.querySelector(".tabbar")'), 'original UI ready')
   await evaluate("location.hash = '#/settings'")
-  await until(() => evaluate('!!document.querySelector("input[aria-label=\"选择小猫专注备份\"]")'), 'backup UI')
+  await until(() => evaluate("!!document.querySelector('input[aria-label=\"选择小猫专注备份\"]')"), 'backup UI')
   await evaluate(`(() => {
     const original = window.Capacitor.nativePromise.bind(window.Capacitor);
     window.__backupExport = null;
@@ -52,6 +53,7 @@ try {
   await native('replaceData', { data: changed })
   await importJson(exported.text)
   await until(async () => (await text()).includes('确认恢复此备份'), 'real JSON parsed and confirmation shown')
+  await restoreReady()
   await qa.screenshot('01-valid-confirmation')
   assert.equal((await native('loadData')).data.preferences.defaultMinutes, 45, 'Preview does not overwrite data')
   await click('确认恢复此备份')
@@ -72,6 +74,7 @@ try {
   malicious.data.notificationBody = 'never-persist-this'
   await importJson(JSON.stringify(malicious))
   await until(async () => (await text()).includes('确认恢复此备份'), 'untrusted JSON parsed')
+  await restoreReady()
   await click('确认恢复此备份')
   await until(async () => !(await text()).includes('确认恢复此备份'), 'malicious extras safely discarded')
   const safe = (await native('loadData')).data
@@ -81,6 +84,10 @@ try {
   results.push({ scenario: 'untrusted-runtime-and-authorization-never-reactivated', passed: true })
   qa.save('result.json', { passed: true, fileBoundary: 'public exportFile IPC capture; import via real File change/parser', results })
   console.log(JSON.stringify({ passed: true, results }, null, 2))
+} catch (error) {
+  qa.save('failure.json', { message: error.message, visibleErrors: await evaluate('[...document.querySelectorAll(".form-error,[role=alert]")].map(el => el.textContent)'), owner: (await native('observeControl')).owner })
+  await qa.screenshot('failure')
+  throw error
 } finally {
   if (original) await native('replaceData', { data: original })
   await qa.send('Page.reload')

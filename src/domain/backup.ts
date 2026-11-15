@@ -80,7 +80,9 @@ function businessData(data: AppData): AppData {
         'enhancements',
       ]),
     }
-  return structuredClone(result)
+  // The confirmation Sheet may pass Vue proxies. The portable contract is JSON;
+  // detach that representation without retaining reactive arrays or OS runtime.
+  return JSON.parse(JSON.stringify(result)) as AppData
 }
 export function readBackup(text: string): Backup {
   let raw: unknown
