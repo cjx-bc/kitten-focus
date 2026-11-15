@@ -6,6 +6,14 @@ android {
     buildFeatures { buildConfig true }
     defaultConfig {
         applicationId "com.xiaomao.focus"
+        // Keep device test data separate from the user's installed application.
+        def testSuffix = project.findProperty("testApplicationIdSuffix")?.toString()
+        if (testSuffix != null) {
+            if (!(testSuffix ==~ /\.[a-z][a-z0-9_.]*/)) {
+                throw new GradleException("Invalid test application id suffix")
+            }
+            applicationIdSuffix testSuffix
+        }
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode project.findProperty("updateVersionCode")?.toInteger() ?: 9
