@@ -46,6 +46,7 @@ public class MainActivity extends BridgeActivity {
             // Transient Overview can leave this Activity resumed and omit a second
             // accessibility state event. Actual window focus is independent OS evidence.
             new FocusControl(this).navigationWindow(getPackageName(), getClass().getName());
+            new FocusControl(this).antiCloseWindow(getPackageName(), getClass().getName());
         } catch (Exception ignored) {
             // A missing confirmation remains pending/failed; never infer a successful return.
         }

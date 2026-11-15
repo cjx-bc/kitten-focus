@@ -113,7 +113,7 @@ final class FocusProtection {
         JSONArray enhancements = prefs.optJSONArray("enhancements"), selected = new JSONArray();
         if (enhancements != null) for (int i = 0; i < enhancements.length(); i++) {
             String value = enhancements.optString(i);
-            if ("navigationHomeRecents".equals(value) || RecentTasksProtection.KEY.equals(value)) selected.put(value);
+            if ("navigationHomeRecents".equals(value) || RecentTasksProtection.KEY.equals(value) || FocusAntiClose.OPTION.equals(value)) selected.put(value);
         }
         return selected;
     }
@@ -137,23 +137,30 @@ final class FocusProtection {
             .put("active", current && effective).put("preferenceEnabled", preferred)
             .put("state", state).put("reason", reason)
             .put("effectiveWhitelist", protection == null ? new JSONArray() : protection.optJSONArray("whitelist"))
-            .put("navigation", observation.optJSONObject("navigation"));
+            .put("navigation", observation.optJSONObject("navigation")).put("antiClose", observation.optJSONObject("antiClose"));
     }
 
     static boolean navigationRequested(JSONObject protection) {
+        return enhancementRequested(protection, "navigationHomeRecents");
+    }
+    static boolean enhancementRequested(JSONObject protection, String option) {
         JSONArray enhancements = protection == null ? null : protection.optJSONArray("enhancements");
         if (enhancements == null) return false;
-        for (int i = 0; i < enhancements.length(); i++) if ("navigationHomeRecents".equals(enhancements.optString(i))) return true;
+        for (int i = 0; i < enhancements.length(); i++) if (option.equals(enhancements.optString(i))) return true;
         return false;
     }
 
     static void openSettings(Context context) {
         Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         ResolveInfo target = context.getPackageManager().resolveActivity(intent, 0);
-        settingsPackage = target == null ? "" : target.activityInfo.packageName;
-        settingsUntil = SystemClock.elapsedRealtime() + 5 * 60_000;
+        allowSettingsForAuthorization(context, target == null ? "" : target.activityInfo.packageName);
         context.startActivity(intent);
     }
+    static void allowSettingsForAuthorization(Context context, String pkg) {
+        settingsPackage = pkg; settingsUntil = SystemClock.elapsedRealtime() + 5 * 60_000;
+    }
+    static void clearSettingsAuthorization() { settingsPackage = ""; settingsUntil = 0; }
+    static boolean settingsAuthorizationAllowed(String pkg) { return pkg != null && pkg.equals(settingsPackage) && SystemClock.elapsedRealtime() < settingsUntil; }
 
     /** Uses only observeControl(), never the lifecycle read/settlement command. */
     static boolean shouldBlock(Context context, JSONObject observation, String packageName, String className) {
@@ -169,7 +176,9 @@ final class FocusProtection {
         if (whitelist != null) for (int i = 0; i < whitelist.length(); i++)
             if (packageName.equals(whitelist.optString(i))) return false;
         if (necessaryPackages(context).contains(packageName)) return false;
-        if (packageName.equals(settingsPackage) && SystemClock.elapsedRealtime() < settingsUntil) return false;
+        if (settingsAuthorizationAllowed(packageName)) return false;
+        // FORCE-05 applies its own exact target guard; unrelated system Settings/installers stay usable.
+        if (FocusAntiClose.requested(protection) && new AndroidAntiCloseSystem(context, null).systemSurface(packageName)) return false;
         // The system UI owns emergency actions, keyguard, notification shade and permission surfaces.
         if (packageName.equals("com.android.systemui") || packageName.equals("android")) return false;
         return true;
