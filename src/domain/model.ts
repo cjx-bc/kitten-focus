@@ -55,6 +55,7 @@ export const defaultProtection = (): ProtectionPreferences => ({
 export interface ProtectionSnapshot {
   applicationsWithdrawn?: boolean
   navigationWithdrawn?: boolean
+  antiCloseWithdrawn?: boolean
   enhancements?: string[]
   study: boolean
   source: 'global' | 'custom'
@@ -79,6 +80,7 @@ export interface NavigationProtectionStatus {
   lastTarget: 'home' | 'recents' | 'launcher' | null
 }
 export interface ProtectionStatus {
+  antiClose?: AntiCloseStatus
   navigation?: NavigationProtectionStatus
   supported: boolean
   authorized: boolean
@@ -88,6 +90,13 @@ export interface ProtectionStatus {
   state: 'off' | 'authorization' | 'ready' | 'protecting' | 'failed' | 'unsupported' | 'recovered'
   reason: string
   effectiveWhitelist: string[]
+}
+export interface AntiCloseStatus extends Omit<NavigationProtectionStatus, 'lastTarget'> {
+  lastTarget: string | null
+  identity: { accessibility?: boolean; ordinaryAdmin?: boolean; deviceOwner?: boolean; profileOwner?: boolean; unknown?: boolean }
+  systemUninstallBlocked: boolean
+  policyReason: string
+  supportScope: string
 }
 export interface RecentTasksStatus {
   supported: boolean
@@ -187,6 +196,7 @@ export interface RestSnapshot {
   remainingMs: number
 }
 export interface ControlSnapshot {
+  mainEntry?: { requested: boolean; active: boolean; withdrawn: boolean }
   recentTasks?: RecentTasksStatus
   launcher?: LauncherStatus
   owner: 'focus' | 'rest' | 'lock' | null
@@ -203,6 +213,7 @@ export interface LockConfiguration {
   whitelist: WhitelistConfiguration
 }
 export interface LockSession {
+  originalEnhancedProtectionSettings?: string[]
   id: string
   configurationId: string
   title: string

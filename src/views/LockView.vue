@@ -3,8 +3,8 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import { timer, duration } from '../domain/dates'
-import { uid, type LockConfiguration, type ProtectionStatus } from '../domain/model'
-import { protectionDriver } from '../platform/bridge'
+import { uid, type LockConfiguration, type ProtectionStatus, type ControlSnapshot } from '../domain/model'
+import { protectionDriver, controlDriver } from '../platform/bridge'
 import Sheet from '../components/Sheet.vue'
 import Icon from '../components/Icon.vue'
 import AppWhitelistEditor from '../components/AppWhitelistEditor.vue'
@@ -13,6 +13,7 @@ const app = useApp(), router = useRouter()
 const draft = ref<LockConfiguration | null>(null), whitelistOpen = ref(false)
 const starting = ref<LockConfiguration | null>(null), ending = ref(false), busy = ref(false), error = ref('')
 const status = ref<ProtectionStatus | null>(null)
+const mainEntry = ref<ControlSnapshot['mainEntry']>()
 const configurations = computed(() => app.data.lockConfigurations ?? [])
 const session = computed(() => app.lock.session)
 const result = computed(() => app.lock.records[0])
@@ -37,7 +38,7 @@ async function save() {
     draft.value = null
   } catch (e) { error.value = String(e) } finally { busy.value = false }
 }
-async function refresh() { try { status.value = await protectionDriver.status() } catch (e) { error.value = String(e) } }
+async function refresh() { try { status.value = await protectionDriver.status(); mainEntry.value = (await controlDriver.observe()).mainEntry } catch (e) { error.value = String(e) } }
 async function prepare(configuration: LockConfiguration) { error.value = ''; starting.value = configuration; await refresh() }
 async function start() {
   if (!starting.value) return
@@ -63,6 +64,7 @@ onUnmounted(() => clearInterval(statusTimer))
     <header class="page-header"><button class="icon-button" aria-label="返回我的" @click="router.replace('/settings')"><Icon name="back" /></button><h1>独立锁机</h1><button v-if="!session" class="icon-button" aria-label="新建锁机配置" @click="edit()"><Icon name="plus" /></button></header>
     <template v-if="session">
       <div class="lock-center"><p class="muted">{{ session.strictMode ? '严格锁机进行中' : '普通锁机进行中' }}</p><div class="focus-clock number" :class="{ 'long-clock': app.lock.remainingMs >= 3600000 }">{{ timer(app.lock.remainingMs) }}</div><h2>{{ session.title }}</h2><p role="status">{{ status?.reason || '正在检查保护状态' }}</p><p class="muted">本轮名单已固定 · {{ session.protection.source === 'custom' ? '独立白名单' : '跟随全局' }} · 允许 {{ session.protection.whitelist.length }} 个应用</p></div>
+      <p role="status">主界面入口：{{ mainEntry?.withdrawn ? '本轮已恢复普通入口' : mainEntry?.active ? '本轮只进入锁机控制' : '本轮未限制' }}</p>
       <p v-if="session.strictMode" class="notice">严格锁机不能暂停、取消或提前解除；到期自动结束。帮助与故障恢复仍可进入，恢复后本轮严格计时继续。</p><button v-else class="secondary wide" @click="ending = true; error = ''">提前解除</button>
     </template>
     <template v-else>
@@ -77,6 +79,7 @@ onUnmounted(() => clearInterval(statusTimer))
     </template>
     <NotificationSetting runtime-only />
     <div class="lock-help"><button class="text-button" @click="refresh">重新检查保护</button><button class="text-button" @click="recovery">帮助与故障恢复</button></div>
+    <div class="lock-help"><RouterLink to="/permissions">权限与保护状态</RouterLink><RouterLink to="/help">锁机帮助</RouterLink><RouterLink to="/emergency">紧急与必要交互</RouterLink><RouterLink to="/recovery">故障恢复入口</RouterLink></div>
     <p v-if="error && !draft && !starting && !ending" role="alert" class="form-error">{{ error }}</p>
     <Sheet :open="!!draft" title="锁机配置" @close="!busy && (draft = null)"><form v-if="draft" @submit.prevent="save"><label>锁机名称<input v-model.trim="draft.name" maxlength="80" required /></label><label>锁机时长（分钟）<input v-model.number="draft.minutes" type="number" min="1" max="1440" required /></label><label class="switch"><span>使用独立白名单</span><input type="checkbox" :checked="draft.whitelist.source === 'custom'" @change="draft.whitelist = ($event.target as HTMLInputElement).checked ? { source: 'custom', packages: [...(app.data.preferences.protection?.globalWhitelist ?? [])] } : { source: 'global' }" /></label><template v-if="draft.whitelist.source === 'custom'"><button type="button" class="secondary wide" @click="whitelistOpen = true">编辑独立白名单 · {{ draft.whitelist.packages.length }} 个应用</button><p class="muted">独立名单替代全局名单；空名单也会保留，仅允许小猫和必要系统交互。</p></template><p v-else class="muted">每次开始使用最新全局名单。运行中修改配置只影响下一轮。</p><label class="switch"><span>严格锁机</span><input v-model="draft.strict" type="checkbox" /></label><p class="muted">严格锁机开始后不能暂停、取消或提前解除，到期自动结束。普通锁机可以确认后提前解除。帮助和故障恢复始终可进入。</p><p v-if="error" role="alert" class="form-error">{{ error }}</p><button class="primary wide" :disabled="busy">保存配置</button></form></Sheet>
     <AppWhitelistEditor :open="whitelistOpen" title="锁机独立白名单" :packages="selectedPackages" @close="whitelistOpen = false" @confirm="draft && (draft.whitelist = { source: 'custom', packages: $event }); whitelistOpen = false" />

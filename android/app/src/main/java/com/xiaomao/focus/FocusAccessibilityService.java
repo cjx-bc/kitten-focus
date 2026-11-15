@@ -10,6 +10,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import org.json.JSONObject;
 
 public class FocusAccessibilityService extends AccessibilityService {
@@ -19,6 +20,13 @@ public class FocusAccessibilityService extends AccessibilityService {
     private String foregroundPackage = "", foregroundClass = "";
     private final Runnable enforce = () -> enforceForeground();
     static boolean connected() { return running; }
+    static AccessibilityNodeInfo activeSystemRoot(String pkg) {
+        FocusAccessibilityService service = instance;
+        if (service == null || !running || !new AndroidAntiCloseSystem(service, null).systemSurface(pkg)) return null;
+        AccessibilityNodeInfo root = service.getRootInActiveWindow();
+        if (root != null && (root.getPackageName() == null || !pkg.contentEquals(root.getPackageName()))) { root.recycle(); return null; }
+        return root;
+    }
     static boolean returnToFocus(Context context, String target) {
         FocusAccessibilityService service = instance;
         if (service == null || !running) return false;
@@ -44,8 +52,15 @@ public class FocusAccessibilityService extends AccessibilityService {
     @Override public void onDestroy() { expiry.removeCallbacks(enforce); instance = null; running = false; unregisterReceiver(changes); super.onDestroy(); }
     @Override public void onInterrupt() { }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-            || event.getPackageName() == null) return;
+        if (event == null || event.getPackageName() == null) return;
+        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            if (foregroundPackage.contentEquals(event.getPackageName()) && AntiCloseWindow.candidateClass(foregroundClass)
+                && new AndroidAntiCloseSystem(this, null).systemSurface(foregroundPackage)) try {
+                new FocusControl(this).antiCloseWindow(foregroundPackage, foregroundClass);
+            } catch (Exception ignored) { }
+            return;
+        }
+        if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
         foregroundPackage = event.getPackageName().toString();
         foregroundClass = event.getClassName() == null ? "" : event.getClassName().toString();
         enforceForeground();
@@ -54,6 +69,7 @@ public class FocusAccessibilityService extends AccessibilityService {
         expiry.removeCallbacks(enforce);
         try {
             FocusControl control = new FocusControl(this);
+            if (control.antiCloseWindow(foregroundPackage, foregroundClass)) return;
             if (control.navigationWindow(foregroundPackage, foregroundClass)) return;
             JSONObject observation = control.observeControl();
             JSONObject session = ControlSession.from(observation);

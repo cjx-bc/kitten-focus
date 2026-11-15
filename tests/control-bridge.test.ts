@@ -126,6 +126,16 @@ it('refuses requested application protection on the browser rather than starting
   expect((await controlDriver.observe()).owner).toBeNull()
 })
 
+it('refuses precise anti-close outside Android instead of silently ignoring its selected option', async () => {
+  const { focusDriver, repository, controlDriver } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  const data = emptyData()
+  data.preferences.protection = { ...defaultProtection(), enhancements: ['preciseAntiClose'] }
+  await repository.save(data)
+  await expect(focusDriver.start(session())).rejects.toThrow('Android')
+  expect((await controlDriver.observe()).owner).toBeNull()
+})
+
 it('starts from the saved item whitelist and preserves its snapshot across later global and item edits', async () => {
   const { focusDriver, controlDriver, repository } = await import('../src/platform/bridge')
   const { emptyData, defaultProtection } = await import('../src/domain/model')

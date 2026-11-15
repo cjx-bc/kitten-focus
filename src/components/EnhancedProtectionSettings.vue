@@ -4,8 +4,11 @@ import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
 import type { NavigationProtectionStatus } from '../domain/model'
 import { protectionDriver } from '../platform/bridge'
+import AntiCloseSettings from './AntiCloseSettings.vue'
 import RecentTasksSetting from './RecentTasksSetting.vue'
 import LauncherSetting from './LauncherSetting.vue'
+import LockMainEntrySetting from './LockMainEntrySetting.vue'
+
 const app = useApp()
 const option = 'navigationHomeRecents'
 const selected = computed(() => app.data.preferences.protection?.enhancements.includes(option) ?? false)
@@ -63,12 +66,15 @@ async function authorize() {
     <p class="muted">普通安装通过窗口事件返回专注，无法保证所有系统和厂商手势。启用或授权不会立即限制导航；结束、休息、重启或故障恢复撤销本轮限制。</p>
     <button v-if="status?.supported" class="secondary wide" :disabled="busy" @click="showPermission = !showPermission">查看权限用途</button>
     <div v-if="showPermission" class="permission-help">
-      <p>允许小猫识别前台窗口所属应用并返回计时页；不读取窗口正文。返回后重新检查授权及服务，实际导航结果另行显示。你可暂不开启或在系统设置撤销权限。</p>
+      <p>允许小猫识别前台窗口所属应用并返回计时页。精确防关闭另需短暂读取系统设置中本应用标题和按钮；其他应用正文不读取。返回后重新检查授权及服务，实际执行结果另行显示。你可暂不开启或在系统设置撤销权限。</p>
       <button class="secondary wide" :disabled="busy" @click="authorize">前往无障碍设置</button>
     </div>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
     <RecentTasksSetting />
     <LauncherSetting />
+    <AntiCloseSettings />
+    <LockMainEntrySetting />
+
   </section>
 </template>
 <style scoped>

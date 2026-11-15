@@ -3,6 +3,8 @@ import { createPinia } from 'pinia'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import App from './App.vue'
 import './style.css'
+import { resolveMainEntry } from './platform/bridge'
+import { installMainEntryGuard } from './navigation/mainEntry'
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
@@ -15,6 +17,8 @@ const router = createRouter({
     { path: '/focus', component: () => import('./views/FocusView.vue') },
     { path: '/rest', component: () => import('./views/RestView.vue') },
     { path: '/lock', component: () => import('./views/LockView.vue') },
+    ...['permissions', 'help', 'emergency', 'recovery'].map(section => ({ path: `/${section}`, component: () => import('./views/ProtectionHelpView.vue') })),
   ],
 })
+installMainEntryGuard(router, resolveMainEntry)
 createApp(App).use(createPinia()).use(router).mount('#app')

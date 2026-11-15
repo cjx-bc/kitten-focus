@@ -38,6 +38,7 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}
     @PluginMethod public void grantTemporaryAccess(PluginCall call){resolve(call,()->control.grantTemporaryAccess(call.getData()));}
     @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
+    @PluginMethod public void resolveMainEntry(PluginCall call){resolve(call,()->control.resolveMainEntry(call.getString("path","/tasks")));}
     @PluginMethod public void getDndStatus(PluginCall call){resolve(call,()->control.getDndStatus());}
     @PluginMethod public void getNotificationStatus(PluginCall call){resolve(call,()->control.getNotificationStatus());}
     @PluginMethod public void getLauncherStatus(PluginCall call){resolve(call,()->control.getLauncherStatus());}

@@ -4,6 +4,8 @@ import android.app.Notification;
 import android.content.ComponentName;
 import android.content.Context;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import java.util.*;
@@ -11,6 +13,14 @@ import java.util.*;
 /** Ordinary public NLS identity. Never cancels, copies, or re-posts another app's message. */
 public final class FocusNotificationListener extends NotificationListenerService {
     private static volatile FocusNotificationListener listener;
+    private final Handler maintenance = new Handler(Looper.getMainLooper());
+    private final Runnable renewLeases = new Runnable() {
+        @Override public void run() {
+            if (listener != FocusNotificationListener.this) return;
+            update(null, null, false);
+            maintenance.postDelayed(this, 15000);
+        }
+    };
     static boolean connected() { return listener != null; }
     static FocusNotificationListener require() {
         FocusNotificationListener current = listener;
@@ -18,12 +28,17 @@ public final class FocusNotificationListener extends NotificationListenerService
         return current;
     }
     static void rebind(Context context) { requestRebind(new ComponentName(context, FocusNotificationListener.class)); }
-    @Override public void onListenerConnected() { listener = this; update(null, null, false); }
-    @Override public void onListenerDisconnected() { if (listener == this) listener = null; }
-    @Override public void onDestroy() { if (listener == this) listener = null; super.onDestroy(); }
+    @Override public void onListenerConnected() {
+        listener = this; update(null, null, false);
+        maintenance.removeCallbacks(renewLeases); maintenance.postDelayed(renewLeases, 15000);
+    }
+    @Override public void onListenerDisconnected() { maintenance.removeCallbacks(renewLeases); if (listener == this) listener = null; }
+    @Override public void onDestroy() { maintenance.removeCallbacks(renewLeases); if (listener == this) listener = null; super.onDestroy(); }
     @Override public void onNotificationPosted(StatusBarNotification sbn) { update(sbn, null, false); }
     @Override public void onNotificationRemoved(StatusBarNotification sbn, RankingMap ranking, int reason) {
-        update(null, sbn.getKey(), reason == REASON_SNOOZED);
+        try { new FocusControl(this).notificationRemoved(sbn.getKey(), reason == REASON_SNOOZED, reason == REASON_CLICK); }
+        catch (Exception error) { getSharedPreferences("catfocus-listener-health", MODE_PRIVATE).edit()
+            .putString("error", error.getClass().getSimpleName()).commit(); }
     }
     private void update(StatusBarNotification posted, String removed, boolean snoozed) {
         try {

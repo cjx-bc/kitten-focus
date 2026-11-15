@@ -8,6 +8,8 @@ android {
         applicationId "com.xiaomao.focus"
         // Keep device test data separate from the user's installed application.
         def testSuffix = project.findProperty("testApplicationIdSuffix")?.toString()
+        // Distinguish QA from the user's identically named installed app in system Settings.
+        manifestPlaceholders = [focusAppLabel: testSuffix == null ? "@string/app_name" : "小猫专注 QA"]
         if (testSuffix != null) {
             if (!(testSuffix ==~ /\.[a-z][a-z0-9_.]*/)) {
                 throw new GradleException("Invalid test application id suffix")
