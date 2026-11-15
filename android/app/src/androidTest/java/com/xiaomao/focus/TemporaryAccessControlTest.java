@@ -49,7 +49,8 @@ public class TemporaryAccessControlTest {
         context.getSharedPreferences("catfocus-recovery-" + database, 0).edit().clear().commit();
     }
     private JSONObject session() throws Exception {
-        return new JSONObject().put("id", "round").put("itemId", JSONObject.NULL).put("title", "阅读")
+        return new JSONObject().put("id", "round").put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
+            .put("title", "阅读").put("themeName", "学习").put("color", "#222222")
             .put("mode", "countdown").put("targetMs", 900000).put("timeZone", "UTC")
             .put("temporaryAccess", new JSONObject().put("used", -100).put("targetPackage", "example.forged"));
     }

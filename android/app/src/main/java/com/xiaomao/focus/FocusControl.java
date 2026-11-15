@@ -162,7 +162,7 @@ final class FocusControl {
 
     private boolean temporaryEligible(JSONObject session) throws JSONException {
         JSONObject policy = session == null ? null : session.optJSONObject("protection");
-        return policy != null && policy.optBoolean("study")
+        return policy != null && !"lock".equals(session.optString("kind")) && policy.optBoolean("study")
             && !recovery.withdrawn(session.optString("id"), FocusRecovery.APPLICATIONS)
             && !(session.optBoolean("strictMode") && session.optString("mode").equals("countdown"))
             && session.optInt("bootId") == clock.boot() && clock.mono() >= session.optLong("anchorMono")
@@ -218,7 +218,7 @@ final class FocusControl {
             }
             if (runtime.optInt("used") >= 3) return grantResult("denied", "本轮三次临时放行已用完", false, session);
             JSONObject current = temporaryState(session);
-            if (current.optLong("remainingMs") > 0 && !request.optBoolean("replaceConfirmed"))
+            if (current.optLong("remainingMs") > 0 && !Boolean.TRUE.equals(request.opt("replaceConfirmed")))
                 return grantResult("confirmation-required", "继续将结束上一个应用的临时放行", false, session);
             JSONObject observation = observeControl();
             observation.getJSONObject("focus").getJSONObject("session").remove("temporaryAccess");
