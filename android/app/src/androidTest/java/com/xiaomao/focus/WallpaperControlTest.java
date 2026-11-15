@@ -40,7 +40,7 @@ public class WallpaperControlTest {
     }
     static class Wallpapers implements WallpaperSystem {
         String component = "original/.Live", lockComponent = "", picker = "", pickerToken = ""; int home = 10, lock = -1;
-        boolean sourceExists = true, failRestore, partialFailureAfterHome;
+        boolean sourceExists = true, failRestore, partialFailureAfterHome, partialFailureAfterLock;
         public boolean supported() { return true; }
         public String ownComponent() { return "qa/com.xiaomao.focus.FocusWallpaperService"; }
         public JSONObject current() throws Exception { return new JSONObject().put("homeId", home).put("lockId", lock)
@@ -51,9 +51,10 @@ public class WallpaperControlTest {
         public boolean sourceAvailable(String name) { return sourceExists && !name.isEmpty(); }
         public void restoreStatic(JSONObject original, String homeSource, String lockSource, boolean restoreHome, boolean restoreLock) throws Exception {
             if (failRestore) throw new IllegalStateException("restore unavailable");
+            if (restoreLock) { lockComponent = ""; lock = original.optInt("lockId", -1) < 0 ? -1 : 21; }
+            if (restoreLock && partialFailureAfterLock) throw new IllegalStateException("platform write interrupted after lock changed");
             if (restoreHome) { component = ""; home = 20; }
             if (restoreHome && partialFailureAfterHome) throw new IllegalStateException("platform write interrupted after home changed");
-            if (restoreLock) { lockComponent = ""; lock = original.optInt("lockId", -1) < 0 ? -1 : 21; }
         }
     }
     @Test public void confirmedRoundKeepsAssistanceThroughPauseAndRestoresLiveOriginalThroughSystemConfirmation() throws Exception {
@@ -211,6 +212,20 @@ public class WallpaperControlTest {
         assertTrue(control.getWallpaperStatus().getBoolean("recoveryPending"));
         try { control.confirmWallpaperManualRecovery(false); fail("Manual recovery requires explicit acknowledgement"); } catch (IllegalStateException expected) { }
         control.confirmWallpaperManualRecovery(true); assertFalse(control.getWallpaperStatus().getBoolean("recoveryPending")); control.restAction("exit");
+
+        // Android restores Lock first. A crash after that write but before Home is equally uncertain.
+        wallpapers.lock = 30;
+        control.importWallpaperOriginal("content://provided-home", false); control.importWallpaperOriginal("content://provided-lock", true); control.prepareWallpaper(true, true);
+        control.startFocus(fixtureSession("partial-lock", "stopwatch", clock));
+        wallpapers.component = wallpapers.ownComponent(); wallpapers.lockComponent = wallpapers.ownComponent(); wallpapers.home = 17; wallpapers.lock = 17;
+        control.wallpaperPickerReturned(wallpapers.pickerToken); wallpapers.partialFailureAfterLock = true;
+        clock.time += 1000; control.focusAction("finish");
+        assertTrue("A partial lock-first write cannot be mistaken for later user choice", control.getWallpaperStatus().getBoolean("manualConfirmationRequired"));
+        assertTrue(control.getWallpaperStatus().getBoolean("recoveryPending"));
+        control = new FocusControl(context, store, clock, wallpapers); wallpapers.partialFailureAfterLock = false; control.reconcile();
+        assertTrue(control.getWallpaperStatus().getBoolean("manualConfirmationRequired"));
+        wallpapers.component = ""; wallpapers.home = 40; wallpapers.lockComponent = ""; wallpapers.lock = -1;
+        control.confirmWallpaperManualRecovery(true); control.restAction("exit");
 
         // Reboot settles one existing round as interrupted and restores its supplied original.
         suppliedOriginal(); control.startFocus(fixtureSession("reboot", "stopwatch", clock));
