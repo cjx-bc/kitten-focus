@@ -25,6 +25,8 @@ export async function connectQa({ port = 9237, output = 'artifacts/focus-control
   const command = (...args) => execFileSync(adb, ['-s', serial, ...args], {
     encoding: 'utf8', windowsHide: true, timeout: 30000,
   })
+  command('shell', 'input', 'keyevent', 'WAKEUP')
+  command('shell', 'wm', 'dismiss-keyguard')
   command('shell', 'am', 'start', '-n', appId + '/com.xiaomao.focus.MainActivity')
   const pid = await until(() => command('shell', 'pidof', appId).trim().split(' ')[0], 'QA process')
   await until(() => command('shell', 'cat', '/proc/net/unix').includes('webview_devtools_remote_' + pid), 'QA WebView')

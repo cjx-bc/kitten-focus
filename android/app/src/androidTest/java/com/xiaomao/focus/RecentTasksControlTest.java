@@ -96,7 +96,7 @@ public class RecentTasksControlTest {
         assertFalse(status().getBoolean("recoveryPending"));
     }
     @Test public void rebootDoesNotChangeReusedTaskOrReactivateProtection() throws Exception {
-        preference(true); control.startFocus(session("stopwatch")); clock.time += 1000; control.focusAction("read");
+        preference(true); control.startFocus(session("stopwatch")); clock.time += 6000; control.focusAction("read");
         clock.boot++; clock.time = 50;
         tasks.values.clear(); tasks.values.add(new RecentTasksSystem.Task(9, "new-task-after-boot", true));
         recreate(); control.reconcile();
