@@ -49,7 +49,7 @@ public class FocusBlockActivity extends Activity {
         TextView explanation = text("此应用不在本轮白名单中。\n电话、输入法和必要系统交互仍可使用。", 14);
         content.addView(explanation);
         Button back = new Button(this);
-        back.setText("返回专注"); back.setTextColor(Color.WHITE); back.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(34, 34, 34)));
+        back.setText("返回当前会话"); back.setTextColor(Color.WHITE); back.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(34, 34, 34)));
         back.setOnClickListener(view -> returnToFocus());
         LinearLayout.LayoutParams button = new LinearLayout.LayoutParams(-1, dp(56)); button.topMargin = dp(28);
         content.addView(back, button);
@@ -82,7 +82,7 @@ public class FocusBlockActivity extends Activity {
     private void render() {
         try {
             JSONObject observation = new FocusControl(this).observeControl();
-            JSONObject snapshot = observation.getJSONObject("focus");
+            JSONObject snapshot = observation.getJSONObject("lock".equals(observation.optString("owner")) ? "lock" : "focus");
             JSONObject session = snapshot.optJSONObject("session");
             JSONObject protection = session == null ? null : session.optJSONObject("protection");
             if (protection == null || !protection.optBoolean("study") || protection.optBoolean("applicationsWithdrawn") || observation.optBoolean("needsReconcile")) { finish(); return; }
@@ -90,16 +90,17 @@ public class FocusBlockActivity extends Activity {
             sessionId = session.optString("id");
             JSONObject grant = session.optJSONObject("temporaryAccess");
             boolean strict = session.optBoolean("strictMode") && session.optString("mode").equals("countdown");
+            boolean lock = LockEngine.owns(session);
             int remaining = grant == null ? 3 : grant.optInt("remainingUses");
-            temporary.setVisibility(strict ? android.view.View.GONE : android.view.View.VISIBLE);
+            temporary.setVisibility(strict || lock ? android.view.View.GONE : android.view.View.VISIBLE);
             temporary.setEnabled(!granting && remaining > 0 && !blockedPackage.isEmpty());
             temporary.setText("临时打开 " + appLabel(blockedPackage) + " · 剩余 " + remaining + " 次");
             title.setText(session.optString("title"));
             long elapsed = snapshot.optLong("elapsedMs");
-            long ms = session.optString("mode").equals("countdown") ? Math.max(0, session.optLong("targetMs") - elapsed) : elapsed;
+            long ms = lock ? snapshot.optLong("remainingMs") : session.optString("mode").equals("countdown") ? Math.max(0, session.optLong("targetMs") - elapsed) : elapsed;
             long seconds = ms / 1000;
             time.setText(String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60));
-            String description = strict ? "严格倒计时 · 不可临时放行" : session.optString("state").equals("paused")
+            String description = lock ? "普通锁机保护中 · 可返回确认解除" : strict ? "严格倒计时 · 不可临时放行" : session.optString("state").equals("paused")
                 ? "计时已暂停 · 应用限制继续" : "本轮学霸模式保护中";
             if (!strict && grant != null && grant.optLong("remainingMs") > 0)
                 description += "\n正在放行 " + grant.optString("targetLabel") + " · 剩余 " + (grant.optLong("remainingMs") + 999) / 1000 + " 秒";

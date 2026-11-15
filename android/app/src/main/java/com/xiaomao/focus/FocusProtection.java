@@ -63,6 +63,22 @@ final class FocusProtection {
             public boolean connected() { return FocusAccessibilityService.connected(); }
         });
     }
+    static JSONObject captureLock(Context context, LocalStore store, JSONObject configuration) throws JSONException {
+        return captureLock(context, store, configuration, new AccessibilityState() {
+            public boolean authorized() { return FocusProtection.authorized(context); }
+            public boolean connected() { return FocusAccessibilityService.connected(); }
+        });
+    }
+    static JSONObject captureLock(Context context, LocalStore store, JSONObject configuration, AccessibilityState accessibility) throws JSONException {
+        if (!accessibility.authorized() || !accessibility.connected())
+            throw new IllegalStateException("锁机待授权：请启用小猫专注无障碍服务，并返回确认服务已连接");
+        JSONObject whitelist = configuration.optJSONObject("whitelist");
+        boolean custom = whitelist != null && "custom".equals(whitelist.optString("source"));
+        LinkedHashSet<String> selected = new LinkedHashSet<>();
+        addPackages(selected, custom ? whitelist.optJSONArray("packages") : preferences(store).optJSONArray("globalWhitelist"));
+        selected.add(context.getPackageName());
+        return new JSONObject().put("study", true).put("source", custom ? "custom" : "global").put("whitelist", new JSONArray(selected));
+    }
     static JSONObject capture(Context context, LocalStore store, JSONObject session, AccessibilityState accessibility) throws JSONException {
         JSONObject prefs = preferences(store);
         boolean study = prefs.optBoolean("study", false);
@@ -112,7 +128,7 @@ final class FocusProtection {
             : !preferred ? "off" : granted && connected ? "ready" : "authorization";
         String reason = requested && withdrawn ? "本轮应用限制已主动撤销；服务重连不会重新开启，计时仍继续" : current && !executionFailure.isEmpty() ? executionFailure : current && (!granted || !connected) ? "本轮应用限制已失效，请检查无障碍授权与服务连接"
             : !granted ? "尚未启用无障碍服务" : !connected ? "已授权，等待无障碍服务连接"
-            : current ? "本轮有效白名单已固定；暂停计时仍限制应用"
+            : current ? "lock".equals(observation.optString("owner")) ? "本轮锁机保护中；有效白名单已固定" : "本轮有效白名单已固定；暂停计时仍限制应用"
             : preferred ? "开始专注后执行应用限制" : "应用限制未开启";
         return new JSONObject().put("supported", true).put("authorized", granted).put("connected", connected)
             .put("active", current && effective).put("preferenceEnabled", preferred)
@@ -203,6 +219,13 @@ final class FocusProtection {
             JSONObject item = items.optJSONObject(i);
             if (item == null || item.optBoolean("deleted")) continue;
             JSONObject configuration = item.optJSONObject("whitelist");
+            if (configuration != null && "custom".equals(configuration.optString("source")))
+                addPackages(selected, configuration.optJSONArray("packages"));
+        }
+        JSONArray locks = data == null ? null : data.optJSONArray("lockConfigurations");
+        if (locks != null) for (int i = 0; i < locks.length(); i++) {
+            JSONObject row = locks.optJSONObject(i);
+            JSONObject configuration = row == null ? null : row.optJSONObject("whitelist");
             if (configuration != null && "custom".equals(configuration.optString("source")))
                 addPackages(selected, configuration.optJSONArray("packages"));
         }

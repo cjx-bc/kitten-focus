@@ -34,6 +34,16 @@ final class LocalStore extends SQLiteOpenHelper {
         }finally{db.endTransaction();}
     }
     synchronized void finish(JSONObject record) { finish(record, null); }
+    synchronized void finishLock(JSONObject record) throws JSONException {
+        SQLiteDatabase db = getWritableDatabase(); db.beginTransaction();
+        try {
+            JSONObject history = read("lockHistory"); JSONArray previous = history == null ? new JSONArray() : history.getJSONArray("records");
+            JSONArray records = new JSONArray().put(record);
+            for (int i = 0; i < previous.length(); i++) records.put(previous.getJSONObject(i));
+            write("lockHistory", new JSONObject().put("records", records)); write("active", null);
+            db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+    }
     synchronized void finish(JSONObject record, JSONObject rest) {SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{if(record!=null&&record.optLong("durationMs")>0){upsertRecord(record);write("lastFinished",record);}write("active",null);write("rest",rest);db.setTransactionSuccessful();}finally{db.endTransaction();}}
 
     synchronized JSONObject snapshot() throws JSONException {

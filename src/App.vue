@@ -2,7 +2,7 @@
 import { onMounted, computed, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App as CapacitorApp } from '@capacitor/app'
-import { consumeFocusReturn, consumeRecoveryReturn, native } from './platform/bridge'
+import { consumeFocusReturn, consumeLockReturn, consumeRecoveryReturn, native } from './platform/bridge'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
 import StrictStartConfirmation from './components/StrictStartConfirmation.vue'
@@ -14,7 +14,8 @@ const app = useApp(),
   updates = useUpdates(),
   route = useRoute(),
   router = useRouter(),
-  full = computed(() => route.path === '/focus' || route.path === '/rest')
+  full = computed(() => route.path === '/focus' || route.path === '/rest' || route.path === '/lock')
+watch(() => app.lock.session?.id, id => { if (id) void router.replace('/lock') })
 watch([() => app.ready, () => app.rest.session?.record.id], ([ready, id]) => {
   if (ready && id && route.path !== '/rest') void router.replace('/rest')
 })
@@ -36,9 +37,14 @@ onMounted(async () => {
   window.addEventListener('recovery-return-request', async () => {
     if (await consumeRecoveryReturn()) recoveryOpen.value = true
   })
-  window.addEventListener('focus-return-request', () => void router.replace('/focus'))
+  window.addEventListener('focus-return-request', () => void router.replace(app.lock.session ? '/lock' : '/focus'))
+  window.addEventListener('lock-return-request', async () => { await consumeLockReturn(); void router.replace('/lock') })
   await app.init()
-  if ((await consumeFocusReturn()) && app.focus.session) await router.replace('/focus')
+  if (await consumeFocusReturn()) {
+    if (app.lock.session) await router.replace('/lock')
+    else if (app.focus.session) await router.replace('/focus')
+  }
+  if (await consumeLockReturn()) await router.replace('/lock')
   if (await consumeRecoveryReturn()) recoveryOpen.value = true
   void updates.init()
   if (native) {

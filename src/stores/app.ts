@@ -11,9 +11,10 @@ import type {
   Semester,
   Course,
   Occurrence,
+  LockSnapshot,
 } from '../domain/model'
 import { emptyData, uid, effectiveWhitelist } from '../domain/model'
-import { focusDriver, restDriver, repository, syncReminders } from '../platform/bridge'
+import { focusDriver, restDriver, lockDriver, repository, syncReminders } from '../platform/bridge'
 import { validateEvent } from '../domain/calendar'
 import { dateKey, weekday } from '../domain/dates'
 
@@ -21,6 +22,7 @@ export const useApp = defineStore('app', () => {
   const data = shallowRef<AppData>(emptyData()),
     focus = shallowRef<FocusSnapshot>({ session: null, elapsedMs: 0 }),
     rest = shallowRef<RestSnapshot>({ session: null, remainingMs: 0 }),
+    lock = shallowRef<LockSnapshot>({ session: null, remainingMs: 0, records: [] }),
     ready = ref(false),
     error = ref(''),
     toast = ref('')
@@ -107,6 +109,7 @@ export const useApp = defineStore('app', () => {
       await sessionOperation(async () => {
         await acceptSnapshot(await focusDriver.action('read'))
         await refreshRest()
+        lock.value = await lockDriver.read()
       })
     } catch (e) {
       error.value = String(e)
@@ -139,6 +142,7 @@ export const useApp = defineStore('app', () => {
     return sessionOperation(async () => {
       if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
       if (focus.value.session) throw new Error('已有一条未结束的专注，请先返回或结束它')
+      if (lock.value.session) throw new Error('已有锁机正在进行，请先返回锁机处理')
       await refreshRest()
       if (rest.value.session?.state === 'running') throw new Error('请先退出休息，再开始新的专注')
       if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes))
@@ -196,6 +200,7 @@ export const useApp = defineStore('app', () => {
   }
   async function startRest() {
     return sessionOperation(async () => {
+      if (lock.value.session) throw new Error('请先结束当前锁机')
       if (focus.value.session) throw new Error('请先结束当前专注')
       if (!lastResult.value) throw new Error('没有可用于休息的专注记录')
       rest.value = await restDriver.start(lastResult.value)
@@ -205,6 +210,15 @@ export const useApp = defineStore('app', () => {
     return sessionOperation(async () => {
       rest.value = await restDriver.exit()
     })
+  }
+  async function startLock(configurationId: string) {
+    return sessionOperation(async () => {
+      await writeQueue
+      lock.value = await lockDriver.start(configurationId)
+    })
+  }
+  async function finishLock(confirmed: boolean) {
+    return sessionOperation(async () => { lock.value = await lockDriver.finish(confirmed) })
   }
   async function saveTheme(theme: Theme) {
     if (!theme.name.trim()) throw new Error('请填写主题名称')
@@ -379,6 +393,7 @@ export const useApp = defineStore('app', () => {
     })
   }
   async function restore(next: AppData) {
+    if (lock.value.session) throw new Error('请先结束当前锁机再恢复数据')
     if (focus.value.session) throw new Error('请先结束当前专注再恢复数据')
     const restored = JSON.parse(JSON.stringify(next)) as AppData
     await writeQueue
@@ -399,6 +414,9 @@ export const useApp = defineStore('app', () => {
     data,
     focus,
     rest,
+    lock,
+    startLock,
+    finishLock,
     ready,
     error,
     toast,
