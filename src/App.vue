@@ -5,6 +5,7 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { native } from './platform/bridge'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
+import StrictStartConfirmation from './components/StrictStartConfirmation.vue'
 import { createTabSwipe } from './navigation/tabSwipe'
 import { useUpdates } from './stores/updates'
 const app = useApp(),
@@ -29,6 +30,7 @@ const swipe = createTabSwipe({
   navigate: (path) => void router.replace(path),
 })
 onMounted(async () => {
+  window.addEventListener('focus-return-request', () => void router.replace('/focus'))
   await app.init()
   void updates.init()
   if (native) {
@@ -82,7 +84,7 @@ onMounted(async () => {
             class="nav-update-dot"
             aria-hidden="true"
         /></RouterLink></nav></template
-    ><Transition name="toast"
+    ><StrictStartConfirmation /><Transition name="toast"
       ><div v-if="app.toast" class="toast" role="status">{{ app.toast }}</div></Transition
     >
   </div>

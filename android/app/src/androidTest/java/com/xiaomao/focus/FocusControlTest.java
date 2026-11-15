@@ -69,6 +69,88 @@ public class FocusControlTest {
         assertEquals(0, control.loadData().getJSONArray("records").length());
     }
 
+    @Test public void strictCountdownKeepsItsRulesAfterPreferenceChangesAndRecreation() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").put("protection", new JSONObject().put("strict", true));
+        control.replaceData(data);
+        JSONObject started = control.startFocus(session("countdown").put("strictMode", false), true);
+        assertTrue(started.getJSONObject("session").getBoolean("strictMode"));
+        assertFalse(started.getJSONObject("session").getJSONObject("protection").getBoolean("study"));
+        clock.advance(10000);
+        data.getJSONObject("preferences").getJSONObject("protection").put("strict", false);
+        store.saveData(data, false);
+        control = new FocusControl(context, store, clock);
+        for (String action : new String[] { "pause", "finish", "cancel", "resume", "replace" }) {
+            try { control.focusAction(action); fail("Strict countdown accepted " + action); }
+            catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("严格")); }
+        }
+        try { control.startFocus(session("stopwatch"), true); fail("Strict countdown was replaced"); }
+        catch (IllegalStateException expected) { }
+        try { control.replaceData(data); fail("Strict countdown was erased by restore"); }
+        catch (IllegalStateException expected) { }
+        JSONObject observed = control.observeControl();
+        assertEquals("running", observed.getJSONObject("focus").getJSONObject("session").getString("state"));
+        assertEquals(10000, observed.getJSONObject("focus").getLong("elapsedMs"));
+        assertEquals(0, control.loadData().getJSONArray("records").length());
+        clock.advance(50000);
+        for (int i = 0; i < 2; i++) {
+            assertTrue(control.observeControl().getBoolean("needsReconcile"));
+            assertEquals(0, control.loadData().getJSONArray("records").length());
+        }
+        JSONObject completed = control.focusAction("read").getJSONObject("record");
+        assertEquals("completed", completed.getString("status"));
+        assertEquals(60000, completed.getLong("durationMs"));
+        assertEquals(300000, control.observeControl().getJSONObject("rest").getLong("remainingMs"));
+        control.reconcile();
+        assertEquals(1, control.loadData().getJSONArray("records").length());
+    }
+
+    @Test public void strictPreferenceDoesNotTurnStopwatchIntoCountdownOrTrustClientFlags() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").put("protection", new JSONObject().put("strict", true));
+        control.replaceData(data);
+        JSONObject started = control.startFocus(session("stopwatch").put("strictMode", true));
+        assertEquals("stopwatch", started.getJSONObject("session").getString("mode"));
+        assertFalse(started.getJSONObject("session").getBoolean("strictMode"));
+        clock.advance(10000);
+        control.focusAction("pause");
+        clock.advance(20000);
+        control.focusAction("resume");
+        clock.advance(5000);
+        JSONObject record = control.focusAction("finish").getJSONObject("record");
+        assertEquals("completed", record.getString("status"));
+        assertEquals(15000, record.getLong("durationMs"));
+        assertEquals(20000, record.getLong("pausedMs"));
+        assertEquals(300000, control.observeControl().getJSONObject("rest").getLong("remainingMs"));
+        control.restAction("exit");
+        data.getJSONObject("preferences").getJSONObject("protection").put("strict", false);
+        control.replaceData(data);
+        assertFalse(control.startFocus(session("countdown").put("strictMode", true), true)
+            .getJSONObject("session").getBoolean("strictMode"));
+        clock.advance(10000);
+        assertEquals("early", control.focusAction("finish").getJSONObject("record").getString("status"));
+    }
+
+    @Test public void strictCountdownRebootKeepsOnlyCheckpointedTimeAndDoesNotStartRest() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").put("protection", new JSONObject().put("strict", true));
+        control.replaceData(data);
+        control.startFocus(session("countdown"), true);
+        clock.advance(10000);
+        control.focusAction("read");
+        clock.advance(20000);
+        clock.boot++;
+        clock.mono = 100;
+        control = new FocusControl(context, store, clock);
+        JSONObject interrupted = control.focusAction("finish").getJSONObject("record");
+        assertEquals("interrupted", interrupted.getString("status"));
+        assertEquals(10000, interrupted.getLong("durationMs"));
+        assertTrue(control.observeControl().isNull("owner"));
+        assertTrue(control.observeControl().getJSONObject("rest").isNull("session"));
+        control.reconcile();
+        assertEquals(1, control.loadData().getJSONArray("records").length());
+    }
+
     @Test public void observationDoesNotSettleAnExpiredCountdown() throws Exception {
         control.startFocus(session("countdown"));
         clock.advance(90000);

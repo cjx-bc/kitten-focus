@@ -19,7 +19,10 @@ interface NativeBridge {
   loadData(): Promise<{ data: AppData | null }>
   saveData(options: { data: AppData }): Promise<void>
   replaceData(options: { data: AppData }): Promise<void>
-  startFocus(options: { session: ActiveFocus }): Promise<FocusSnapshot>
+  startFocus(options: {
+    session: ActiveFocus
+    strictModeConfirmed?: boolean
+  }): Promise<FocusSnapshot>
   focusAction(options: { action: 'read' | 'pause' | 'resume' | 'finish' }): Promise<FocusSnapshot>
   startRest(options: { recordId: string }): Promise<RestSnapshot>
   restAction(options: { action: 'read' | 'exit' }): Promise<RestSnapshot>
@@ -67,7 +70,8 @@ export const repository = {
   },
   async replace(data: AppData) {
     if (native) return plugin.replaceData({ data })
-    const db = await database()
+    const db = await webReadFocus()
+    if (browserSession) throw new Error('请先结束当前专注')
     const tx = db.transaction('kv', 'readwrite')
     await tx.store.put(data, 'data')
     await tx.store.delete('active')
@@ -78,8 +82,8 @@ export const repository = {
   },
 }
 export const focusDriver = {
-  async start(session: ActiveFocus): Promise<FocusSnapshot> {
-    if (native) return plugin.startFocus({ session })
+  async start(session: ActiveFocus, strictModeConfirmed = false): Promise<FocusSnapshot> {
+    if (native) return plugin.startFocus({ session, strictModeConfirmed })
     const db = await webReadFocus()
     if ((await repository.load()).preferences.protection?.study)
       throw new Error('应用限制仅支持 Android 本机版本，请关闭学霸模式后继续')
@@ -87,7 +91,11 @@ export const focusDriver = {
     if ((await restDriver.read()).session?.state === 'running')
       throw new Error('请先退出休息，再开始新的专注')
     await restDriver.exit()
-    browserSession = { ...session, anchorMono: Date.now(), bootId: 0 }
+    const data: AppData = (await db.get('kv', 'data')) || emptyData()
+    const strictMode = data.preferences.protection?.strict === true && session.mode === 'countdown'
+    if (strictMode && !strictModeConfirmed)
+      throw new Error('请先确认严格倒计时：开始后不能暂停、取消或提前结束')
+    browserSession = { ...session, strictMode, anchorMono: Date.now(), bootId: 0 }
     await db.put('kv', browserSession, 'active')
     return { session: browserSession, elapsedMs: 0 }
   },
@@ -95,6 +103,13 @@ export const focusDriver = {
     if (native) return plugin.focusAction({ action })
     const db = await webReadFocus()
     if (!browserSession) return { session: null, elapsedMs: 0 }
+    if (
+      action !== 'read' &&
+      browserSession.strictMode &&
+      browserSession.mode === 'countdown' &&
+      elapsed(browserSession, clock()) < browserSession.targetMs
+    )
+      throw new Error('严格倒计时不能暂停、取消或提前结束')
     const result = settle(browserSession, clock(), action)
     const tx = db.transaction('kv', 'readwrite')
     await tx.store.put(result.session, 'active')
@@ -190,8 +205,16 @@ export const syncReminders = () => (native ? plugin.syncReminders() : Promise.re
 export const protectionDriver = {
   async status(): Promise<ProtectionStatus> {
     if (native) return plugin.protectionStatus()
-    return { supported: false, authorized: false, connected: false, active: false,
-      preferenceEnabled: false, state: 'unsupported', reason: '应用限制仅支持 Android 本机版本', effectiveWhitelist: [] }
+    return {
+      supported: false,
+      authorized: false,
+      connected: false,
+      active: false,
+      preferenceEnabled: false,
+      state: 'unsupported',
+      reason: '应用限制仅支持 Android 本机版本',
+      effectiveWhitelist: [],
+    }
   },
   async apps(): Promise<ProtectionApp[]> {
     return native ? (await plugin.listProtectionApps()).apps : []
