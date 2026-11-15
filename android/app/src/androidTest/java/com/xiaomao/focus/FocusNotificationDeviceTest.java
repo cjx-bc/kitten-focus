@@ -74,6 +74,9 @@ public class FocusNotificationDeviceTest {
             assertEquals(originalClick, restored.getNotification().contentIntent);
             assertEquals(2, restored.getNotification().extras.getInt("probe_revision"));
             assertNull(find(true));
+            control.synchronizeNotifications();
+            assertTrue("The active original must be verified restored before it is consumed",
+                control.getNotificationStatus().getInt("restoredCount") >= 1);
             android.util.Log.i("FocusNotificationDeviceTest", "original_identity_update_and_deadline_verified");
             // This invokes a real notification-shade UI click, not PendingIntent.send().
             shell("input keyevent WAKEUP"); shell("wm dismiss-keyguard");

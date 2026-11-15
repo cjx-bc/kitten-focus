@@ -139,6 +139,7 @@ final class NotificationProtection {
     }
     void removed(String key, boolean snoozed) throws JSONException {
         JSONObject journal = read(); JSONObject saved = entry(journal, key);
+        // Later consumption cannot undo a restoration already verified from Android.
         if (saved == null || !pending(saved)) return;
         if (snoozed) saved.put("observedHeld", true).put("phase", "snoozed");
         else saved.put("phase", "removed");
