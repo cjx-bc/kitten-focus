@@ -38,8 +38,15 @@ send a timer finish intent. Android Back closes the topmost Sheet first.
   OS authorization/release and clock seams for deterministic permission/failure/expiry behavior.
   It covers preview/cancel purity, strict preservation, durable withdrawal, idempotence, failure
   responsibility retention, blocked conflicting starts and successful retry. No production bypass
-  or second session engine is added. Device execution and real external-app restoration are
-  coordinator-owned and remain separate from these host results.
+  or second session engine is added. On 2026-11-15 the coordinator ran both tests on the
+  official API 36 emulator: two passed, zero skipped. Evidence is in the integration
+  workspace's `artifacts/focus-control/api36/t08-native` directory. This run proves the
+  native contract with injected OS failures; actual external-app restoration remains a
+  separate coordinator-owned device check.
+- QA debug application and instrumentation APKs assembled with Java 21, SDK 36,
+  `--no-daemon --max-workers=2 -PtestApplicationIdSuffix=.qa`.
+- Orca browser visual inspection at 390 × 844: the original-style help/recovery Sheet,
+  explicit browser limitation and cancel action render without horizontal document overflow.
 
 Notification/DND/task/icon/wallpaper operations must use this coordinator's responsibility and
 result flow when their actual OS adapters land. OS-specific original-state metadata stays in
