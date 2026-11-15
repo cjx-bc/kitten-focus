@@ -27,6 +27,7 @@ final class FocusEngine {
     JSONObject observe() throws JSONException {
         synchronized(store){
             JSONObject session=store.read("active");long now=clock.mono();
+            if(LockEngine.owns(session))session=null;
             boolean interrupted=session!=null&&(session.optInt("bootId")!=clock.boot()||now<session.optLong("anchorMono"));
             return snapshot(session,session==null?0:interrupted?session.optLong("elapsedMs"):elapsed(session,now),null);
         }
@@ -40,7 +41,7 @@ final class FocusEngine {
     }
     JSONObject action(String action) throws JSONException {synchronized(store){return actionLocked(action);}}
     private JSONObject actionLocked(String action) throws JSONException {
-        JSONObject s=store.read("active");if(s==null)return snapshot(null,0,store.read("lastFinished"));
+        JSONObject s=store.read("active");if(LockEngine.owns(s))return snapshot(null,0,null);if(s==null)return snapshot(null,0,store.read("lastFinished"));
         long now=clock.mono(),epoch=clock.epoch();boolean interrupted=s.optInt("bootId")!=clock.boot()||now<s.optLong("anchorMono");
         long value=interrupted?s.optLong("elapsedMs"):elapsed(s,now);
         boolean reached=s.optString("mode").equals("countdown")&&value>=s.optLong("targetMs");

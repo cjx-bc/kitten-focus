@@ -154,6 +154,7 @@ function toggleTheme(theme: Theme) {
         >今日专注 <strong class="number">{{ duration(todayStats.totalMs) }}</strong></span
       >
     </div>
+    <button v-if="app.lock.session" class="ongoing" @click="router.push('/lock')"><Icon name="clock" /><span>{{ app.lock.session.title }}<small>锁机进行中 · 返回处理</small></span><Icon name="right" /></button>
     <button v-if="app.focus.session" class="ongoing" @click="router.push('/focus')">
       <span class="row"
         ><span class="status-dot" /><span

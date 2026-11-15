@@ -132,10 +132,40 @@ export interface RestSnapshot {
   remainingMs: number
 }
 export interface ControlSnapshot {
-  owner: 'focus' | 'rest' | null
+  owner: 'focus' | 'rest' | 'lock' | null
   focus: FocusSnapshot
   rest: RestSnapshot
+  lock?: LockSnapshot
   needsReconcile: boolean
+}
+export interface LockConfiguration {
+  id: string
+  name: string
+  minutes: number
+  whitelist: WhitelistConfiguration
+}
+export interface LockSession {
+  id: string
+  configurationId: string
+  title: string
+  targetMs: number
+  startedAt: number
+  protection: ProtectionSnapshot
+}
+export interface LockRecord {
+  id: string
+  configurationId: string
+  title: string
+  targetMs: number
+  startedAt: number
+  endedAt: number
+  durationMs: number
+  status: 'completed' | 'early' | 'interrupted'
+}
+export interface LockSnapshot {
+  session: LockSession | null
+  remainingMs: number
+  records: LockRecord[]
 }
 export interface CalendarEvent {
   id: string
@@ -201,6 +231,7 @@ export interface Preferences {
 }
 export interface AppData {
   schemaVersion: 1
+  lockConfigurations?: LockConfiguration[]
   themes: Theme[]
   items: FocusItem[]
   records: FocusRecord[]

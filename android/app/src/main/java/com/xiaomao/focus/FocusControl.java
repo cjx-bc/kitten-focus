@@ -12,6 +12,7 @@ final class FocusControl {
     private final SessionClock clock;
     private final FocusEngine focus;
     private final RestEngine rest;
+    private final LockEngine lock;
     private final FocusRecovery recovery;
     private final FocusProtection.AccessibilityState accessibility;
     private final DndProtection dnd;
@@ -41,6 +42,7 @@ final class FocusControl {
         this.clock = clock;
         focus = new FocusEngine(context, store, clock);
         rest = new RestEngine(context, store, clock);
+        lock = new LockEngine(context, store, clock);
         this.recovery = recovery;
         this.accessibility = accessibility;
         dnd = new DndProtection(context, store.getDatabaseName(), system);
@@ -77,6 +79,11 @@ final class FocusControl {
     }
     JSONObject focusAction(String action) throws JSONException {
         synchronized (store) {
+            if (LockEngine.owns(store.read("active"))) {
+                if (!action.equals("read")) throw new IllegalStateException("请返回当前锁机处理");
+                lockAction("read", false);
+                return focus.observe();
+            }
             JSONObject observation = observeControl();
             JSONObject active = observation.getJSONObject("focus").optJSONObject("session");
             if (!action.equals("read") && active != null && active.optBoolean("strictMode")
@@ -86,6 +93,33 @@ final class FocusControl {
             JSONObject remaining = result.optJSONObject("session");
             recovery.releaseFinished(remaining == null ? null : remaining.optString("id"));
             dnd.synchronize(store.read("active"));
+            return result;
+        }
+    }
+    JSONObject startLock(String configurationId) throws JSONException {
+        synchronized (store) {
+            if (store.read("active") != null) throw new IllegalStateException("已有专注或锁机正在进行，请返回当前会话处理");
+            JSONObject resting = rest.read().optJSONObject("session");
+            if (resting != null && "running".equals(resting.optString("state")))
+                throw new IllegalStateException("请先退出休息，再开始锁机");
+            JSONObject configuration = lock.configuration(configurationId);
+            JSONObject session = lock.create(configuration);
+            session.put("protection", accessibility == null
+                ? FocusProtection.captureLock(context, store, configuration)
+                : FocusProtection.captureLock(context, store, configuration, accessibility));
+            recovery.prepare(session);
+            rest.exit();
+            JSONObject result = lock.start(session);
+            FocusProtection.executionSucceeded();
+            return result;
+        }
+    }
+    JSONObject lockAction(String action, boolean confirmed) throws JSONException {
+        synchronized (store) {
+            JSONObject result = lock.action(action, confirmed);
+            JSONObject active = store.read("active");
+            recovery.releaseFinished(active == null ? null : active.optString("id"));
+            dnd.synchronize(active);
             return result;
         }
     }
@@ -107,6 +141,7 @@ final class FocusControl {
     JSONObject reconcile() throws JSONException {
         synchronized (store) {
             focus.action("read");
+            lock.action("read", false);
             rest.sync();
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
@@ -120,20 +155,25 @@ final class FocusControl {
         synchronized (store) {
             JSONObject focusSnapshot = focus.observe();
             JSONObject restSnapshot = rest.observe();
-            JSONObject active = focusSnapshot.optJSONObject("session");
+            JSONObject lockSnapshot = lock.observe();
+            JSONObject active = store.read("active");
             if (active != null && active.optJSONObject("protection") != null)
                 active.getJSONObject("protection").put("applicationsWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.APPLICATIONS));
+            if (active != null) {
+                if (LockEngine.owns(active)) lockSnapshot.put("session", active);
+                else focusSnapshot.put("session", active);
+            }
             JSONObject resting = restSnapshot.optJSONObject("session");
             boolean runningRest = resting != null && resting.optString("state").equals("running");
             boolean needsReconcile = active != null && (
                 active.optInt("bootId") != clock.boot() || clock.mono() < active.optLong("anchorMono")
                 || active.optString("mode").equals("countdown")
-                    && focusSnapshot.optLong("elapsedMs") >= active.optLong("targetMs"));
+                    && (LockEngine.owns(active) ? lockSnapshot.optLong("remainingMs") == 0 : focusSnapshot.optLong("elapsedMs") >= active.optLong("targetMs")));
             needsReconcile |= runningRest && (resting.optInt("bootId") != clock.boot()
                 || restSnapshot.optLong("remainingMs") == 0);
             return new JSONObject()
-                .put("owner", active != null ? "focus" : runningRest ? "rest" : JSONObject.NULL)
-                .put("focus", focusSnapshot).put("rest", restSnapshot)
+                .put("owner", active != null ? LockEngine.owns(active) ? "lock" : "focus" : runningRest ? "rest" : JSONObject.NULL)
+                .put("focus", focusSnapshot).put("rest", restSnapshot).put("lock", lockSnapshot)
                 .put("dnd", dnd.observe(active))
                 .put("needsReconcile", needsReconcile);
         }

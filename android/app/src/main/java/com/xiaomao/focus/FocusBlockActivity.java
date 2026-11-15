@@ -40,7 +40,7 @@ public class FocusBlockActivity extends Activity {
         TextView explanation = text("此应用不在本轮白名单中。\n电话、输入法和必要系统交互仍可使用。", 14);
         content.addView(explanation);
         Button back = new Button(this);
-        back.setText("返回专注"); back.setTextColor(Color.WHITE); back.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(34, 34, 34)));
+        back.setText("返回当前会话"); back.setTextColor(Color.WHITE); back.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(34, 34, 34)));
         back.setOnClickListener(view -> returnToFocus());
         LinearLayout.LayoutParams button = new LinearLayout.LayoutParams(-1, dp(56)); button.topMargin = dp(28);
         content.addView(back, button);
@@ -62,7 +62,7 @@ public class FocusBlockActivity extends Activity {
     private void render() {
         try {
             JSONObject observation = new FocusControl(this).observeControl();
-            JSONObject snapshot = observation.getJSONObject("focus");
+            JSONObject snapshot = observation.getJSONObject("lock".equals(observation.optString("owner")) ? "lock" : "focus");
             JSONObject session = snapshot.optJSONObject("session");
             JSONObject protection = session == null ? null : session.optJSONObject("protection");
             if (protection == null || !protection.optBoolean("study") || protection.optBoolean("applicationsWithdrawn") || observation.optBoolean("needsReconcile")) { finish(); return; }
