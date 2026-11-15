@@ -84,6 +84,17 @@ async function rest() {
             session.state === 'paused' ? '已暂停' : '专注进行中'
           }}
         </p>
+        <p v-if="session.protection?.study" class="temporary-summary">
+          <template v-if="strict">严格倒计时 · 不可临时放行</template>
+          <template v-else-if="session.protection.applicationsWithdrawn">本轮应用限制已撤销</template>
+          <template v-else>
+            临时放行剩余 {{ session.temporaryAccess?.remainingUses ?? 3 }} 次
+            <span v-if="session.temporaryAccess?.targetPackage">
+              · {{ session.temporaryAccess.targetLabel || session.temporaryAccess.targetPackage }}
+              · 剩余 {{ timer(session.temporaryAccess.remainingMs) }}
+            </span>
+          </template>
+        </p>
       </div>
       <div class="focus-bottom">
         <p>{{ strict ? '严格倒计时 · 不能暂停或提前结束' : '只做眼前这一件事。' }}</p>
@@ -199,6 +210,14 @@ async function rest() {
   color: var(--muted);
   font-size: 13px;
   margin-top: 12px;
+}
+.temporary-summary {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 8px;
 }
 .focus-bottom {
   text-align: center;
