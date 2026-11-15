@@ -11,6 +11,8 @@ import type {
   ProtectionStatus,
   ProtectionApp,
   RecoverySnapshot,
+  TemporaryAccessRequest,
+  TemporaryAccessResult,
 } from '../domain/model'
 import { emptyData, effectiveWhitelist } from '../domain/model'
 import { elapsed, settle } from '../domain/focus'
@@ -27,6 +29,7 @@ interface NativeBridge {
   focusAction(options: { action: 'read' | 'pause' | 'resume' | 'finish' }): Promise<FocusSnapshot>
   startRest(options: { recordId: string }): Promise<RestSnapshot>
   restAction(options: { action: 'read' | 'exit' }): Promise<RestSnapshot>
+  grantTemporaryAccess(options: TemporaryAccessRequest): Promise<TemporaryAccessResult>
   observeControl(): Promise<ControlSnapshot>
   consumeFocusReturn(): Promise<{ requested: boolean }>
   protectionStatus(): Promise<ProtectionStatus>
@@ -230,5 +233,12 @@ export const recoveryDriver = {
   async confirm(revision: string): Promise<RecoverySnapshot> {
     if (!native) throw new Error('故障恢复仅支持 Android 本机版本')
     return plugin.confirmRecovery({ revision })
+  },
+}
+
+export const temporaryAccessDriver = {
+  async grant(options: TemporaryAccessRequest): Promise<TemporaryAccessResult> {
+    if (!native) throw new Error('临时放行仅支持 Android 本机版本')
+    return plugin.grantTemporaryAccess(options)
   },
 }

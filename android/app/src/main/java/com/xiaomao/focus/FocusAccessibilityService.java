@@ -7,11 +7,16 @@ import android.content.Context;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.accessibility.AccessibilityEvent;
 import org.json.JSONObject;
 
 public class FocusAccessibilityService extends AccessibilityService {
     private static volatile boolean running;
+    private final Handler expiry = new Handler(Looper.getMainLooper());
+    private String foregroundPackage = "", foregroundClass = "";
+    private final Runnable enforce = () -> enforceForeground();
     static boolean connected() { return running; }
     private final BroadcastReceiver changes = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) { FocusProtection.invalidateNecessary(); }
@@ -25,16 +30,25 @@ public class FocusAccessibilityService extends AccessibilityService {
     @Override public void onConfigurationChanged(Configuration config) { super.onConfigurationChanged(config); FocusProtection.invalidateNecessary(); }
     @Override protected void onServiceConnected() { running = true; FocusProtection.executionSucceeded(); FocusProtection.invalidateNecessary(); }
     @Override public boolean onUnbind(Intent intent) { running = false; return super.onUnbind(intent); }
-    @Override public void onDestroy() { running = false; unregisterReceiver(changes); super.onDestroy(); }
+    @Override public void onDestroy() { expiry.removeCallbacks(enforce); running = false; unregisterReceiver(changes); super.onDestroy(); }
     @Override public void onInterrupt() { }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             || event.getPackageName() == null) return;
+        foregroundPackage = event.getPackageName().toString();
+        foregroundClass = event.getClassName() == null ? "" : event.getClassName().toString();
+        enforceForeground();
+    }
+    private void enforceForeground() {
+        expiry.removeCallbacks(enforce);
         try {
             JSONObject observation = new FocusControl(this).observeControl();
-            if (!FocusProtection.shouldBlock(this, observation, event.getPackageName().toString(),
-                event.getClassName() == null ? "" : event.getClassName().toString())) return;
-            startActivity(new Intent(this, FocusBlockActivity.class)
+            JSONObject session = observation.getJSONObject("focus").optJSONObject("session");
+            JSONObject grant = session == null ? null : session.optJSONObject("temporaryAccess");
+            if (grant != null && grant.optLong("remainingMs") > 0 && foregroundPackage.equals(grant.optString("targetPackage")))
+                expiry.postDelayed(enforce, Math.min(1000, grant.optLong("remainingMs")) + 20);
+            if (!FocusProtection.shouldBlock(this, observation, foregroundPackage, foregroundClass)) return;
+            startActivity(new Intent(this, FocusBlockActivity.class).putExtra(FocusBlockActivity.TARGET_PACKAGE, foregroundPackage)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP));
             FocusProtection.executionSucceeded();
         } catch (Exception error) {
