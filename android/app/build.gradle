@@ -8,11 +8,12 @@ android {
         applicationId "com.xiaomao.focus"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode project.findProperty("updateVersionCode")?.toInteger() ?: 6
-        versionName project.findProperty("updateVersionName") ?: "0.2.0"
+        versionCode project.findProperty("updateVersionCode")?.toInteger() ?: 7
+        versionName project.findProperty("updateVersionName") ?: "0.2.1"
         def updateChannel = project.findProperty("updateChannel") ?: "stable"
         if (!(updateChannel ==~ /[a-z0-9-]+/)) throw new GradleException("Invalid update channel")
-        buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://47.251.9.162/updates/${updateChannel}.json\""
+        buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://focus.linma.asia/updates/${updateChannel}.json\""
+        buildConfigField "String", "UPDATE_FALLBACK_URL", "\"https://47.251.9.162/updates/domain-${updateChannel}.json\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -2,8 +2,8 @@
 
 已确认规则：手机首次手动覆盖安装带更新能力的版本，之后在“我的 → 检查更新”完成下载，并通过系统确认安装。
 
-- 面向本人和少量朋友，源码保持私有，安装包免登录下载。
-- 更新地址使用自有服务器 `47.251.9.162` 的 HTTPS 服务；80 用于证书验证，443 用于下载，证书自动续期。
+- 面向本人和少量朋友。用户后续已明确要求将 cjx-bc/kitten-focus 改为公有，源码及 Releases 现已公开，安装包免登录下载。
+- 更新清单通过 `focus.linma.asia` 提供，IP 保留备用；80 用于证书验证，443 用于 HTTPS。0.2.1 APK 正式来源为公开 GitHub Releases，默认尝试免费代理候选，失败再换备用。
 - 每天首次打开时后台检查一次，仅显示红点；手动检查不受时间限制，不自动下载。
 - 更新可跳过，离线仍可使用原有功能。
 - 有未结束专注（包括暂停）时，可查看更新，结束后才能下载或安装。
@@ -17,7 +17,7 @@
 
 ## 接口
 
-`GET /updates/stable.json`：顶层 `schemaVersion: 1`，`release` 为 null（尚无发布）或包含 `applicationId`、`versionName`、`versionCode`、`minSdk`、`url`、`size`、`sha256`、`notes` 的对象。只接收同一更新站点下的 HTTPS APK 地址。
+`GET /updates/stable.json`：顶层 `schemaVersion: 1`，`release` 为 null 或包含 `applicationId`、`versionName`、`versionCode`、`minSdk`、`url`、`size`、`sha256`、`notes` 的对象。0.2.1 新增 `downloadUrls`：最多四个不重复 HTTPS 地址，表示下载顺序。`url` 为 GitHub 正式原链接，所有线路必须提供同一个 SHA-256 对应的 APK。客户端只接收本仓库对应版本的 GitHub 原链、获准代理前缀、自有下载域名和 IP 地址。
 
 文件名含版本号，已发布 APK 不覆盖。清单禁止缓存，APK 可缓存并支持 Range，发布脚本先验证服务器文件哈希再替换清单。
 
@@ -38,7 +38,7 @@
 
 ## 开发与发布
 
-本次服务器目录为 `/opt/kitten-focus`，服务容器 `kitten-focus-updates`。没有恢复已被用户删除的图书系统容器，数据库卷仍保留。服务器只存公开 APK、清单和 TLS 服务证书，应用签名密钥只保存在开发电脑。
+服务器目录为 `/opt/kitten-focus`，服务容器 `kitten-focus-updates`。没有恢复已被用户删除的图书系统容器，数据库卷仍保留。服务器只存公开 APK、清单和 TLS 服务证书，应用签名密钥只保存在开发电脑。域名与公开下载策略见 [domain-distribution.md](domain-distribution.md)。
 
 应用最低 API 24。更新检查额外信任域内的公开 ISRG Root X1，以照顾较旧设备；系统 DownloadManager 的实际信任链取决于设备系统。新增公开根证书来自 Let's Encrypt 官网，SHA-256 为 `96bcec06264976f37460779acf28c5a7cfe8a3c0aaae11a8ffcee05c0bddf08c6`，不是关闭证书校验。
 

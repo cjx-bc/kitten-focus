@@ -8,6 +8,7 @@ export interface AppRelease {
   versionCode: number
   minSdk: number
   url: string
+  downloadUrls?: string[]
   size: number
   sha256: string
   notes: string

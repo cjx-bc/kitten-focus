@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 7,
+    "versionName": "0.2.1",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.1/xiaomao-focus-0.2.1-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.1/xiaomao-focus-0.2.1-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.1-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.1/xiaomao-focus-0.2.1-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.1-debug.apk"
+    ],
+    "size": 4654882,
+    "sha256": "64c9e3fccc0b2452f0dbd1e4b4333992162a8de00c6d38c826ac6c0600789af4",
+    "notes": "新增固定域名下载页、公开 GitHub Releases 和可切换的下载线路。网页和 App 默认尝试免费代理候选，网络失败时自动换到备用服务器或原站。沿用已有签名，覆盖安装保留数据；本次请手动覆盖安装，后续从“我的 → 检查更新”获取新版。"
+  }
+}

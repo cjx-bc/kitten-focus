@@ -18,7 +18,18 @@ const command = (...args) =>
     windowsHide: true,
     timeout: 30000,
   })
-const evidence = resolve(root, 'artifacts/updater')
+const evidence = resolve(root, process.env.UPDATER_EVIDENCE_DIR || 'artifacts/updater')
+const sourceApk = resolve(
+  root,
+  process.env.UPDATER_SOURCE_APK || 'releases/xiaomao-focus-0.1.4-debug.apk',
+)
+const baseApk = resolve(
+  root,
+  process.env.UPDATER_BASE_APK || 'artifacts/updater/kitten-focus-0.2.0-qa.apk',
+)
+const baseCode = Number(process.env.UPDATER_BASE_CODE || 6)
+const targetCode = Number(process.env.UPDATER_TARGET_CODE || 7)
+const targetName = process.env.UPDATER_TARGET_NAME || '0.2.1-qa'
 mkdirSync(evidence, { recursive: true })
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until(action, label, timeout = 25000) {
@@ -38,6 +49,7 @@ async function until(action, label, timeout = 25000) {
 
 let socket,
   nextId = 0
+let transferEvidence = null
 const pending = new Map(),
   runtimeErrors = []
 async function connect() {
@@ -215,8 +227,8 @@ data.preferences = {
 }
 
 try {
-  console.log('Installing old 0.1.4; emulator must not contain personal data')
-  command('install', '-r', resolve(root, 'releases/xiaomao-focus-0.1.4-debug.apk'))
+  console.log('Installing source APK; emulator must not contain personal data')
+  command('install', '-r', sourceApk)
   await connect()
   const before = (await native('CatFocus', 'loadData')).data
   assert(!before || before.items.length === 0, 'Refusing to replace existing non-test data')
@@ -225,14 +237,15 @@ try {
   await waitText('升级保留英语')
   socket.close()
 
-  console.log('Cover-installing updater bootstrap 0.2.0')
-  command('install', '-r', resolve(evidence, 'kitten-focus-0.2.0-qa.apk'))
+  console.log('Cover-installing test base APK')
+  command('install', '-r', baseApk)
   await connect()
   assert.deepEqual(
     (await native('CatFocus', 'loadData')).data,
     data,
     'Bootstrap must preserve all business data',
   )
+  if (process.env.UPDATER_FORCE_CHECK === '1') await native('AppUpdates', 'check', { force: true })
   let state = await until(
     async () => {
       const state = await native('AppUpdates', 'status')
@@ -241,8 +254,8 @@ try {
     'daily HTTPS update check',
     45000,
   )
-  assert.equal(state.release.versionCode, 7)
-  assert.equal(state.currentCode, 6)
+  assert.equal(state.release.versionCode, targetCode)
+  assert.equal(state.currentCode, baseCode)
   assert(
     await evaluate("!!document.querySelector('.nav-update-dot')"),
     'Daily check should only add a badge',
@@ -306,6 +319,13 @@ try {
     'background DownloadManager and APK verification',
     60000,
   )
+  if (process.env.UPDATER_EXPECT_FALLBACK === '1')
+    assert.equal(state.fallbackUsed, true, 'Network failure must switch to IP once')
+  transferEvidence = {
+    route: state.downloadRoute,
+    fallbackUsed: state.fallbackUsed,
+    release: state.downloadRelease?.versionName,
+  }
   command('shell', 'am', 'start', '-n', 'com.xiaomao.focus/.MainActivity')
   await waitText('安装更新')
   await screenshot('02-download-ready')
@@ -339,7 +359,7 @@ try {
   await delay(700)
   const snapshots = (await native('AppUpdates', 'backups')).backups
   assert(
-    snapshots.some((b) => b.from === 6 && b.to === 7),
+    snapshots.some((b) => b.from === baseCode && b.to === targetCode),
     'Recovery copy must exist before installation',
   )
   const xml = dumpWindow('/sdcard/kitten-upgrade-window.xml')
@@ -359,7 +379,10 @@ try {
   )
   socket.close()
   await until(
-    () => command('shell', 'dumpsys', 'package', 'com.xiaomao.focus').includes('versionCode=7 '),
+    () =>
+      command('shell', 'dumpsys', 'package', 'com.xiaomao.focus').includes(
+        `versionCode=${targetCode} `,
+      ),
     'system-confirmed upgrade',
     60000,
   )
@@ -370,10 +393,10 @@ try {
     'In-app update must preserve all business data',
   )
   state = await native('AppUpdates', 'status')
-  assert.equal(state.currentCode, 7)
+  assert.equal(state.currentCode, targetCode)
   assert.equal(state.release, null)
   await evaluate('document.querySelector(\'.tabbar a[href="#/settings"]\').click()')
-  await waitText('0.2.1-qa')
+  await waitText(targetName)
   await screenshot('03-updated-settings')
   assert.equal(runtimeErrors.length, 0, runtimeErrors.join('\n'))
   writeFileSync(
@@ -381,7 +404,7 @@ try {
     JSON.stringify(
       {
         passed: [
-          '0.1.4 to bootstrap cover-install',
+          'source APK to domain/base cover-install',
           'all business data retained',
           'daily HTTPS check',
           'badge without modal',
@@ -393,11 +416,16 @@ try {
           'source permission guidance',
           'backup before install',
           'system installer confirmation',
-          '0.2.0 to 0.2.1-qa installation',
+          'base APK to QA target installation',
           'post-upgrade data equality',
         ],
         runtimeErrors,
         installed: state.currentVersion,
+        sourceApk: process.env.UPDATER_SOURCE_APK || '0.1.4',
+        baseCode,
+        targetCode,
+        automaticFallbackVerified: process.env.UPDATER_EXPECT_FALLBACK === '1',
+        transfer: transferEvidence,
         backups: (await native('AppUpdates', 'backups')).backups,
       },
       null,

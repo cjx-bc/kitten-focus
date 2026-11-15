@@ -81,6 +81,38 @@ public class UpdateProtectionTest {
         rejected(release().put("size", -1));
     }
 
+    @Test public void domainUpdateAllowsOnlyApprovedHostsAndNetworkFallbackOnce() throws Exception {
+        UpdateRelease domain = new UpdateRelease(release().put("url", "https://download-focus.linma.asia/releases/update.apk"));
+        assertEquals("https://47.251.9.162/releases/update.apk", domain.fallbackUrl());
+        assertTrue(AppUpdateManager.shouldFallback(domain, android.app.DownloadManager.ERROR_HTTP_DATA_ERROR, false));
+        assertTrue(AppUpdateManager.shouldFallback(domain, 503, false));
+        assertFalse(AppUpdateManager.shouldFallback(domain, 503, true));
+        assertFalse(AppUpdateManager.shouldFallback(new UpdateRelease(release()), 503, false));
+        assertFalse(AppUpdateManager.shouldFallback(domain, android.app.DownloadManager.ERROR_INSUFFICIENT_SPACE, false));
+        rejected(release().put("url", "https://download-focus.linma.asia.evil.org/releases/update.apk"));
+        rejected(release().put("url", "https://download-focus.linma.asia:8443/releases/update.apk"));
+        rejected(release().put("url", "https://focus.linma.asia/releases/update.apk"));
+    }
+
+    @Test public void publicReleaseRoutesAreBoundToRepositoryVersionAndExhaustedOnce() throws Exception {
+        String github = UpdateRelease.GITHUB + "v9.0.0/xiaomao-focus-9.0.0-debug.apk";
+        JSONObject value = release().put("url", github).put("downloadUrls", new JSONArray()
+            .put(UpdateRelease.MIRROR + github).put("https://download-focus.linma.asia/releases/update.apk")
+            .put(github).put("https://47.251.9.162/releases/update.apk"));
+        UpdateRelease configured = new UpdateRelease(value);
+        assertEquals(4, configured.downloadUrls.size());
+        assertEquals(4, new UpdateRelease(configured.json()).downloadUrls.size());
+        assertTrue(AppUpdateManager.canTryNext(configured, 0, android.app.DownloadManager.STATUS_FAILED, 503, false));
+        assertTrue(AppUpdateManager.canTryNext(configured, 1, android.app.DownloadManager.STATUS_PAUSED, 1, true));
+        assertFalse(AppUpdateManager.canTryNext(configured, 3, android.app.DownloadManager.STATUS_FAILED, 503, false));
+        assertFalse(AppUpdateManager.canTryNext(configured, 0, android.app.DownloadManager.STATUS_FAILED, android.app.DownloadManager.ERROR_INSUFFICIENT_SPACE, false));
+        assertFalse(AppUpdateManager.canTryNext(configured, 0, android.app.DownloadManager.STATUS_SUCCESSFUL, 0, false));
+        rejected(release().put("url", UpdateRelease.MIRROR + "https://github.com/another/repo/releases/download/v9.0.0/a.apk"));
+        rejected(release().put("url", UpdateRelease.MIRROR + github + "?token=anything"));
+        rejected(release().put("url", github.replace("v9.0.0", "v8.0.0")));
+        rejected(release().put("downloadUrls", new JSONArray().put(github).put(github)));
+    }
+
     @Test public void snapshotsRestoreRecordsAndPreferencesAndKeepOnlyThree() throws Exception {
         JSONObject data = new JSONObject().put("schemaVersion", 1).put("themes", new JSONArray().put(new JSONObject().put("id", "theme")))
             .put("items", new JSONArray()).put("events", new JSONArray()).put("courses", new JSONArray())

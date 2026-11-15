@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--apk', required=True, type=Path)
     parser.add_argument('--notes-file', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--local-qa', action='store_true', help='QA manifests may use only origin URLs')
     args = parser.parse_args()
     sdk = Path(os.environ.get('ANDROID_HOME', ROOT / '.tools/android-sdk'))
     build_tools = sdk / 'build-tools/35.0.0'
@@ -32,11 +33,19 @@ def main():
     notes = args.notes_file.read_text(encoding='utf-8-sig').strip()
     if len(notes) > 6000:
         raise SystemExit('Release notes too long')
-    filename = f'xiaomao-focus-{package[3]}.apk'
+    filename = f'xiaomao-focus-{package[3]}-debug.apk'
+    github = f'https://github.com/cjx-bc/kitten-focus/releases/download/v{package[3]}/{filename}'
+    origin = f'https://download-focus.linma.asia/releases/{filename}'
+    if args.local_qa and '-qa' not in package[3]:
+        raise SystemExit('--local-qa requires a QA version name')
+    addresses = [origin, f'https://47.251.9.162/releases/{filename}'] if args.local_qa else [
+        'https://gh-proxy.com/' + github, origin, github, f'https://47.251.9.162/releases/{filename}',
+    ]
     release = {
         'applicationId': package[1], 'versionCode': int(package[2]), 'versionName': package[3],
         'minSdk': int(re.search(r"sdkVersion:'([0-9]+)'", badging)[1]),
-        'url': f'https://47.251.9.162/releases/{filename}',
+        'url': origin if args.local_qa else github,
+        'downloadUrls': addresses,
         'size': args.apk.stat().st_size, 'sha256': hashlib.sha256(args.apk.read_bytes()).hexdigest(), 'notes': notes,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

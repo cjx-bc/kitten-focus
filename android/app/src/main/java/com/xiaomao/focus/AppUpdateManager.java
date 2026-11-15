@@ -52,21 +52,30 @@ final class AppUpdateManager {
     }
 
     private static JSONObject fetchManifest() throws Exception {
-        HttpsURLConnection connection = (HttpsURLConnection) new URL(UpdateRelease.MANIFEST_URL).openConnection();
+        try { return fetchManifestFrom(UpdateRelease.MANIFEST_URL); }
+        catch (java.io.IOException networkError) {
+            return fetchManifestFrom(UpdateRelease.FALLBACK_MANIFEST_URL);
+        }
+    }
+
+    private static JSONObject fetchManifestFrom(String address) throws Exception {
+        HttpsURLConnection connection = (HttpsURLConnection) new URL(address).openConnection();
         try {
-            connection.setConnectTimeout(10000);
-            connection.setReadTimeout(15000);
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
             connection.setInstanceFollowRedirects(false);
             connection.setUseCaches(false);
             connection.setRequestProperty("Accept", "application/json");
-            if (connection.getResponseCode() != 200) throw new IllegalStateException("更新服务暂时不可用，请稍后重试");
+            connection.setRequestProperty("User-Agent", "KittenFocus/" + BuildConfig.VERSION_NAME + " (Android updater)");
+            if (connection.getResponseCode() != 200) throw new java.io.IOException("更新服务暂时不可用，请稍后重试");
             try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[4096]; int count;
                 while ((count = input.read(buffer)) != -1) {
                     output.write(buffer, 0, count);
                     if (output.size() > 65536) throw new IllegalArgumentException("更新信息过大");
                 }
-                return new JSONObject(output.toString("UTF-8"));
+                try { return new JSONObject(output.toString("UTF-8")); }
+                catch (org.json.JSONException error) { throw new java.io.IOException("更新服务返回了无法读取的内容", error); }
             }
         } finally { connection.disconnect(); }
     }
@@ -78,8 +87,9 @@ final class AppUpdateManager {
 
     synchronized JSONObject check(boolean force) throws Exception {
         String day = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
-        if (!force && day.equals(preferences.getString("attemptDay", ""))) return status();
-        preferences.edit().putString("attemptDay", day).apply();
+        if (!force && day.equals(preferences.getString("attemptDay", ""))
+            && preferences.getInt("attemptVersion", 0) == BuildConfig.VERSION_CODE) return status();
+        preferences.edit().putString("attemptDay", day).putInt("attemptVersion", BuildConfig.VERSION_CODE).apply();
         try {
             JSONObject manifest = manifestSource.load();
             if (manifest.getInt("schemaVersion") != 1 || !manifest.has("release"))
@@ -125,7 +135,15 @@ final class AppUpdateManager {
         File file = packageFile(release);
         if (!file.getParentFile().isDirectory() && !file.getParentFile().mkdirs()) throw new IllegalStateException("下载目录不可用");
         if (file.exists() && !file.delete()) throw new IllegalStateException("无法清理旧的下载文件");
-        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(release.url))
+        enqueue(release, 0, allowMetered);
+        return status();
+    }
+
+    private void enqueue(UpdateRelease release, int route, boolean allowMetered) throws Exception {
+        File file = packageFile(release);
+        if (file.exists() && !file.delete()) throw new IllegalStateException("无法清理旧的下载文件");
+        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(release.downloadUrls.get(route)))
+            .addRequestHeader("User-Agent", "KittenFocus/" + BuildConfig.VERSION_NAME + " (Android updater)")
             .setTitle("小猫专注 " + release.name).setDescription("更新下载完成后，可在应用内安装")
             .setMimeType("application/vnd.android.package-archive")
             .setAllowedOverMetered(allowMetered).setAllowedOverRoaming(allowMetered)
@@ -133,8 +151,9 @@ final class AppUpdateManager {
             .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "updates/" + file.getName());
         long id = downloads.enqueue(request);
         preferences.edit().putLong("downloadId", id).putString("downloadRelease", release.json().toString())
+            .putInt("downloadRoute", route).putBoolean("downloadFallbackUsed", route > 0).putBoolean("downloadAllowMetered", allowMetered)
+            .putLong("routeProgressAt", System.currentTimeMillis()).putLong("routeBytes", 0)
             .remove("verifiedDigest").remove("downloadError").apply();
-        return status();
     }
 
     synchronized JSONObject cancel() throws Exception {
@@ -145,7 +164,8 @@ final class AppUpdateManager {
             File file = packageFile(release);
             if (file.exists()) file.delete();
         }
-        preferences.edit().remove("downloadId").remove("downloadRelease").remove("downloadError").remove("verifiedDigest").apply();
+        preferences.edit().remove("downloadId").remove("downloadRelease").remove("downloadError").remove("verifiedDigest")
+            .remove("downloadFallbackUsed").remove("downloadAllowMetered").remove("downloadRoute").apply();
         return status();
     }
 
@@ -169,6 +189,18 @@ final class AppUpdateManager {
                 } else {
                     int state = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
                     received = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+                    int route = preferences.getInt("downloadRoute", preferences.getBoolean("downloadFallbackUsed", false) ? 1 : 0);
+                    int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
+                    long now = System.currentTimeMillis();
+                    if (received > preferences.getLong("routeBytes", 0))
+                        preferences.edit().putLong("routeBytes", received).putLong("routeProgressAt", now).apply();
+                    boolean waitingRetry = state == DownloadManager.STATUS_PAUSED && reason == DownloadManager.PAUSED_WAITING_TO_RETRY;
+                    boolean stalled = state == DownloadManager.STATUS_RUNNING && now - preferences.getLong("routeProgressAt", now) > 30000;
+                    if (canTryNext(downloaded, route, state, reason, waitingRetry || stalled)) {
+                        downloads.remove(id);
+                        enqueue(downloaded, route + 1, preferences.getBoolean("downloadAllowMetered", false));
+                        phase = "downloading"; received = 0; message = "已切换备用下载线路";
+                    } else
                     if (state == DownloadManager.STATUS_SUCCESSFUL) {
                         try {
                             String verified = preferences.getString("verifiedDigest", "");
@@ -197,7 +229,29 @@ final class AppUpdateManager {
             .put("downloadRelease", downloaded == null ? JSONObject.NULL : downloaded.json())
             .put("checkedAt", preferences.getLong("checkedAt", 0)).put("checkError", preferences.getString("checkError", ""))
             .put("phase", phase).put("received", received).put("total", total).put("message", message)
+            .put("fallbackUsed", preferences.getBoolean("downloadFallbackUsed", false))
+            .put("downloadRoute", preferences.getInt("downloadRoute", 0))
             .put("metered", metered()).put("canInstall", canInstall());
+    }
+
+    static boolean shouldFallback(UpdateRelease release, int reason, boolean alreadyUsed) {
+        if (alreadyUsed || release.url.startsWith(UpdateRelease.ORIGIN + "/")) return false;
+        return (reason >= 400 && reason < 600) || reason == DownloadManager.ERROR_HTTP_DATA_ERROR
+            || reason == DownloadManager.ERROR_UNHANDLED_HTTP_CODE
+            || reason == DownloadManager.ERROR_TOO_MANY_REDIRECTS || reason == DownloadManager.ERROR_CANNOT_RESUME
+            || reason == DownloadManager.ERROR_UNKNOWN;
+    }
+
+    static boolean canTryNext(UpdateRelease release, int route, int state, int reason, boolean retryOrStall) {
+        return route >= 0 && route + 1 < release.downloadUrls.size()
+            && (retryOrStall || (state == DownloadManager.STATUS_FAILED && retryableNetworkReason(reason)));
+    }
+
+    private static boolean retryableNetworkReason(int reason) {
+        return (reason >= 400 && reason < 600) || reason == DownloadManager.ERROR_HTTP_DATA_ERROR
+            || reason == DownloadManager.ERROR_UNHANDLED_HTTP_CODE
+            || reason == DownloadManager.ERROR_TOO_MANY_REDIRECTS || reason == DownloadManager.ERROR_CANNOT_RESUME
+            || reason == DownloadManager.ERROR_UNKNOWN;
     }
 
     boolean canInstall() {

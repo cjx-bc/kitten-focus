@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="小猫专注，把时间留给自己。常驻待办、专注计时、日历课表与投入统计，免登录，离线使用。下载安卓安装包。"
+    />
+    <title>小猫专注 · 把时间留给自己</title>
+    <link rel="icon" href="/site/cat.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/site/style.css?v=0.2.1" />
+    <script src="/site/download.js?v=0.2.1" defer></script>
+  </head>
+  <body>
+    <header class="header wrap">
+      <a class="brand" href="/" aria-label="小猫专注首页"
+        ><img src="/site/cat.svg" width="32" height="32" alt="" /><span>小猫专注</span></a
+      >
+      <a class="header-link" href="#download">获取安卓版 <span aria-hidden="true">↗</span></a>
+    </header>
+    <main>
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="tiny-dot" aria-hidden="true"></span> 给自己的专注空间</p>
+          <h1 id="hero-title">把时间<br />留给<span class="underlined">自己。</span></h1>
+          <p class="intro">从一件小事开始，专注一会儿。<br />让每天的认真，都有迹可循。</p>
+          <a
+            class="download-button"
+            id="download-main"
+            href="https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.1/xiaomao-focus-0.2.1-debug.apk"
+            download
+            ><svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" /></svg
+            ><span>下载安卓版</span></a
+          >
+          <p class="version-meta">
+            <span data-version>v0.2.1</span><span>·</span><span data-size>4.5 MB</span><span>·</span
+            ><span>Android 7.0 及以上</span>
+          </p>
+          <p class="download-status" id="download-status" role="status" aria-live="polite"></p>
+          <progress
+            id="download-progress"
+            aria-label="安装包下载进度"
+            max="100"
+            value="0"
+            hidden
+          ></progress>
+          <button id="cancel-download" class="text-link" hidden>取消下载</button>
+        </div>
+        <div class="focus-scene" aria-label="专注计时界面示意">
+          <div class="scene-top">
+            <span>只做眼前这一件事</span><span class="scene-mode">倒计时</span>
+          </div>
+          <div class="timer-dial">
+            <svg class="dial-ring" viewBox="0 0 280 280" aria-hidden="true">
+              <circle cx="140" cy="140" r="126" />
+              <circle class="dial-dot" cx="140" cy="14" r="5" />
+            </svg>
+            <div class="timer-number">25<span>:</span>00</div>
+            <div class="timer-caption">一段留给自己的时间</div>
+          </div>
+          <div class="scene-task">
+            <span class="task-icon" aria-hidden="true">✓</span>
+            <div><strong>背单词</strong><small>英语 · 今天也慢慢积累</small></div>
+            <span class="play" aria-hidden="true">▶</span>
+          </div>
+          <div class="scene-foot">
+            <img src="/site/cat.svg" width="22" height="22" alt="" /><span
+              >安排、投入、看见进步。</span
+            >
+          </div>
+        </div>
+      </section>
+      <section class="features wrap" aria-label="主要功能">
+        <article>
+          <span class="feature-icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24">
+              <path d="m3 6 2 2 3-4m3 2h10M3 14l2 2 3-4m3 2h10M11 21h10" /></svg
+          ></span>
+          <h2>常做的事，随时开始</h2>
+          <p>主题和待办长期保留。选一件事，开始一段专注。</p>
+        </article>
+        <article>
+          <span class="feature-icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24">
+              <rect x="3" y="5" width="18" height="16" rx="3" />
+              <path d="M7 3v4m10-4v4M3 11h18M7 15h3m4 0h3m-10 3h3" /></svg
+          ></span>
+          <h2>把安排放进日历</h2>
+          <p>个人日程与学期课表，在时间轴里安排好每一天。</p>
+        </article>
+        <article>
+          <span class="feature-icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24"><path d="M5 21v-6m7 6V9m7 12V3" /></svg
+          ></span>
+          <h2>看见真实的投入</h2>
+          <p>记录实际专注时长，用趋势和分布回看自己的节奏。</p>
+        </article>
+      </section>
+      <section class="download-section wrap" id="download" aria-labelledby="download-title">
+        <div class="download-details">
+          <p class="eyebrow">从这一刻开始</p>
+          <h2 id="download-title">在手机上，专注一会儿。</h2>
+          <p>免登录，日常功能离线可用。<br />已有旧版？直接覆盖安装，保留自己的记录。</p>
+          <div class="secondary-actions">
+            <a
+              id="download-secondary"
+              class="text-link"
+              href="https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.1/xiaomao-focus-0.2.1-debug.apk"
+              >下载安卓安装包 <span aria-hidden="true">↗</span></a
+            ><a
+              id="backup-download"
+              class="backup-link"
+              href="https://download-focus.linma.asia/releases/xiaomao-focus-0.2.1-debug.apk"
+              >备用下载</a
+            >
+          </div>
+          <p>
+            <a
+              id="github-download"
+              class="backup-link"
+              href="https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.1/xiaomao-focus-0.2.1-debug.apk"
+              >GitHub 原站下载</a
+            >
+          </p>
+          <p class="help-note">
+            微信或 QQ 内无法下载时，请选择“在浏览器打开”。<br />安装完成后，后续新版可在“我的 →
+            检查更新”获取。
+          </p>
+        </div>
+        <figure class="qr-card">
+          <img src="/site/download-qr.svg" width="152" height="152" alt="小猫专注下载页二维码" />
+          <figcaption>手机扫码，打开下载页</figcaption>
+          <span>focus.linma.asia</span>
+        </figure>
+      </section>
+      <section class="release-section wrap" aria-labelledby="release-title">
+        <div class="release-header">
+          <h2 id="release-title">最近更新</h2>
+          <span data-version>v0.2.1</span>
+        </div>
+        <p id="release-notes">新增固定域名、下载页面和备用下载线路。你可以自己决定什么时候更新。</p>
+        <details>
+          <summary>安装与数据说明</summary>
+          <p>
+            当前为内测版 APK。首次安装时，Android
+            可能要求允许浏览器安装应用。覆盖安装请使用同一个来源的安装包，不要先卸载旧版。数据保存在当前设备，重要记录可以在“我的”中手动导出备份。小猫养成尚未开放。
+          </p>
+        </details>
+      </section>
+    </main>
+    <footer class="footer wrap"><span>小猫专注</span><span>认真一点，也轻松一点。</span></footer>
+  </body>
+</html>

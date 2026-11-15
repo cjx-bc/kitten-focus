@@ -1,0 +1,191 @@
+{
+  "version": "0.2.1",
+  "domainTests": 14,
+  "androidTests": 20,
+  "updateFlow": {
+    "passed": [
+      "source APK to domain/base cover-install",
+      "all business data retained",
+      "daily HTTPS check",
+      "badge without modal",
+      "paused focus blocks download",
+      "in-app offer",
+      "metered confirmation if required",
+      "background download",
+      "APK verification",
+      "source permission guidance",
+      "backup before install",
+      "system installer confirmation",
+      "base APK to QA target installation",
+      "post-upgrade data equality"
+    ],
+    "runtimeErrors": [],
+    "installed": "0.2.2-qa-mirror",
+    "sourceApk": "releases/xiaomao-focus-0.2.0-debug.apk",
+    "baseCode": 7,
+    "targetCode": 8,
+    "automaticFallbackVerified": true,
+    "transfer": {
+      "route": 1,
+      "fallbackUsed": true,
+      "release": "0.2.2-qa-mirror"
+    },
+    "backups": [
+      {
+        "id": "upgrade-7-8.json",
+        "createdAt": 1794722867695,
+        "from": 7,
+        "to": 8
+      },
+      {
+        "id": "upgrade-6-7.json",
+        "createdAt": 1794722852237,
+        "from": 6,
+        "to": 7
+      },
+      {
+        "id": "upgrade-0-6.json",
+        "createdAt": 1794722850423,
+        "from": 0,
+        "to": 6
+      }
+    ]
+  },
+  "networkScope": "US proxy on development computer and US origin server; no mainland benchmark",
+  "mainlandSpeedVerified": false,
+  "physicalPhoneVerified": false,
+  "mirrorCandidate": "https://gh-proxy.com/",
+  "mirrorProbe": [
+    {
+      "prefix": "https://ghfast.top/",
+      "scope": "US origin server; not mainland-carrier benchmark",
+      "runs": [
+        {
+          "range": true,
+          "status": 206,
+          "bytes": 16,
+          "seconds": 0.42,
+          "cors": null,
+          "sha256Matches": null
+        },
+        {
+          "range": false,
+          "status": 200,
+          "bytes": 4687065,
+          "seconds": 0.48,
+          "cors": null,
+          "sha256Matches": true
+        }
+      ]
+    },
+    {
+      "prefix": "https://gh-proxy.com/",
+      "scope": "US origin server; not mainland-carrier benchmark",
+      "runs": [
+        {
+          "range": true,
+          "status": 206,
+          "bytes": 16,
+          "seconds": 0.39,
+          "cors": "*",
+          "sha256Matches": null
+        },
+        {
+          "range": false,
+          "status": 200,
+          "bytes": 4687065,
+          "seconds": 0.11,
+          "cors": "*",
+          "sha256Matches": true
+        }
+      ]
+    },
+    {
+      "prefix": "https://ghproxy.net/",
+      "scope": "US origin server; not mainland-carrier benchmark",
+      "runs": [
+        {
+          "range": true,
+          "status": 206,
+          "bytes": 16,
+          "seconds": 5.28,
+          "cors": null,
+          "sha256Matches": null
+        },
+        {
+          "range": false,
+          "status": 200,
+          "bytes": 4687065,
+          "seconds": 16.31,
+          "cors": null,
+          "sha256Matches": true
+        }
+      ]
+    }
+  ],
+  "localProxyProbe": [
+    {
+      "prefix": "https://ghfast.top/",
+      "scope": "current Windows environment via configured proxy; not mainland-carrier benchmark",
+      "runs": [
+        {
+          "range": true,
+          "seconds": 18.01,
+          "error": "<urlopen error _ssl.c:1064: The handshake operation timed out>"
+        },
+        {
+          "range": false,
+          "seconds": 18.0,
+          "error": "<urlopen error _ssl.c:1064: The handshake operation timed out>"
+        },
+        {
+          "range": false,
+          "seconds": 18.0,
+          "error": "<urlopen error _ssl.c:1064: The handshake operation timed out>"
+        }
+      ]
+    },
+    {
+      "prefix": "https://gh-proxy.com/",
+      "scope": "current Windows environment via configured proxy; not mainland-carrier benchmark",
+      "runs": [
+        {
+          "range": true,
+          "seconds": 18.01,
+          "error": "<urlopen error _ssl.c:1064: The handshake operation timed out>"
+        },
+        {
+          "range": false,
+          "seconds": 18.0,
+          "error": "<urlopen error _ssl.c:1064: The handshake operation timed out>"
+        },
+        {
+          "range": false,
+          "seconds": 11.4,
+          "error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1082)>"
+        }
+      ]
+    },
+    {
+      "prefix": "https://ghproxy.net/",
+      "scope": "current Windows environment via configured proxy; not mainland-carrier benchmark",
+      "runs": [
+        {
+          "range": true,
+          "seconds": 18.01,
+          "error": "<urlopen error _ssl.c:1064: The handshake operation timed out>"
+        },
+        {
+          "range": false,
+          "seconds": 18.0,
+          "error": "<urlopen error _ssl.c:1064: The handshake operation timed out>"
+        },
+        {
+          "range": false,
+          "seconds": 18.0,
+          "error": "<urlopen error _ssl.c:1064: The handshake operation timed out>"
+        }
+      ]
+    }
+  ]
+}

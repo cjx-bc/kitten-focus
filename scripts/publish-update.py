@@ -3,12 +3,15 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import urllib.request
 
 SSH = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=yes', '-o', 'HostKeyAlgorithms=ssh-ed25519', 'myserver']
+PROXY = ['-o', 'ProxyCommand=' + os.environ['SSH_PROXY_COMMAND']] if os.environ.get('SSH_PROXY_COMMAND') else []
+SSH[1:1] = PROXY
 
 
 def remote(source):
@@ -27,12 +30,13 @@ def main():
     manifest = json.loads(args.manifest.read_text(encoding='utf-8'))
     release = manifest['release']
     filename = release['url'].split('/')[-1]
-    if not re.fullmatch(r'xiaomao-focus-[a-zA-Z0-9.-]+\.apk', filename) or release['url'] != 'https://47.251.9.162/releases/' + filename:
+    github_url = 'https://github.com/cjx-bc/kitten-focus/releases/download/v' + release['versionName'] + '/' + filename
+    if not re.fullmatch(r'xiaomao-focus-[a-zA-Z0-9.-]+\.apk', filename) or release['url'] not in [github_url, 'https://download-focus.linma.asia/releases/' + filename]:
         raise SystemExit('Unexpected download URL')
     if hashlib.sha256(args.apk.read_bytes()).hexdigest() != release['sha256'] or args.apk.stat().st_size != release['size']:
         raise SystemExit('APK changed after verification')
     remote("import os; os.makedirs('/opt/kitten-focus/candidates',exist_ok=True)\n")
-    subprocess.check_call(['scp', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', str(args.apk), f'myserver:/opt/kitten-focus/candidates/{filename}.upload'])
+    subprocess.check_call(['scp'] + PROXY + ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', str(args.apk), f'myserver:/opt/kitten-focus/candidates/{filename}.upload'])
     encoded = base64.b64encode(json.dumps(manifest, ensure_ascii=False).encode()).decode()
     source = """
 import base64,json,hashlib,os,shutil
@@ -68,14 +72,27 @@ else:
     remote(source)
     # Verify the publicly served bytes before advertising the release.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(release['url'], timeout=45) as response:
+    opener.addheaders = [('User-Agent', 'KittenFocusPublisher/1.0')]
+    origin_url = 'https://download-focus.linma.asia/releases/' + filename
+    with opener.open(origin_url, timeout=45) as response:
         data = response.read()
     if len(data) != release['size'] or hashlib.sha256(data).hexdigest() != release['sha256']:
         raise SystemExit('Public download verification failed; channel unchanged')
+    # GitHub is the canonical source. Do not advertise an asset that is missing or private.
+    if release['url'] == github_url:
+        source = """
+import urllib.request,hashlib,json
+release=json.loads(base64.b64decode('%s').decode('utf-8'))['release']
+request=urllib.request.Request(release['url'],headers={'User-Agent':'KittenFocusPublisher/1.0'})
+with urllib.request.urlopen(request,timeout=45) as response: payload=response.read(release['size']+1)
+assert len(payload)==release['size'] and hashlib.sha256(payload).hexdigest()==release['sha256'], 'GitHub release asset mismatch'
+print('Public GitHub release asset verified.')
+""" % encoded
+        print(remote('import base64\n'+source).strip())
     source = """
 import base64,json,os,datetime,shutil
 manifest=json.loads(base64.b64decode('%s').decode('utf-8'))
-path='/opt/kitten-focus/public/updates/%s.json'
+path='/opt/kitten-focus/public/updates/domain-%s.json'
 archive='/opt/kitten-focus/manifest-history'
 os.makedirs(archive,exist_ok=True)
 if os.path.exists(path): shutil.copyfile(path,archive+'/%s-'+datetime.datetime.utcnow().strftime('%%Y%%m%%d%%H%%M%%S%%f')+'.json')
@@ -89,8 +106,18 @@ os.replace(path+'.part',path)
 print('Published channel: %s')
 """ % (encoded, args.channel, args.channel, args.channel)
     print(remote(source).strip())
-    with opener.open(f'https://47.251.9.162/updates/{args.channel}.json', timeout=15) as response:
-        served = json.load(response)
+    try:
+        with opener.open(f'https://focus.linma.asia/updates/{args.channel}.json', timeout=15) as response:
+            served = json.load(response)
+    except (urllib.error.URLError, TimeoutError):
+        # The runner's route to Cloudflare may differ; still verify the public TLS endpoint remotely.
+        source = """
+import urllib.request,json
+request=urllib.request.Request('https://focus.linma.asia/updates/%s.json',headers={'User-Agent':'KittenFocusPublisher/1.0'})
+with urllib.request.urlopen(request,timeout=15) as response:
+    print(json.dumps(json.load(response)))
+""" % args.channel
+        served = json.loads(remote(source))
     if served != manifest:
         raise SystemExit('Served manifest differs')
     print('HTTPS channel and APK verified.')

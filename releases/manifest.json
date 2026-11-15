@@ -1,30 +1,28 @@
 {
-  "version": "0.2.0",
-  "versionCode": 6,
+  "version": "0.2.1",
+  "versionCode": 7,
   "type": "debug internal testing build",
-  "status": "published with user approval; stable update channel 0.2.0",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
-      "name": "xiaomao-focus-0.2.0-debug.apk",
-      "size": 4687065,
-      "sha256": "05cee0bdb7c946e6082de73128289b5d41a0900c972746ac38ba8d2aa46b9bdf"
+      "name": "xiaomao-focus-0.2.1-debug.apk",
+      "size": 4654882,
+      "sha256": "64c9e3fccc0b2452f0dbd1e4b4333992162a8de00c6d38c826ac6c0600789af4"
     },
     {
-      "name": "xiaomao-focus-0.2.0-source.zip",
-      "size": 9352329,
-      "sha256": "cce4309c44c722ef893d6e580f8d53b9b3811beed01c443b9431fdaada5859e7"
+      "name": "xiaomao-focus-0.2.1-source.zip",
+      "size": 9373389,
+      "sha256": "f888978e98611331a8fbcdca98b74313013df2314899225ff270dd203eca706b"
     }
   ],
-  "sourceFileCount": 147,
+  "sourceFileCount": 155,
   "verified": {
     "domainTests": 14,
-    "androidTests": 18,
-    "fullInAppUpgrade": "passed; 0.1.4 -> 0.2.0 QA -> 0.2.1-qa2",
-    "businessDataRetained": true,
-    "serverHTTPS": "passed",
-    "physicalDeviceTested": false
+    "androidTests": 20,
+    "automaticFallbackAndInstall": "passed",
+    "dataRetained": true,
+    "mainlandSpeedVerified": false
   },
   "repository": "cjx-bc/kitten-focus",
-  "publishedAtUTC": "2026-11-15T04:43:06.994236+00:00"
+  "repositoryVisibility": "public"
 }
