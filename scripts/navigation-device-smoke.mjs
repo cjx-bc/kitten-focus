@@ -16,6 +16,11 @@ async function reconnect() {
   qa.close()
   qa = await connectQa({ port: 9254, output })
   await until(() => evaluate('!!document.querySelector(".app-shell")'), 'replacement WebView ready')
+  await until(() => evaluate('!document.querySelector(".boot")'), 'replacement app initialization')
+  if ((await native('observeControl')).owner === 'focus') {
+    await evaluate("location.hash='#/focus'")
+    await until(() => evaluate('!!document.querySelector(".focus-page")'), 'replacement timer view')
+  }
 }
 const evidence = resolve(output)
 mkdirSync(evidence, { recursive: true })
@@ -49,7 +54,8 @@ async function returns(label,args) {
   command('shell','input',...args)
   const state = await until(async()=>{
     const navigation = (await observe()).navigation
-    return navigation.active && navigation.lastReturnedAt > before && foreground().includes('MainActivity') ? navigation : null
+    return navigation.active && navigation.lastReturnedAt > before && foreground().includes('MainActivity')
+      && await evaluate("location.hash === '#/focus' && !!document.querySelector('.focus-clock')") ? navigation : null
   },label+' actual return',7000)
   screenshot(label)
   results.push({scenario:label,passed:true,navigation:state,foreground:foreground()})
@@ -90,7 +96,9 @@ try {
   await native('focusAction',{action:'pause'})
   await returns('02-button-recents-paused',['keyevent','KEYCODE_APP_SWITCH'])
   command('shell','am','start','-a','android.intent.action.DIAL','-d','tel:')
-  await until(()=>!foreground().includes(qa.appId),'actual dialer allowed')
+  const dialer = command('shell','cmd','role','get-role-holders','android.app.role.DIALER').trim().split('\n')[0]
+  assert(dialer, 'Resolve the real default dialer before asserting its exception')
+  await until(()=>foreground().includes(dialer),'actual dialer allowed')
   screenshot('03-dialer-allowed')
   results.push({scenario:'dialer-remains-reachable',passed:true,foreground:foreground()})
   await native('openProtectionSettings')

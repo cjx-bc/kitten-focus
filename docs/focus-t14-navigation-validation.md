@@ -23,7 +23,9 @@
 - 原生红/绿产物与输出位于工作树 `artifacts/t14/red/result`、`artifacts/t14/green/control`。只安装 `.qa`，未清空或变更原始 `com.xiaomao.focus`。
 - 真正系统输入另由 `scripts/navigation-device-smoke.mjs` 执行。它使用外部 adb、真实 WebView 原生桥接和前台 Activity 证据，不在有无障碍服务的用例中依赖可能抑制服务的测试框架。脚本保存并恢复原数据、授权服务列表、授权总开关和导航 overlay。
 
-真实按钮、手势和例外结果将在该脚本完成后记录。OEM 真机、真实来电/紧急拨号、其他 Android 版本、分屏/桌面实现差异仍需设备矩阵验证；本机结果不能替代这些条件，未验证设备不能按成功交付。
+第二轮外部输入已确认按钮 Home、普通暂停中的 APP_SWITCH 均实际返回 MainActivity，且本轮原生返回时间分别更新为 `1794776377867` 和 `1794776380900`，状态为 `protecting`；原 Sheet 默认关闭/独立保存、必要无障碍授权页面可达也通过。手势 Home 回到 MainActivity 后仍缺少确认，保守状态保持 `failed`，没有作为通过。拨号器检查发现脚本可能在 Activity 切换瞬间取得空前台行，因此已收紧为匹配实际默认拨号器包，待重跑。
+
+手势确认补充读取 `onNewIntent` 后 100、400、1000 毫秒的真实 decor window focus，仅确认已有的本轮待处理返回；不是凭 Intent 送达推定成功。此最新补丁尚待构建与设备重跑，完整 T14 不应关闭。后续还需完成手势 Home/Overview、精确拨号器、恢复后 Home 可达和结束休息释放的全脚本验收。OEM 真机、真实来电/紧急拨号、其他 Android 版本、分屏/桌面差异仍需设备矩阵验证；本机结果不能替代这些条件。
 
 ## 首轮真实输入发现与修复
 
