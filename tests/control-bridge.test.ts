@@ -159,3 +159,11 @@ it('keeps an empty independent whitelist distinct from another item and legacy o
   await focusDriver.action('finish')
   expect((await focusDriver.start(session())).session?.protection).toEqual({ study: false, source: 'global', whitelist: ['global.tool'] })
 })
+it('rejects requested native navigation enhancement in the browser instead of silently discarding it', async () => {
+  const { repository, focusDriver } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  const data = emptyData()
+  data.preferences.protection = { ...defaultProtection(), enhancements: ['navigationHomeRecents'] }
+  await repository.save(data)
+  await expect(focusDriver.start(session())).rejects.toThrow(/Android/)
+})

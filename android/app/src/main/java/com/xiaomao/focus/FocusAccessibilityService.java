@@ -14,10 +14,21 @@ import org.json.JSONObject;
 
 public class FocusAccessibilityService extends AccessibilityService {
     private static volatile boolean running;
+    private static volatile FocusAccessibilityService instance;
     private final Handler expiry = new Handler(Looper.getMainLooper());
     private String foregroundPackage = "", foregroundClass = "";
     private final Runnable enforce = () -> enforceForeground();
     static boolean connected() { return running; }
+    static boolean returnToFocus(Context context, String target) {
+        FocusAccessibilityService service = instance;
+        if (service == null || !running) return false;
+        // Overview may be a SystemUI overlay. BACK closes that surface before raising
+        // the existing activity; Home is handled by raising our existing task directly.
+        if ("recents".equals(target)) service.performGlobalAction(GLOBAL_ACTION_BACK);
+        service.startActivity(new Intent(service, MainActivity.class).putExtra("returnToFocus", true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+        return true;
+    }
     private final BroadcastReceiver changes = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) { FocusProtection.invalidateNecessary(); }
     };
@@ -28,9 +39,9 @@ public class FocusAccessibilityService extends AccessibilityService {
         else registerReceiver(changes, filter);
     }
     @Override public void onConfigurationChanged(Configuration config) { super.onConfigurationChanged(config); FocusProtection.invalidateNecessary(); }
-    @Override protected void onServiceConnected() { running = true; FocusProtection.executionSucceeded(); FocusProtection.invalidateNecessary(); }
-    @Override public boolean onUnbind(Intent intent) { running = false; return super.onUnbind(intent); }
-    @Override public void onDestroy() { expiry.removeCallbacks(enforce); running = false; unregisterReceiver(changes); super.onDestroy(); }
+    @Override protected void onServiceConnected() { instance = this; running = true; FocusProtection.executionSucceeded(); FocusProtection.invalidateNecessary(); }
+    @Override public boolean onUnbind(Intent intent) { instance = null; running = false; return super.onUnbind(intent); }
+    @Override public void onDestroy() { expiry.removeCallbacks(enforce); instance = null; running = false; unregisterReceiver(changes); super.onDestroy(); }
     @Override public void onInterrupt() { }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
@@ -42,8 +53,10 @@ public class FocusAccessibilityService extends AccessibilityService {
     private void enforceForeground() {
         expiry.removeCallbacks(enforce);
         try {
-            JSONObject observation = new FocusControl(this).observeControl();
-            JSONObject session = observation.getJSONObject("focus").optJSONObject("session");
+            FocusControl control = new FocusControl(this);
+            if (control.navigationWindow(foregroundPackage, foregroundClass)) return;
+            JSONObject observation = control.observeControl();
+            JSONObject session = ControlSession.from(observation);
             JSONObject grant = session == null ? null : session.optJSONObject("temporaryAccess");
             if (grant != null && grant.optLong("remainingMs") > 0 && foregroundPackage.equals(grant.optString("targetPackage")))
                 expiry.postDelayed(enforce, Math.min(1000, grant.optLong("remainingMs")) + 20);
