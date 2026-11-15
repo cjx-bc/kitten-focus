@@ -59,7 +59,7 @@ onBeforeUnmount(() => {
     <template v-if="!props.runtimeOnly">
       <label class="switch"><span>通知拦截</span><input type="checkbox" :checked="enabled" :disabled="busy" @change="toggle" /></label>
       <p class="field-help">按本轮有效白名单暂缓其他应用的普通通知；电话、闹钟、紧急与小猫控制通知保留。与学霸模式、严格模式和声音辅助分别选择。</p>
-      <p class="field-help">当前实现支持有固定截止的严格倒计时。普通可暂停倒计时、正计时与提前立即释放仍待后续实现；本轮暂不执行这些路径。修改开关用于下一轮。</p>
+      <p class="field-help">当前实现支持有固定截止的严格专注倒计时。普通可暂停倒计时、正计时、锁机与提前立即释放仍待后续实现；本轮暂不执行这些路径。修改开关用于下一轮。</p>
     </template>
     <div role="status">
       <strong>通知拦截：{{ phaseText }}</strong>

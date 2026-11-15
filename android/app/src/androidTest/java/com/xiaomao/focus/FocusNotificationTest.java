@@ -136,6 +136,59 @@ public class FocusNotificationTest {
         assertEquals(1, system.snoozed.size());
         assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
     }
+    @Test public void independentLockReportsPendingNotificationLifecycleAndRetainsOwner() throws Exception {
+        JSONObject data = control.loadData();
+        data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "lock-notifications")
+            .put("name", "锁机通知边界").put("minutes", 1).put("whitelist", new JSONObject().put("source", "global"))));
+        store.saveData(data, false);
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; } public boolean connected() { return true; }
+        }, new AndroidDndSystem(context), system);
+        control.startLock("lock-notifications");
+        assertEquals("lock", control.observeControl().getString("owner"));
+        assertTrue(control.getNotificationStatus().getBoolean("requested"));
+        assertEquals("lifecycle_pending", control.getNotificationStatus().getString("phase"));
+        assertFalse(control.getNotificationStatus().getBoolean("active"));
+        control.notificationPosted(notice("during-lock", "other.app", false));
+        assertTrue(system.requests.isEmpty());
+        JSONObject edited = control.loadData();
+        edited.getJSONObject("preferences").getJSONObject("protection").put("interceptNotifications", false);
+        store.saveData(edited, false);
+        control.lockAction("read", false);
+        assertTrue("This round keeps its notification preference snapshot", control.getNotificationStatus().getBoolean("requested"));
+        control.lockAction("finish", true);
+        assertFalse(control.getNotificationStatus().getBoolean("requested"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+        assertTrue(control.observeControl().isNull("owner"));
+        assertEquals(0, control.loadData().getJSONArray("records").length());
+    }
+    @Test public void lockWithoutNotificationRequestPreservesPreviousFocusReleaseResponsibility() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("previous-focus", "other.app", false));
+        system.connected = false; now += 60000; control.reconcile();
+        JSONObject data = control.loadData();
+        data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "next-lock")
+            .put("name", "后续锁机").put("minutes", 1).put("whitelist", new JSONObject().put("source", "global"))));
+        store.saveData(data, false);
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; } public boolean connected() { return true; }
+        }, new AndroidDndSystem(context), system);
+        try { control.startLock("next-lock"); fail("Requested interception must reject unresolved preceding notifications"); }
+        catch (IllegalStateException expected) { }
+        assertTrue(control.observeControl().isNull("owner"));
+        data.getJSONObject("preferences").getJSONObject("protection").put("interceptNotifications", false);
+        store.saveData(data, false);
+        control.startLock("next-lock");
+        assertEquals("lock", control.observeControl().getString("owner"));
+        assertFalse(control.getNotificationStatus().getBoolean("requested"));
+        assertTrue(control.getNotificationStatus().getBoolean("recoveryPending"));
+        control.lockAction("finish", true);
+        assertTrue(control.getNotificationStatus().getBoolean("recoveryPending"));
+        system.active.addAll(system.snoozed); system.snoozed.clear(); system.connected = true;
+        control.synchronizeNotifications();
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+    }
     static final class FakeNotifications implements NotificationSystem {
         boolean granted = true, connected = true; int calls;
         final Map<String, Long> requests = new LinkedHashMap<>();

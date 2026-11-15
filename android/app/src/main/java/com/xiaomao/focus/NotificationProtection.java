@@ -44,9 +44,13 @@ final class NotificationProtection {
     private static String groupIdentity(NotificationSystem.Notice notice) {
         return notice.packageName + ":" + notice.uid + ":" + notice.group;
     }
+    private static boolean fixedDeadlineSupported(JSONObject active) {
+        return active != null && !LockEngine.owns(active)
+            && active.optBoolean("strictMode") && active.optString("mode").equals("countdown");
+    }
     private boolean controlling(JSONObject journal, JSONObject active) {
         return active != null && active.optBoolean("notificationsRequested")
-            && active.optBoolean("strictMode") && active.optString("mode").equals("countdown")
+            && fixedDeadlineSupported(active)
             && journal.optString("sessionId").equals(active.optString("id"))
             && !journal.optBoolean("withdrawn") && journal.optInt("bootId") == clock.boot()
             && clock.mono() < journal.optLong("deadlineMono");
@@ -192,7 +196,7 @@ final class NotificationProtection {
         boolean supported = system.supported(), authorized = system.authorized(), connected = system.connected();
         String error = journal.optString("error", system.failure());
         String phase = !supported ? "unsupported" : journal.optBoolean("withdrawn") ? "withdrawn"
-            : requested && !(active.optBoolean("strictMode") && active.optString("mode").equals("countdown")) ? "lifecycle_pending"
+            : requested && !fixedDeadlineSupported(active) ? "lifecycle_pending"
             : requested && !authorized ? "permission_required" : requested && !connected ? "disconnected"
             : !error.isEmpty() ? "failed" : controlling ? snoozed > 0 ? "holding" : pending > 0 ? "requested" : "ready"
             : pending > 0 ? "release_pending" : entries.length() > 0 ? "released" : "off";
@@ -202,6 +206,6 @@ final class NotificationProtection {
             .put("pendingCount", pending).put("restoredCount", restored).put("absentCount", absent).put("presentCount", present)
             .put("snoozedCount", snoozed)
             .put("recoveryPending", pending > 0).put("error", error)
-            .put("reason", "固定截止原通知由 Android 暂缓和恢复；请求返回不等于实际恢复。普通可暂停倒计时、正计时与提前立即释放仍待后续实现。");
+            .put("reason", "固定截止严格专注的原通知由 Android 暂缓和恢复；请求返回不等于实际恢复。普通可暂停倒计时、正计时、锁机与提前立即释放仍待后续实现。");
     }
 }

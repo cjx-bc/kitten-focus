@@ -152,10 +152,13 @@ final class FocusControl {
             session.put("protection", accessibility == null
                 ? FocusProtection.captureLock(context, store, configuration)
                 : FocusProtection.captureLock(context, store, configuration, accessibility));
+            session.put("notificationsRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("interceptNotifications")));
+            notifications.checkStart(session);
             recovery.prepare(session);
             rest.exit();
             JSONObject result = lock.start(session);
             FocusProtection.executionSucceeded();
+            notifications.synchronize(store.read("active"));
             return result;
         }
     }
@@ -165,6 +168,7 @@ final class FocusControl {
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
             dnd.synchronize(active);
+            notifications.synchronize(active);
             return result;
         }
     }
