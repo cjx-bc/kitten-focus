@@ -14,7 +14,7 @@ const prefs = computed(() => app.data.preferences.protection ?? defaultProtectio
 const status = ref<ProtectionStatus | null>(null)
 const error = ref(''), busy = ref(false), permissionHelp = ref(false), editing = ref(false)
 const apps = ref<ProtectionApp[]>([]), selected = ref<string[]>([]), query = ref(''), showSystem = ref(false)
-const stateLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持' }
+const stateLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持', recovered: '本轮已撤销' }
 const filtered = computed(() => apps.value.filter((row) =>
   (!row.system || showSystem.value || row.fixed || selected.value.includes(row.packageName)) &&
   `${row.name} ${row.packageName}`.toLocaleLowerCase().includes(query.value.toLocaleLowerCase())))
@@ -24,8 +24,9 @@ async function refresh() {
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
 }
 function visibility() { if (!document.hidden) void refresh() }
-onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh) })
-onBeforeUnmount(() => { document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh) })
+onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh); window.addEventListener('protection-recovered', refresh) })
+onBeforeUnmount(() => { document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh); window.removeEventListener('protection-recovered', refresh) })
+function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 async function toggleStudy(event: Event) {
   busy.value = true; error.value = ''
   try {
@@ -79,6 +80,7 @@ async function authorize() {
         <p v-if="status?.supported">系统授权：{{ status.authorized ? '已启用' : '未启用' }} · 服务：{{ status.connected ? '已连接' : '未连接' }}</p>
       </div>
       <button v-if="status?.supported" class="secondary wide" :disabled="busy" @click="permissionHelp = true">查看用途与授权</button>
+      <button class="secondary wide" @click="recovery">保护帮助与故障恢复</button>
       <button class="menu-row" :disabled="busy || !status?.supported" @click="openApps">
         <span>全局白名单<small>{{ prefs.globalWhitelist.length }} 个已选包 · 小猫始终允许</small></span><Icon name="right" :size="18" />
       </button>

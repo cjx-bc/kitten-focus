@@ -18,7 +18,7 @@ const app = useApp(),
   busy = ref(false),
   studyOpen = ref(false)
 const protectionState = ref<ProtectionStatus | null>(null)
-const protectionLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持' }
+const protectionLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持', recovered: '本轮已撤销' }
 async function refreshProtection() {
   try { protectionState.value = await protectionDriver.status() } catch { protectionState.value = null }
 }

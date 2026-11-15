@@ -12,13 +12,16 @@ final class FocusEngine {
     FocusEngine(Context context,LocalStore store,SessionClock clock){this.context=context.getApplicationContext();this.store=store;this.clock=clock;rest=new RestEngine(context,store,clock);}
     JSONObject start(JSONObject session) throws JSONException {synchronized(store){return startLocked(session);}}
     private JSONObject startLocked(JSONObject session) throws JSONException {
+        checkStart(session);
+        rest.exit();
+        session.put("anchorMono",clock.mono());session.put("anchorEpoch",clock.epoch());session.put("startedAt",clock.epoch());session.put("bootId",clock.boot());store.write("active",session);
+        Reminders.scheduleFocus(context,session);Reminders.showFocus(context,session,0);return snapshot(session,0,null);
+    }
+    void checkStart(JSONObject session) throws JSONException {
         if(store.read("active")!=null)throw new IllegalStateException("请先结束当前专注");
         JSONObject resting = rest.read().optJSONObject("session");
         if(resting!=null&&resting.optString("state").equals("running"))throw new IllegalStateException("请先退出休息，再开始新的专注");
         if(session.optLong("targetMs")<=0||(!session.optString("mode").equals("countdown")&&!session.optString("mode").equals("stopwatch")))throw new IllegalArgumentException("计时参数无效");
-        rest.exit();
-        session.put("anchorMono",clock.mono());session.put("anchorEpoch",clock.epoch());session.put("startedAt",clock.epoch());session.put("bootId",clock.boot());store.write("active",session);
-        Reminders.scheduleFocus(context,session);Reminders.showFocus(context,session,0);return snapshot(session,0,null);
     }
     private long elapsed(JSONObject s,long now){long ms=s.optLong("elapsedMs")+(s.optString("state").equals("running")?Math.max(0,now-s.optLong("anchorMono")):0);return s.optString("mode").equals("countdown")?Math.min(ms,s.optLong("targetMs")):ms;}
     JSONObject observe() throws JSONException {

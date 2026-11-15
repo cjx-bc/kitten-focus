@@ -2,6 +2,9 @@ package com.xiaomao.focus;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
@@ -10,6 +13,7 @@ import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.core.content.ContextCompat;
 import org.json.JSONObject;
 import java.util.Locale;
 
@@ -17,6 +21,9 @@ import java.util.Locale;
 public class FocusBlockActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView title, time, state;
+    private final BroadcastReceiver recovery = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) { render(); }
+    };
     private final Runnable refresh = new Runnable() {
         @Override public void run() { render(); handler.postDelayed(this, 500); }
     };
@@ -45,6 +52,11 @@ public class FocusBlockActivity extends Activity {
         view.setTextColor(Color.rgb(34, 34, 34)); view.setGravity(Gravity.CENTER);
         view.setPadding(0, dp(12), 0, dp(12)); return view;
     }
+    @Override protected void onStart() {
+        super.onStart();
+        ContextCompat.registerReceiver(this, recovery, new IntentFilter(FocusRecovery.DISMISS_BLOCK), ContextCompat.RECEIVER_NOT_EXPORTED);
+    }
+    @Override protected void onStop() { unregisterReceiver(recovery); super.onStop(); }
     @Override protected void onResume() { super.onResume(); handler.post(refresh); }
     @Override protected void onPause() { handler.removeCallbacks(refresh); super.onPause(); }
     private void render() {
@@ -53,7 +65,7 @@ public class FocusBlockActivity extends Activity {
             JSONObject snapshot = observation.getJSONObject("focus");
             JSONObject session = snapshot.optJSONObject("session");
             JSONObject protection = session == null ? null : session.optJSONObject("protection");
-            if (protection == null || !protection.optBoolean("study") || observation.optBoolean("needsReconcile")) { finish(); return; }
+            if (protection == null || !protection.optBoolean("study") || protection.optBoolean("applicationsWithdrawn") || observation.optBoolean("needsReconcile")) { finish(); return; }
             title.setText(session.optString("title"));
             long elapsed = snapshot.optLong("elapsedMs");
             long ms = session.optString("mode").equals("countdown") ? Math.max(0, session.optLong("targetMs") - elapsed) : elapsed;

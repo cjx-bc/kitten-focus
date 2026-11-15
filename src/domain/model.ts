@@ -61,9 +61,23 @@ export interface ProtectionStatus {
   connected: boolean
   active: boolean
   preferenceEnabled: boolean
-  state: 'off' | 'authorization' | 'ready' | 'protecting' | 'failed' | 'unsupported'
+  state: 'off' | 'authorization' | 'ready' | 'protecting' | 'failed' | 'unsupported' | 'recovered'
   reason: string
   effectiveWhitelist: string[]
+}
+export interface RecoveryStep {
+  sessionId: string
+  capability: string
+  title: string
+  status: 'active' | 'restored' | 'failed' | 'limited'
+  reason: string
+  retryable: boolean
+}
+export interface RecoverySnapshot {
+  supported: boolean
+  revision: string
+  steps: RecoveryStep[]
+  pending: boolean
 }
 export interface ProtectionApp {
   packageName: string
