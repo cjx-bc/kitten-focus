@@ -119,7 +119,7 @@ disposable user's process.
 | Picker receipt | Direct javac RED at the token-aware callback, then official API36 native GREEN 5/5, 5.186 seconds, no skips. A stale old callback leaves the new picker open; `t17-token-green`. |
 | Interrupted lock-first restore | Actual native RED at a lock write interrupted before Home; `t17-partial-lock-red`, 4.25 seconds. Minimal fix retains uncertainty whenever either owned identity changed. Final GREEN pending. |
 | Diagnostics | Existing public CatFocus aggregation RED → GREEN 7/7; latest host suite 56/56 after integration merge. Reports actual native support, preview/selection distinction, pending restoration as actionable, and withdrawn/later choice as off. |
-| UI | Vue type check/build passed. Actual browser screenshots at 375 px phone and 812 px landscape with enlarged text; no horizontal overflow. Browser support remains unavailable truthfully. |
+| UI | Vue type check/build passed. Actual browser screenshots at 375 px phone and 812 px landscape; no horizontal overflow. Root font-size scaling was requested, but existing pixel-sized component copy does not establish full Android Dynamic Type/largest-font coverage. Browser support remains unavailable truthfully. |
 | Production device matrix | Pending actual picker/SAF/restore/process-rebind acceptance. T03 probe evidence does not fill this row. |
 
 Physical/OEM and unmeasured API combinations remain explicitly unverified.
