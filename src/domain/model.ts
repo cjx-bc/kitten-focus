@@ -76,7 +76,7 @@ export interface NavigationProtectionStatus {
   state: 'off' | 'authorization' | 'ready' | 'armed' | 'protecting' | 'failed' | 'unsupported' | 'recovered'
   reason: string
   lastReturnedAt: number | null
-  lastTarget: 'home' | 'recents' | null
+  lastTarget: 'home' | 'recents' | 'launcher' | null
 }
 export interface ProtectionStatus {
   navigation?: NavigationProtectionStatus

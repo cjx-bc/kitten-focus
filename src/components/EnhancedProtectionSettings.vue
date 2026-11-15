@@ -48,7 +48,7 @@ async function authorize() {
       <strong>{{ status ? labels[status.state] : '正在检查增强能力' }}</strong>
       <p>{{ status?.reason }}</p>
       <p v-if="status?.supported">系统授权：{{ status.authorized ? '已启用' : '未启用' }} · 服务：{{ status.connected ? '已连接' : '未连接' }}</p>
-      <p v-if="status?.lastReturnedAt">最近返回：{{ new Date(status.lastReturnedAt).toLocaleTimeString() }} · {{ status.lastTarget === 'recents' ? '最近任务' : '桌面' }}</p>
+      <p v-if="status?.lastReturnedAt">最近返回：{{ new Date(status.lastReturnedAt).toLocaleTimeString() }} · {{ status.lastTarget === 'recents' ? '最近任务' : status.lastTarget === 'launcher' ? '桌面或最近任务窗口' : '桌面' }}</p>
     </div>
     <p class="muted">普通安装通过窗口事件返回专注，无法保证所有系统和厂商手势。启用或授权不会立即限制导航；结束、休息、重启或故障恢复撤销本轮限制。</p>
     <button v-if="status?.supported" class="secondary wide" :disabled="busy" @click="showPermission = !showPermission">查看权限用途</button>

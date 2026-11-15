@@ -39,7 +39,7 @@ final class FocusNavigation {
                 if (launchers().contains(pkg) && cls != null) {
                     Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
                     for (ResolveInfo info : context.getPackageManager().queryIntentActivities(home, PackageManager.MATCH_DEFAULT_ONLY))
-                        if (pkg.equals(info.activityInfo.packageName) && cls.equals(info.activityInfo.name)) return "home";
+                        if (pkg.equals(info.activityInfo.packageName) && cls.equals(info.activityInfo.name)) return "launcher";
                     if (cls.startsWith(pkg + ".") && (cls.endsWith("RecentsActivity") || cls.endsWith("OverviewActivity"))) return "recents";
                 }
                 if ("com.android.systemui".equals(pkg) && ("com.android.systemui.recents.RecentsActivity".equals(cls)
