@@ -1,7 +1,7 @@
 // Real WebView UI and native strict guards, using only the isolated QA package.
 import assert from 'node:assert/strict'
 import { emptyData } from '../src/domain/model.ts'
-import { connectQa, until } from './lib/android-qa.mjs'
+import { connectQa, until, delay } from './lib/android-qa.mjs'
 
 let qa = await connectQa({ output: 'artifacts/focus-control/api36/strict-device' })
 const results = []
@@ -17,10 +17,14 @@ const reloadTasks = async () => {
   await qa.send('Page.reload')
   await until(() => qa.evaluate('!!document.querySelector(".study-entry")'), 'tasks ready')
 }
+let restoreNotificationPermission = false
 try {
   const existing = await qa.native('observeControl')
   assert(!existing.focus.session, 'Previous focus must be completed before this test')
   await qa.native('restAction', { action: 'exit' })
+  restoreNotificationPermission = !(await qa.native('permissions')).notifications
+  if (restoreNotificationPermission)
+    qa.command('shell', 'pm', 'grant', qa.appId, 'android.permission.POST_NOTIFICATIONS')
   const data = emptyData()
   data.themes = [{ id: 'strict-theme', name: '设备验证', color: '#ef4e36', order: 0, collapsed: false }]
   data.items = [
@@ -57,9 +61,16 @@ try {
   qa.command('shell', 'input', 'keyevent', 'KEYCODE_BACK')
   await until(() => qa.evaluate('location.hash === "#/tasks"'), 'Android back preserves focus')
   assert.equal((await qa.native('observeControl')).focus.session.id, id)
-  // Use the exact Activity intent used by the ongoing notification's PendingIntent.
-  qa.command('shell', 'am', 'start', '-n', qa.appId + '/com.xiaomao.focus.MainActivity', '--ez', 'returnToFocus', 'true')
-  await until(() => qa.evaluate('location.hash === "#/focus"'), 'notification return intent')
+  qa.command('shell', 'cmd', 'statusbar', 'expand-notifications')
+  // This QA AVD is 540x960. Its running chronometer prevents UiAutomator's idle
+  // wait, so retain an actual shade screenshot and use its inspected title point.
+  assert(qa.command('shell', 'wm', 'size').includes('540x960'), 'Reinspect notification tap coordinates for a different display')
+  await until(() => qa.command('shell', 'cmd', 'notification', 'list').includes(qa.appId + '|40|'), 'ongoing focus notification')
+  await delay(2200)
+  qa.command('shell', 'screencap', '-p', '/data/local/tmp/qa-strict-shade.png')
+  qa.command('pull', '/data/local/tmp/qa-strict-shade.png', 'artifacts/focus-control/api36/strict-device/03-notification-shade.png')
+  qa.command('shell', 'input', 'tap', '200', '490')
+  await until(() => qa.evaluate('location.hash === "#/focus"'), 'real notification click returns to focus')
   await qa.send('Page.reload')
   await until(() => qa.evaluate('!!document.querySelector(".focus-clock")'), 'WebView reload')
   assert.equal((await qa.native('observeControl')).focus.session.id, id)
@@ -71,7 +82,7 @@ try {
   qa.command(...adbArgs)
   qa = await connectQa({ output: 'artifacts/focus-control/api36/strict-device' })
   await until(async () => (await qa.native('observeControl')).focus.session?.id === id, 'cold re-entry preserves strict session')
-  results.push({ scenario: 'Android-back-notification-intent-reload-and-process-reentry-preserve-session', passed: true })
+  results.push({ scenario: 'Android-back-real-notification-click-reload-and-process-reentry-preserve-session', passed: true })
   await until(async () => (await qa.native('focusAction', { action: 'read' })).session === null, 'natural strict completion', 75000)
   const completed = await qa.native('observeControl')
   assert.equal(completed.owner, 'rest')
@@ -96,5 +107,7 @@ try {
   qa.save('results.json', { serial: qa.serial, appId: qa.appId, results })
   console.log(JSON.stringify({ serial: qa.serial, results }))
 } finally {
+  if (restoreNotificationPermission)
+    qa.command('shell', 'pm', 'revoke', qa.appId, 'android.permission.POST_NOTIFICATIONS')
   qa.close()
 }
