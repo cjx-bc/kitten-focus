@@ -8,7 +8,8 @@ public class ReminderReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context,Intent intent){
         PendingResult result=goAsync();new Thread(()->{try{
             FocusControl control=new FocusControl(context);
-            String action=intent.getAction();if(Reminders.FOCUS_ACTION.equals(action))control.focusAction("read");
+            String action=intent.getAction();if(Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)){control.restoreLauncher();control.reconcile();Reminders.sync(context);}
+            else if(Reminders.FOCUS_ACTION.equals(action))control.focusAction("read");
             else if(Reminders.REST_ACTION.equals(action))control.restAction("read");
             else if("com.xiaomao.focus.SCHEDULE".equals(action)){Reminders.showSchedule(context,intent.getIntExtra("id",1000),intent.getStringExtra("title"),intent.getStringExtra("text"));Reminders.sync(context);}
             else{control.reconcile();Reminders.sync(context);}

@@ -1,4 +1,5 @@
 import type { AppData } from './model'
+import { defaultProtection } from './model'
 import { validateEvent } from './calendar'
 export interface Backup {
   app: 'xiaomao-focus'
@@ -8,10 +9,78 @@ export interface Backup {
 }
 export function makeBackup(data: AppData): string {
   return JSON.stringify(
-    { app: 'xiaomao-focus', version: 1, createdAt: new Date().toISOString(), data },
+    {
+      app: 'xiaomao-focus',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      data: businessData(data),
+    },
     null,
     2,
   )
+}
+// A positive field list prevents new adapter journals or untrusted imported runtime
+// fields becoming portable business state. Adapter original-state journals stay native.
+function pick<T extends object>(value: T, keys: string[]): T {
+  return Object.fromEntries(
+    keys.filter((key) => key in value).map((key) => [key, (value as Record<string, unknown>)[key]]),
+  ) as T
+}
+function businessData(data: AppData): AppData {
+  const result = pick(data, ['schemaVersion', 'deletedRecordIds'])
+  const fields = {
+    themes: 'id name color order collapsed deleted',
+    items: 'id themeId title note mode minutes order deleted',
+    records:
+      'id itemId themeId title themeName color mode targetMs startedAt endedAt timeZone durationMs pausedMs status',
+    events: 'id title start end allDay note repeat weekdays until itemId reminderMinutes',
+    eventExceptions: 'eventId date cancelled title start end',
+    semesters: 'id name startDate weeks',
+    courses:
+      'id semesterId title weekday firstPeriod lastPeriod firstWeek lastWeek parity room teacher color reminderMinutes',
+    courseExceptions: 'courseId date cancelled start end',
+    lockConfigurations: 'id name minutes strict',
+  } as const
+  const whitelist = (value: NonNullable<AppData['items'][number]['whitelist']>) =>
+    value.source === 'global'
+      ? { source: 'global' as const }
+      : { source: 'custom' as const, packages: [...value.packages] }
+  for (const [key, allowed] of Object.entries(fields))
+    (result as unknown as Record<string, unknown>)[key] = (
+      (data as unknown as Record<string, object[]>)[key] ?? []
+    ).map((row) => pick(row, allowed.split(' ')))
+  result.items.forEach((row, i) => {
+    if (data.items[i]?.whitelist) row.whitelist = whitelist(data.items[i]!.whitelist!)
+  })
+  result.records.forEach((row, i) => {
+    row.segments = data.records[i]!.segments.map((s) => pick(s, ['start', 'end']))
+  })
+  result.semesters.forEach((row, i) => {
+    row.periods = data.semesters[i]!.periods.map((p) => pick(p, ['index', 'start', 'end']))
+  })
+  if (data.lockConfigurations === undefined) delete result.lockConfigurations
+  result.lockConfigurations?.forEach((row, i) => {
+    row.whitelist = whitelist(data.lockConfigurations![i]!.whitelist)
+  })
+  result.preferences = pick(data.preferences, [
+    'defaultMinutes',
+    'sound',
+    'vibration',
+    'activeSemesterId',
+  ])
+  if (data.preferences.protection !== undefined)
+    result.preferences.protection = {
+      ...defaultProtection(),
+      ...pick(data.preferences.protection, [
+        'study',
+        'strict',
+        'interceptNotifications',
+        'dnd',
+        'globalWhitelist',
+        'enhancements',
+      ]),
+    }
+  return structuredClone(result)
 }
 export function readBackup(text: string): Backup {
   let raw: unknown
@@ -26,6 +95,47 @@ export function readBackup(text: string): Backup {
     throw new Error('这不是兼容的小猫专注备份')
   if (!Number.isFinite(Date.parse(value.createdAt))) throw new Error('备份日期不正确')
   const data = value.data
+  const validStrings = (value: unknown) =>
+    Array.isArray(value) && value.every((entry) => typeof entry === 'string' && !!entry.trim())
+  const validWhitelist = (value: unknown) => {
+    if (!value || typeof value !== 'object') return false
+    const list = value as { source?: unknown; packages?: unknown }
+    return list.source === 'global' || (list.source === 'custom' && validStrings(list.packages))
+  }
+  const protection = data.preferences?.protection
+  if (
+    protection !== undefined &&
+    (!protection ||
+      typeof protection !== 'object' ||
+      Array.isArray(protection) ||
+      ['study', 'strict', 'interceptNotifications', 'dnd'].some((key) => {
+        const entry = (protection as unknown as Record<string, unknown>)[key]
+        return entry !== undefined && typeof entry !== 'boolean'
+      }) ||
+      (protection.globalWhitelist !== undefined && !validStrings(protection.globalWhitelist)) ||
+      (protection.enhancements !== undefined && !validStrings(protection.enhancements)))
+  )
+    throw new Error('保护设置损坏')
+  if (data.lockConfigurations !== undefined) {
+    if (!Array.isArray(data.lockConfigurations)) throw new Error('锁机配置损坏')
+    const ids = new Set<string>()
+    for (const lock of data.lockConfigurations) {
+      if (
+        !lock ||
+        typeof lock.id !== 'string' ||
+        !lock.id ||
+        ids.has(lock.id) ||
+        typeof lock.name !== 'string' ||
+        !lock.name.trim() ||
+        !Number.isInteger(lock.minutes) ||
+        lock.minutes < 1 ||
+        (lock.strict !== undefined && typeof lock.strict !== 'boolean') ||
+        !validWhitelist(lock.whitelist)
+      )
+        throw new Error('锁机配置损坏')
+      ids.add(lock.id)
+    }
+  }
   for (const key of [
     'themes',
     'items',
@@ -80,10 +190,15 @@ export function readBackup(text: string): Backup {
   for (const event of data.events) validateEvent(event)
   for (const item of data.items) {
     const list = item.whitelist
-    if (list !== undefined && (!list || typeof list !== 'object' ||
-      !['global', 'custom'].includes(list.source) ||
-      (list.source === 'custom' && (!Array.isArray(list.packages) ||
-        list.packages.some((name) => typeof name !== 'string' || !name.trim())))))
+    if (
+      list !== undefined &&
+      (!list ||
+        typeof list !== 'object' ||
+        !['global', 'custom'].includes(list.source) ||
+        (list.source === 'custom' &&
+          (!Array.isArray(list.packages) ||
+            list.packages.some((name) => typeof name !== 'string' || !name.trim()))))
+    )
       throw new Error('待办白名单损坏')
   }
   if (data.deletedRecordIds.some((id) => typeof id !== 'string'))
@@ -159,5 +274,10 @@ export function readBackup(text: string): Backup {
           exception.end <= exception.start))
     )
       throw new Error('课程例外数据损坏')
-  return structuredClone(value)
+  return {
+    app: value.app,
+    version: value.version,
+    createdAt: value.createdAt,
+    data: businessData(data),
+  }
 }

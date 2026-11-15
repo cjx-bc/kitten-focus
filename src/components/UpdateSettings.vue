@@ -108,6 +108,7 @@ async function exportRecovery(backup: UpgradeBackup) {
 async function restoreRecovery() {
   if (!restoreTarget.value) return
   await execute(async () => {
+    if (app.focus.session || app.lock.session) throw new Error('请先结束当前专注或锁机，再恢复副本。')
     await updatesDriver.restoreBackup(restoreTarget.value!.id)
     location.reload()
   })
@@ -205,10 +206,10 @@ async function restoreRecovery() {
           {{ date(restoreTarget.createdAt) }}
           的数据？当前数据会先保存一份副本，恢复后应用将重新打开。
         </p>
-        <p class="notice">副本之后新增或修改的内容会被替换。</p>
+        <p class="notice">副本之后新增或修改的内容会被替换。只恢复配置与历史，不会重启专注或锁机；重新打开后会检查本机应用与权限。</p>
         <button
           class="primary wide"
-          :disabled="busy || !!app.focus.session"
+          :disabled="busy || !!app.focus.session || !!app.lock.session"
           @click="restoreRecovery"
         >
           确认恢复此副本
@@ -231,7 +232,7 @@ async function restoreRecovery() {
             <button class="secondary" :disabled="busy" @click="exportRecovery(backup)">导出</button
             ><button
               class="text-button"
-              :disabled="busy || !!app.focus.session"
+              :disabled="busy || !!app.focus.session || !!app.lock.session"
               @click="restoreTarget = backup"
             >
               恢复
@@ -239,7 +240,7 @@ async function restoreRecovery() {
           </div>
         </article>
       </template>
-      <p v-if="app.focus.session" class="notice">请先结束当前专注，再恢复副本。</p>
+      <p v-if="app.focus.session || app.lock.session" class="notice">请先结束当前专注或锁机，再恢复副本。</p>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
     </div>
   </Sheet>

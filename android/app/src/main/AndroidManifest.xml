@@ -18,12 +18,15 @@
             android:launchMode="singleTask"
             android:exported="true">
 
+        </activity>
+        <activity-alias android:name=".LauncherAlias" android:targetActivity=".MainActivity"
+            android:enabled="true" android:exported="true" android:label="${focusAppLabel}"
+            android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-        </activity>
+        </activity-alias>
 
         <activity android:name=".DndRuleActivity" android:exported="true" android:label="声音辅助">
             <intent-filter>
@@ -56,6 +59,7 @@
         <receiver android:name=".ReminderReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />

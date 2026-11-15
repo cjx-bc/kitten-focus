@@ -22,6 +22,7 @@ final class FocusControl {
     private final FocusAntiClose antiClose;
     private final NotificationProtection notifications;
     private final RecentTasksProtection recentTasks;
+    private final LauncherProtection launcher;
 
     FocusControl(Context context) {
         this(context, LocalStore.get(context), SessionClock.system(context));
@@ -42,6 +43,10 @@ final class FocusControl {
     }
     FocusControl(Context context, LocalStore store, SessionClock clock, NotificationSystem system) {
         this(context, store, clock, new FocusRecovery(context, store), null, new AndroidDndSystem(context), system);
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, LauncherSystem system) {
+        this(context, store, clock, new FocusRecovery(context, store), null, new AndroidDndSystem(context),
+            new AndroidNotificationSystem(context), launchTarget(context), FocusNavigation.android(context, null), new AndroidRecentTasksSystem(context), system);
     }
     FocusControl(Context context, LocalStore store, SessionClock clock, RecentTasksSystem system) {
         this(context, store, clock, new FocusRecovery(context, store), null, new AndroidDndSystem(context),
@@ -97,12 +102,26 @@ final class FocusControl {
                  FocusProtection.AccessibilityState accessibility, DndSystem system,
                  NotificationSystem notificationSystem, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice, RecentTasksSystem recentTasksSystem) {
         this(context, store, clock, recovery, accessibility, system, notificationSystem, targetLaunch, navigationDevice,
-            recentTasksSystem, new AndroidAntiCloseSystem(context, accessibility));
+            recentTasksSystem, new AndroidAntiCloseSystem(context, accessibility), new AndroidLauncherSystem(context));
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
+                 FocusProtection.AccessibilityState accessibility, DndSystem system,
+                 NotificationSystem notificationSystem, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice,
+                 RecentTasksSystem recentTasksSystem, LauncherSystem launcherSystem) {
+        this(context, store, clock, recovery, accessibility, system, notificationSystem, targetLaunch, navigationDevice,
+            recentTasksSystem, new AndroidAntiCloseSystem(context, accessibility), launcherSystem);
     }
     FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
                  FocusProtection.AccessibilityState accessibility, DndSystem system,
                  NotificationSystem notificationSystem, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice,
                  RecentTasksSystem recentTasksSystem, AntiCloseSystem antiCloseSystem) {
+        this(context, store, clock, recovery, accessibility, system, notificationSystem, targetLaunch, navigationDevice,
+            recentTasksSystem, antiCloseSystem, new AndroidLauncherSystem(context));
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
+                 FocusProtection.AccessibilityState accessibility, DndSystem system,
+                 NotificationSystem notificationSystem, TargetLaunch targetLaunch, FocusNavigation.Device navigationDevice,
+                 RecentTasksSystem recentTasksSystem, AntiCloseSystem antiCloseSystem, LauncherSystem launcherSystem) {
         this.targetLaunch = targetLaunch;
         this.context = context.getApplicationContext();
         this.store = store;
@@ -118,6 +137,7 @@ final class FocusControl {
         dnd = new DndProtection(context, store.getDatabaseName(), system);
         notifications = new NotificationProtection(context, store.getDatabaseName(), clock, notificationSystem);
         recentTasks = new RecentTasksProtection(context, store.getDatabaseName(), clock, recentTasksSystem);
+        launcher = new LauncherProtection(context, store.getDatabaseName(), clock, launcherSystem);
         recovery.register(new FocusRecovery.RecoveryOperation() {
             public JSONObject preview() throws JSONException { return dnd.recoveryStep(); }
             public void restore() throws JSONException { dnd.restore(store.read("active")); }
@@ -129,6 +149,10 @@ final class FocusControl {
         recovery.register(new FocusRecovery.RecoveryOperation() {
             public JSONObject preview() throws JSONException { return recentTasks.recoveryStep(store.read("active")); }
             public void restore() throws JSONException { recentTasks.restore(store.read("active")); }
+        });
+        recovery.register(new FocusRecovery.RecoveryOperation() {
+            public JSONObject preview() throws JSONException { return launcher.recoveryStep(store.read("active")); }
+            public void restore() throws JSONException { launcher.restore(store.read("active")); }
         });
     }
 
@@ -160,12 +184,14 @@ final class FocusControl {
             dnd.checkStart(started);
             notifications.checkStart(started);
             recentTasks.checkStart(started);
+            launcher.checkStart(started);
             recovery.prepare(started);
             JSONObject result = focus.start(started);
             FocusProtection.executionSucceeded();
             dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
+            launcher.synchronize(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -188,6 +214,7 @@ final class FocusControl {
             dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
+            launcher.synchronize(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -214,12 +241,14 @@ final class FocusControl {
             session.put("notificationsRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("interceptNotifications")));
             notifications.checkStart(session);
             recentTasks.checkStart(session);
+            launcher.checkStart(session);
             recovery.prepare(session);
             rest.exit();
             JSONObject result = lock.start(session);
             FocusProtection.executionSucceeded();
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
+            launcher.synchronize(store.read("active"));
             return result;
         }
     }
@@ -232,6 +261,7 @@ final class FocusControl {
             dnd.synchronize(active);
             notifications.synchronize(active);
             recentTasks.synchronize(active);
+            launcher.synchronize(active);
             return result;
         }
     }
@@ -241,6 +271,7 @@ final class FocusControl {
             dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
+            launcher.synchronize(store.read("active"));
             return result;
         }
     }
@@ -263,6 +294,7 @@ final class FocusControl {
             dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
+            launcher.synchronize(store.read("active"));
             return observeControl();
         }
     }
@@ -299,6 +331,7 @@ final class FocusControl {
                 .put("dnd", dnd.observe(active))
                 .put("notifications", notifications.observe(active))
                 .put("recentTasks", recentTasks.observe(active))
+                .put("launcher", launcher.observe(active))
                 .put("needsReconcile", needsReconcile);
             return observation.put("navigation", navigation.observe(observation)).put("antiClose", antiClose.observe(observation))
                 .put("mainEntry", mainEntryStatus(observation));
@@ -447,6 +480,13 @@ final class FocusControl {
             return status.put("preferenceEnabled", RecentTasksProtection.requested(configured));
         }
     }
+    JSONObject getLauncherStatus() throws JSONException {
+        synchronized (store) {
+            JSONObject status = launcher.observe(store.read("active"));
+            return status.put("preferenceEnabled", LauncherProtection.requested(new JSONObject().put("protection", FocusProtection.preferences(store))));
+        }
+    }
+    void restoreLauncher() throws JSONException { synchronized (store) { launcher.restore(store.read("active")); } }
     void synchronizeNotifications() throws JSONException {
         synchronized (store) { notifications.synchronize(store.read("active")); }
     }
@@ -462,17 +502,21 @@ final class FocusControl {
 
     void replaceData(JSONObject data) throws JSONException {
         synchronized (store) {
-            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注");
-            if (dnd.restore(null).optBoolean("recoveryPending"))
-                throw new IllegalStateException("请先在声音辅助中撤销小猫规则，再替换备份");
-            if (notifications.restore(null).optBoolean("recoveryPending"))
-                throw new IllegalStateException("原应用通知仍待系统释放，请先进入故障恢复核实，再替换备份");
-            recentTasks.restore(null);
-            if (recentTasks.observe(null).optBoolean("recoveryPending"))
-                throw new IllegalStateException("自身任务卡仍待恢复，请先进入故障恢复重试，再替换备份");
-            store.saveData(data, true);
+            BusinessBackupData.validate(data);
+            JSONObject portable = BusinessBackupData.portable(data);
+            prepareDataReplacement();
+            store.saveData(portable, true);
             Reminders.cancelFocus(context);
             Reminders.cancelRest(context);
+        }
+    }
+    /** All backup replacement paths use the registered cleanup contract before writing data. */
+    void prepareDataReplacement() throws JSONException {
+        synchronized (store) {
+            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注或锁机，再恢复备份");
+            JSONObject preview = recovery.preview();
+            if (recovery.confirm(preview.optString("revision")).optBoolean("pending"))
+                throw new IllegalStateException("保护仍有待恢复项目，请先进入故障恢复修复，再恢复备份；原数据已保留");
         }
     }
 }

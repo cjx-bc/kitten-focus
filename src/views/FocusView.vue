@@ -112,6 +112,7 @@ async function rest() {
         </div>
         <small>返回或锁屏，计时仍会继续</small>
         <button class="text-button" @click="recovery">保护帮助与故障恢复</button>
+        <div class="focus-help-links"><RouterLink class="text-button" to="/permissions">权限与逐项状态</RouterLink><RouterLink class="text-button" to="/help">离线保护帮助</RouterLink></div>
       </div></template
     ><template v-else-if="result"
       ><div class="focus-result">
@@ -223,6 +224,8 @@ async function rest() {
   text-align: center;
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }
+.focus-help-links { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.focus-help-links a { display: inline-flex; align-items: center; }
 .focus-bottom > p {
   font-size: 13px;
   color: #919196;

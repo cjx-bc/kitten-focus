@@ -109,6 +109,12 @@ export interface RecentTasksStatus {
   recoveryPending: boolean
   error: string
 }
+export interface LauncherStatus extends RecentTasksStatus {
+  recoveryReachable: boolean
+  componentState: number
+  launcherResolved: boolean
+  launcherCacheVerified: false
+}
 export interface RecoveryStep {
   sessionId: string
   capability: string
@@ -192,6 +198,7 @@ export interface RestSnapshot {
 export interface ControlSnapshot {
   mainEntry?: { requested: boolean; active: boolean; withdrawn: boolean }
   recentTasks?: RecentTasksStatus
+  launcher?: LauncherStatus
   owner: 'focus' | 'rest' | 'lock' | null
   focus: FocusSnapshot
   rest: RestSnapshot
