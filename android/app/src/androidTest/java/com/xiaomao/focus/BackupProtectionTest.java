@@ -151,7 +151,8 @@ public class BackupProtectionTest {
         control.replaceData(original);
         assertNull(control.observeControl().getJSONObject("rest").optJSONObject("session"));
         assertEquals(1, control.loadData().getJSONArray("records").length());
-        control.startRest("backup-focus");
+        control.startFocus(session().put("id", "second-focus")); clock.elapsed += 3000; control.focusAction("finish");
+        assertNotNull(control.observeControl().getJSONObject("rest").optJSONObject("session"));
         backups.restore(id);
         assertNull(control.observeControl().getJSONObject("rest").optJSONObject("session"));
         assertEquals(1, control.loadData().getJSONArray("records").length());
