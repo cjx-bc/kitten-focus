@@ -35,6 +35,13 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void startRest(PluginCall call){resolve(call,()->control.startRest(call.getString("recordId","")));}
     @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}
     @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
+    @PluginMethod public void getDndStatus(PluginCall call){resolve(call,()->control.getDndStatus());}
+    @PluginMethod public void restoreDnd(PluginCall call){resolve(call,()->control.restoreDnd());}
+    @PluginMethod public void openDndSettings(PluginCall call){resolve(call,()->{
+        Intent intent=new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);return null;
+    });}
     @PluginMethod public void consumeFocusReturn(PluginCall call){resolve(call,()->{
         Intent intent=getActivity()==null?null:getActivity().getIntent();
         boolean requested=intent!=null&&intent.getBooleanExtra("returnToFocus",false);

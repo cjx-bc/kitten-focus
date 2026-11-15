@@ -7,14 +7,22 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Runtime restoration duties, deliberately outside business data and upgrade backups. */
 final class FocusRecovery {
     static final String APPLICATIONS = "applicationRestriction";
     static final String DISMISS_BLOCK = "com.xiaomao.focus.DISMISS_RECOVERED_BLOCK";
     interface DeviceEffects { void releaseApplicationRestriction() throws Exception; }
+    /** Adapters keep their own original-state journal; preview must be read-only. */
+    interface RecoveryOperation {
+        JSONObject preview() throws JSONException;
+        void restore() throws JSONException;
+    }
     private final SharedPreferences journal;
     private final DeviceEffects effects;
+    private final List<RecoveryOperation> operations = new ArrayList<>();
 
     FocusRecovery(Context context, LocalStore store) {
         this(context, store, () -> context.sendBroadcast(new Intent(DISMISS_BLOCK).setPackage(context.getPackageName())));
@@ -23,6 +31,7 @@ final class FocusRecovery {
         journal = context.getSharedPreferences("catfocus-recovery-" + store.getDatabaseName(), Context.MODE_PRIVATE);
         this.effects = effects;
     }
+    void register(RecoveryOperation operation) { operations.add(operation); }
     private JSONObject read() throws JSONException {
         String raw = journal.getString("duties", null);
         return raw == null ? new JSONObject().put("revision", "").put("steps", new JSONArray()) : new JSONObject(raw);
@@ -61,6 +70,13 @@ final class FocusRecovery {
     }
     JSONObject preview() throws JSONException {
         JSONObject value = read(); JSONArray steps = value.getJSONArray("steps"); boolean pending = false;
+        JSONArray adapterSteps = new JSONArray();
+        for (RecoveryOperation operation : operations) {
+            JSONObject step = operation.preview();
+            if (step != null) { adapterSteps.put(step); steps.put(step); }
+        }
+        // Bind confirmation to both the coordinator journal and adapter-owned responsibilities.
+        value.put("revision", new JSONArray().put(value.optString("revision")).put(adapterSteps).toString());
         for (int i = 0; i < steps.length(); i++) {
             JSONObject step = steps.getJSONObject(i);
             boolean retryable = !step.optString("status").equals("restored");
@@ -70,9 +86,14 @@ final class FocusRecovery {
     }
     JSONObject confirm(String revision) throws JSONException {
         JSONObject value = read();
-        if (!value.optString("revision").equals(revision) && preview().optBoolean("pending"))
+        JSONObject before = preview();
+        if (!before.optString("revision").equals(revision) && before.optBoolean("pending"))
             throw new IllegalStateException("恢复项目已变化，请重新查看影响清单后确认");
         restore(value, null);
+        for (RecoveryOperation operation : operations) {
+            JSONObject step = operation.preview();
+            if (step != null && !step.optString("status").equals("restored")) operation.restore();
+        }
         return preview();
     }
     /** Only lifecycle work invokes automatic release; observe/preview never mutate. */

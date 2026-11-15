@@ -47,6 +47,11 @@ public class RecoveryControlTest {
         Reminders.cancelFocus(context); Reminders.cancelRest(context);
         store.close(); context.deleteDatabase(databaseName);
         context.getSharedPreferences("catfocus-recovery-" + databaseName, 0).edit().clear().commit();
+        android.content.SharedPreferences dndJournal = context.getSharedPreferences("catfocus-dnd-" + databaseName, 0);
+        try {
+            if (!new JSONObject(dndJournal.getString("journal", "{}")).has("condition"))
+                dndJournal.edit().clear().commit();
+        } catch (Exception error) { throw new AssertionError("Keep unreadable DND responsibility for inspection", error); }
     }
     private JSONObject session(String id) throws Exception {
         return new JSONObject().put("id", id).put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
@@ -97,5 +102,71 @@ public class RecoveryControlTest {
         control.startFocus(session("next-round"), true);
         assertFalse(control.observeControl().getJSONObject("focus").getJSONObject("session")
             .getJSONObject("protection").getBoolean("applicationsWithdrawn"));
+    }
+
+    @Test public void sharedRecoveryWithdrawsApplicationAndSoundEffectsWithoutEndingStrictTiming() throws Exception {
+        FocusDndTest.FakeDndSystem sound = enableSound();
+        control.startFocus(session("combined-recovery"), true);
+        JSONObject before = control.previewRecovery();
+        assertEquals(2, before.getJSONArray("steps").length());
+        assertEquals(before.toString(), control.previewRecovery().toString());
+        assertEquals(1, sound.rules.size());
+        JSONObject restored = control.confirmRecovery(before.getString("revision"));
+        assertFalse(restored.getBoolean("pending"));
+        for (int i = 0; i < 2; i++)
+            assertEquals("restored", restored.getJSONArray("steps").getJSONObject(i).getString("status"));
+        assertTrue(sound.rules.isEmpty());
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), accessibility, sound);
+        control.reconcile();
+        assertTrue(sound.rules.isEmpty());
+        JSONObject active = control.observeControl().getJSONObject("focus").getJSONObject("session");
+        assertTrue(active.getBoolean("strictMode"));
+        assertTrue(active.getJSONObject("protection").getBoolean("applicationsWithdrawn"));
+        assertEquals("withdrawn", control.getDndStatus().getString("phase"));
+        assertEquals(0, control.loadData().getJSONArray("records").length());
+        JSONObject prefs = control.loadData().getJSONObject("preferences").getJSONObject("protection");
+        assertTrue(prefs.getBoolean("study")); assertTrue(prefs.getBoolean("strict")); assertTrue(prefs.getBoolean("dnd"));
+        assertEquals(restored.toString(), control.confirmRecovery(before.getString("revision")).toString());
+        try { control.focusAction("finish"); fail("Recovery must preserve strict countdown"); }
+        catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("严格")); }
+        clock.advance(60000); control.reconcile();
+    }
+
+    @Test public void changedSoundDutyNeedsFreshConfirmationAndFailedSoundRecoveryRetainsResponsibility() throws Exception {
+        FocusDndTest.FakeDndSystem sound = enableSound();
+        control.startFocus(session("combined-failure"), true);
+        JSONObject before = control.previewRecovery();
+        DndSystem.Rule own = sound.rules.values().iterator().next();
+        sound.rules.put(own.id, new DndSystem.Rule(own.id, own.condition, "user-edit", false, false, false));
+        control.restoreDnd();
+        try { control.confirmRecovery(before.getString("revision")); fail("Changed impact needs fresh confirmation"); }
+        catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("变化")); }
+        assertFalse(control.observeControl().getJSONObject("focus").getJSONObject("session")
+            .getJSONObject("protection").getBoolean("applicationsWithdrawn"));
+        JSONObject failed = control.confirmRecovery(control.previewRecovery().getString("revision"));
+        assertTrue(failed.getBoolean("pending"));
+        assertEquals("restored", failed.getJSONArray("steps").getJSONObject(0).getString("status"));
+        assertEquals("failed", failed.getJSONArray("steps").getJSONObject(1).getString("status"));
+        clock.advance(60000); control.reconcile(); control.restAction("exit");
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), accessibility, sound);
+        try { control.startFocus(session("blocked-sound"), true); fail("Old sound recovery must block a conflicting start"); }
+        catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("恢复")); }
+        assertTrue(control.observeControl().getJSONObject("focus").isNull("session"));
+        sound.rules.remove(own.id); // User removes their edited rule in system settings.
+        JSONObject retried = control.confirmRecovery(control.previewRecovery().getString("revision"));
+        assertFalse(retried.getBoolean("pending"));
+        control.startFocus(session("next-sound"), true);
+        assertEquals(1, sound.rules.size());
+        control.confirmRecovery(control.previewRecovery().getString("revision"));
+        clock.advance(60000); control.reconcile();
+    }
+
+    private FocusDndTest.FakeDndSystem enableSound() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").getJSONObject("protection").put("dnd", true);
+        control.replaceData(data);
+        FocusDndTest.FakeDndSystem sound = new FocusDndTest.FakeDndSystem();
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), accessibility, sound);
+        return sound;
     }
 }

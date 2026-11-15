@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import { timer, duration } from '../domain/dates'
 import Icon from '../components/Icon.vue'
+import DndSetting from '../components/DndSetting.vue'
 const app = useApp(),
   router = useRouter(),
   busy = ref(false)
@@ -138,6 +139,7 @@ async function rest() {
       <p>从待办选择一件事，或开始自由专注。</p>
       <button class="primary" @click="router.replace('/tasks')">回到待办</button>
     </div>
+    <DndSetting runtime-only />
   </div>
 </template>
 <style scoped>
