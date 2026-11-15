@@ -67,6 +67,16 @@ strict preservation, changed confirmation, independent failures, blocked new pro
 These new integration cases and the merged native build still require the coordinator's device
 run; the earlier two-test T08 and six-test T13 evidence is not a run of this merged code.
 
+The subsequent API36 merged rerun passed all four RecoveryControlTest cases and six
+FocusDndTest cases, alongside two whitelist cases (12 passed, no skipped tests). The
+real `scripts/recovery-device-smoke.mjs` then passed four combined scenarios: cancellation
+retains the actual app block and sound rule; confirmation removes both while preserving
+strict timing and preferences; UI reconstruction does not reapply them; natural completion
+still writes one record and begins the original five-minute rest. Screenshots and results
+are retained in `artifacts/focus-control/api36/recovery-device`, native results in
+`artifacts/focus-control/api36/t06-recovery-dnd-final`. These later results resolve the
+pending merged checks above without implying hardware audio or OEM validation.
+
 Notification/task/icon/wallpaper operations must use this coordinator's responsibility and result
 flow when their actual OS adapters land. OS-specific original-state metadata stays in the adapter,
 never in business backups. No placeholder restoration steps are registered.
