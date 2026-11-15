@@ -128,6 +128,9 @@ final class NotificationProtection {
     void removed(String key, boolean snoozed) throws JSONException {
         JSONObject journal = read(); JSONObject saved = entry(journal, key);
         if (saved == null) return;
+        // A sender's later read/withdrawal does not undo the original restoration
+        // already verified from Android's active and snoozed sets.
+        if (saved.optString("phase").equals("restored")) return;
         saved.put("phase", snoozed ? "snoozed" : "removed"); save(journal);
     }
     /** Executed on lifecycle/reconnect, never on observation. Absence does not claim restoration. */
