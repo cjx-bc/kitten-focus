@@ -70,6 +70,20 @@ public class FocusNotificationTest {
         assertEquals(1, system.snoozed.size());
         assertEquals("holding", rebuilt.getNotificationStatus().getString("phase"));
     }
+    @Test public void verifiedOriginalRestorationRemainsRecordedAfterSenderRemovesIt() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("read-original", "other.app", false));
+        now += 60000;
+        system.active.addAll(system.snoozed); system.snoozed.clear();
+        control.notificationPosted(notice("read-original", "other.app", false));
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        system.active.removeIf(value -> value.key.equals("read-original"));
+        control.notificationRemoved("read-original", false);
+        control.synchronizeNotifications();
+        assertEquals("An original already observed restored remains verified after it is read or withdrawn",
+            1, control.getNotificationStatus().getInt("restoredCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+    }
     @Test public void preferenceEditsDoNotChangeEffectiveNotificationWhitelist() throws Exception {
         control.startFocus(session(), true);
         JSONObject data = control.loadData();

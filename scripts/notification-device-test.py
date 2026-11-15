@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--serial', default='emulator-5580')
     parser.add_argument('--aapt', type=Path, default=Path('E:/codexseeson/fanqiezhong/.tools/android-sdk/build-tools/36.0.0/aapt.exe'))
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--expected-tests', type=int, default=10,
+    parser.add_argument('--expected-tests', type=int, default=11,
                         help='Exact seam plus opt-in device case count for this checkout')
     parser.add_argument('--observed-tap', choices=['200,420'], help='Only after visually inspecting the synthetic original card on this 540x960 fixture')
     args = parser.parse_args()
