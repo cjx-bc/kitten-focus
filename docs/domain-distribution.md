@@ -2,6 +2,8 @@
 
 用户已授权实施，并明确不做过渡版；国内网络测试由用户完成。
 
+2026-11-15 已发布 v0.2.1：公开 Release、域名清单、网页及自有备用 APK 已生效，四条线路从美国服务器下载的文件哈希一致。Orca 浏览器在当前美国代理环境实测默认代理未连通，自动切换自有域名后成功保存并校验 APK；最终生产包在专用模拟器检查更新成功并确认已是最新版。临时 QA Release、标签与公开测试端点已撤下。逐项结果见 [发布核验记录](distribution-publication.json)。这份核验记录为发布后补充资料，Release 源码快照对应发布提交 `f78c6e7`。
+
 - 下载页、二维码和更新清单：`https://focus.linma.asia/`，Cloudflare 代理 A 记录。
 - APK 正式来源：公开 GitHub Releases，文件名 `xiaomao-focus-0.2.1-debug.apk`。默认候选为 `https://gh-proxy.com/` 加完整 GitHub 原链接。
 - 下载顺序在 `downloadUrls` 中配置：候选代理、自有下载域名、GitHub 原站、旧 IP。自有下载域名为 DNS-only A 记录。每个来源只试一次，存储不足和校验失败不换线；系统等待重试或连续 30 秒无传输进度时允许换到下一条。

@@ -1,0 +1,101 @@
+{
+  "verifiedAtUTC": "2026-11-15T06:18:31.792604+00:00",
+  "networkScope": "US origin server; not mainland China carrier measurement",
+  "mainlandSpeedVerified": false,
+  "manifestMatches": true,
+  "noStore": true,
+  "legacyIPVersion": "0.2.0",
+  "websiteAssetsMatch": true,
+  "latestRedirectMatches": true,
+  "routes": [
+    {
+      "url": "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.1/xiaomao-focus-0.2.1-debug.apk",
+      "status": 200,
+      "bytes": 4654882,
+      "sha256Matches": true,
+      "seconds": 0.53,
+      "rangeStatus": 206,
+      "rangeBytes": 16,
+      "cors": "*",
+      "secondsScope": "US origin server only; not a mainland benchmark"
+    },
+    {
+      "url": "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.1-debug.apk",
+      "status": 200,
+      "bytes": 4654882,
+      "sha256Matches": true,
+      "seconds": 0.13,
+      "rangeStatus": 206,
+      "rangeBytes": 16,
+      "cors": "https://focus.linma.asia",
+      "secondsScope": "US origin server only; not a mainland benchmark"
+    },
+    {
+      "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.1/xiaomao-focus-0.2.1-debug.apk",
+      "status": 200,
+      "bytes": 4654882,
+      "sha256Matches": true,
+      "seconds": 0.4,
+      "rangeStatus": 206,
+      "rangeBytes": 16,
+      "cors": null,
+      "secondsScope": "US origin server only; not a mainland benchmark"
+    },
+    {
+      "url": "https://47.251.9.162/releases/xiaomao-focus-0.2.1-debug.apk",
+      "status": 200,
+      "bytes": 4654882,
+      "sha256Matches": true,
+      "seconds": 0.11,
+      "rangeStatus": 206,
+      "rangeBytes": 16,
+      "cors": "https://focus.linma.asia",
+      "secondsScope": "US origin server only; not a mainland benchmark"
+    }
+  ],
+  "containerHealth": "healthy",
+  "certificateRenewalTimer": "active",
+  "status": "published",
+  "version": "0.2.1",
+  "versionCode": 7,
+  "releaseCommit": "f78c6e7867bfc0849b1ede9aee5b3774636dc783",
+  "repository": "https://github.com/cjx-bc/kitten-focus",
+  "repositoryVisibility": "public",
+  "release": "https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.1",
+  "website": "https://focus.linma.asia/",
+  "sha256": "64c9e3fccc0b2452f0dbd1e4b4333992162a8de00c6d38c826ac6c0600789af4",
+  "apkBytes": 4654882,
+  "domainTests": 14,
+  "androidTests": 20,
+  "browser": {
+    "environment": "Orca browser on development computer using US proxy",
+    "viewports": [
+      375,
+      390,
+      1440
+    ],
+    "horizontalOverflow": false,
+    "imagesLoaded": true,
+    "javascriptErrors": 0,
+    "primaryCandidateConnected": false,
+    "automaticFallbackToOwnDomain": true,
+    "downloadSaved": true,
+    "downloadedFileHashMatches": true
+  },
+  "productionApp": {
+    "environment": "Dedicated Android emulator on development computer using US proxy; not mainland China",
+    "sameSignedApkInstalled": true,
+    "currentVersion": "0.2.1",
+    "currentCode": 7,
+    "latestVersionConfirmed": true,
+    "checkError": ""
+  },
+  "cleanup": {
+    "temporaryGitHubQaReleaseRemoved": true,
+    "temporaryGitHubQaTagRemoved": true,
+    "publicQaEndpointsReturn404": true,
+    "serverQaFilesArchivedPrivately": true
+  },
+  "physicalPhoneVerified": false,
+  "firstUpgrade": "Existing installations manually cover-install v0.2.1 once without uninstalling; subsequent updates use the in-app updater."
+}
