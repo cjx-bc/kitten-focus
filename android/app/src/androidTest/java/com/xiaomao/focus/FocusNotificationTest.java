@@ -187,6 +187,8 @@ public class FocusNotificationTest {
         control.startFocus(session(), true);
         control.notificationPosted(notice("previous-focus", "other.app", false));
         system.connected = false; now += 60000; control.reconcile();
+        assertEquals("rest", control.observeControl().getString("owner"));
+        control.restAction("exit");
         JSONObject data = control.loadData();
         data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "next-lock")
             .put("name", "后续锁机").put("minutes", 1).put("whitelist", new JSONObject().put("source", "global"))));

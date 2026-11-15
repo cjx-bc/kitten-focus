@@ -16,8 +16,12 @@ def main():
     parser.add_argument('--serial', default='emulator-5580')
     parser.add_argument('--aapt', type=Path, default=Path('E:/codexseeson/fanqiezhong/.tools/android-sdk/build-tools/36.0.0/aapt.exe'))
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--expected-tests', type=int, default=10,
+                        help='Exact seam plus opt-in device case count for this checkout')
     parser.add_argument('--observed-tap', choices=['200,420'], help='Only after visually inspecting the synthetic original card on this 540x960 fixture')
     args = parser.parse_args()
+    if args.expected_tests < 1:
+        parser.error('--expected-tests must be positive')
     if not re.fullmatch(r'emulator-\d+', args.serial):
         parser.error('Choose an explicit emulator serial')
     output = args.output
@@ -59,6 +63,7 @@ def main():
         'sha256': {package: hashlib.sha256(apk.read_bytes()).hexdigest() for package, apk in artifacts.items()},
         'listenerPreviouslyEnabled': listener_was_enabled, 'senderPreviouslyInstalled': sender_installed,
         'senderPermissionPreviouslyGranted': sender_permission,
+        'expectedTests': args.expected_tests,
     }
     (output / 'baseline.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     passed = False
@@ -105,7 +110,7 @@ def main():
                 diagnostic.join(timeout=12)
         result = ''.join(lines)
         (output / 'instrumentation.txt').write_text(result, encoding='utf-8')
-        passed = bool(re.search(r'OK \(8 tests\)', result)) and 'FAILURES!!!' not in result and 'INSTRUMENTATION_STATUS_CODE: -4' not in result
+        passed = bool(re.search(r'OK \(' + str(args.expected_tests) + r' tests?\)', result)) and 'FAILURES!!!' not in result and 'INSTRUMENTATION_STATUS_CODE: -4' not in result
         print(result[-6000:])
     finally:
         # Sender withdraws its own synthetic fixture; the controller never cancels another app's notification.
