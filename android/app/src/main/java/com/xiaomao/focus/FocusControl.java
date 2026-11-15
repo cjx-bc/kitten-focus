@@ -78,7 +78,7 @@ final class FocusControl {
             JSONObject started = new JSONObject(session.toString()).put("strictMode", strict);
             started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
                 .put("segments", new JSONArray());
-            started.put("protection", accessibility == null ? FocusProtection.capture(context, store) : FocusProtection.capture(context, store, accessibility));
+            started.put("protection", accessibility == null ? FocusProtection.capture(context, store, session) : FocusProtection.capture(context, store, session, accessibility));
             started.put("dndRequested", protection != null && Boolean.TRUE.equals(protection.opt("dnd")));
             started.put("notificationsRequested", protection != null && Boolean.TRUE.equals(protection.opt("interceptNotifications")));
             dnd.checkStart(started);
