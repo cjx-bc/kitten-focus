@@ -12,7 +12,8 @@ import org.json.JSONException;
 final class LocalStore extends SQLiteOpenHelper {
     private static LocalStore instance;
     static synchronized LocalStore get(Context context) { if(instance == null) instance = new LocalStore(context.getApplicationContext()); return instance; }
-    private LocalStore(Context context) { super(context, "xiaomao-focus.db", null, 1); }
+    private LocalStore(Context context) { this(context, "xiaomao-focus.db"); }
+    LocalStore(Context context, String databaseName) { super(context, databaseName, null, 1); }
     @Override public void onCreate(SQLiteDatabase db) { db.execSQL("CREATE TABLE documents (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"); db.execSQL("CREATE TABLE focus_records (id TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"); }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) { }
     synchronized JSONObject read(String key) throws JSONException { try(Cursor cursor=getReadableDatabase().rawQuery("SELECT value FROM documents WHERE key=?",new String[]{key})) { return cursor.moveToFirst()?new JSONObject(cursor.getString(0)):null; } }

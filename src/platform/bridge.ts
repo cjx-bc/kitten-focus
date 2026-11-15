@@ -3,14 +3,15 @@ import { openDB } from 'idb'
 import type {
   ActiveFocus,
   AppData,
+  ControlSnapshot,
   FocusRecord,
   FocusSnapshot,
   RestSession,
   RestSnapshot,
 } from '../domain/model'
 import { emptyData } from '../domain/model'
-import { settle } from '../domain/focus'
-import { makeRest, readRest } from '../domain/rest'
+import { elapsed, settle } from '../domain/focus'
+import { makeRest, readRest, REST_DURATION_MS } from '../domain/rest'
 
 interface NativeBridge {
   loadData(): Promise<{ data: AppData | null }>
@@ -20,6 +21,7 @@ interface NativeBridge {
   focusAction(options: { action: 'read' | 'pause' | 'resume' | 'finish' }): Promise<FocusSnapshot>
   startRest(options: { recordId: string }): Promise<RestSnapshot>
   restAction(options: { action: 'read' | 'exit' }): Promise<RestSnapshot>
+  observeControl(): Promise<ControlSnapshot>
   exportFile(options: { text: string; name: string }): Promise<void>
   importFile(): Promise<{ text: string }>
   permissions(): Promise<{ notifications: boolean; exactAlarms: boolean }>
@@ -134,6 +136,31 @@ export const restDriver = {
     const db = await database()
     await db.delete('kv', 'rest')
     return { session: null, remainingMs: 0 }
+  },
+}
+export const controlDriver = {
+  // Observation deliberately leaves lifecycle work to focusAction/restAction.
+  async observe(): Promise<ControlSnapshot> {
+    if (native) return plugin.observeControl()
+    const db = await webReadFocus()
+    const now = clock()
+    const session = browserSession ? structuredClone(browserSession) : null
+    const rest: RestSession | null = (await db.get('kv', 'rest')) || null
+    const interrupted = !!session && (session.bootId !== now.boot || now.mono < session.anchorMono)
+    const elapsedMs = session ? (interrupted ? session.elapsedMs : elapsed(session, now)) : 0
+    const remainingMs =
+      rest?.state === 'running'
+        ? Math.max(0, Math.min(REST_DURATION_MS, rest.endsAt - now.epoch))
+        : 0
+    return {
+      owner: session ? 'focus' : rest?.state === 'running' ? 'rest' : null,
+      focus: { session, elapsedMs },
+      rest: { session: rest, remainingMs },
+      needsReconcile:
+        interrupted ||
+        !!(session?.mode === 'countdown' && elapsedMs >= session.targetMs) ||
+        !!(rest?.state === 'running' && remainingMs === 0),
+    }
   },
 }
 export async function exportFile(text: string, name: string) {
