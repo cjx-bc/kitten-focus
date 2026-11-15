@@ -10,6 +10,7 @@ import StrictModeSetting from './StrictModeSetting.vue'
 import AppWhitelistEditor from './AppWhitelistEditor.vue'
 import DndSetting from './DndSetting.vue'
 import EnhancedProtectionSettings from './EnhancedProtectionSettings.vue'
+import NotificationSetting from './NotificationSetting.vue'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const app = useApp()
@@ -59,6 +60,7 @@ async function authorize() {
       <StrictModeSetting />
       <DndSetting />
       <EnhancedProtectionSettings />
+      <NotificationSetting />
       <div class="protection-state" role="status">
         <strong>{{ status ? stateLabels[status.state] : '正在检查能力' }}</strong>
         <p>{{ status?.reason }}</p>
