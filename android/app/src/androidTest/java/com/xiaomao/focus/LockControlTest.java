@@ -104,4 +104,15 @@ public class LockControlTest {
         assertTrue(control.observeControl().isNull("owner"));
         assertFalse(control.previewRecovery().getBoolean("pending"));
     }
+    @Test public void focusAdmissionCannotForgeIndependentLockOwnership() throws Exception {
+        JSONObject session = new JSONObject().put("id", "forged-kind").put("kind", "lock")
+            .put("configurationId", "reading").put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
+            .put("title", "Focus").put("themeName", "Focus").put("color", "#222222")
+            .put("mode", "countdown").put("targetMs", 60000).put("timeZone", "UTC");
+        control.startFocus(session);
+        assertEquals("focus", control.observeControl().getString("owner"));
+        clock.advance(10000); control.focusAction("finish");
+        assertEquals(1, control.loadData().getJSONArray("records").length());
+        assertEquals(0, control.lockAction("read", false).getJSONArray("records").length());
+    }
 }

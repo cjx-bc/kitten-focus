@@ -61,7 +61,7 @@ onUnmounted(() => clearInterval(statusTimer))
   <div class="page lock-page">
     <header class="page-header"><button class="icon-button" aria-label="返回我的" @click="router.replace('/settings')"><Icon name="back" /></button><h1>独立锁机</h1><button v-if="!session" class="icon-button" aria-label="新建锁机配置" @click="edit()"><Icon name="plus" /></button></header>
     <template v-if="session">
-      <div class="lock-center"><p class="muted">普通锁机进行中</p><div class="focus-clock number">{{ timer(app.lock.remainingMs) }}</div><h2>{{ session.title }}</h2><p role="status">{{ status?.reason || '正在检查保护状态' }}</p><p class="muted">本轮名单已固定 · {{ session.protection.source === 'custom' ? '独立白名单' : '跟随全局' }} · 允许 {{ session.protection.whitelist.length }} 个应用</p></div>
+      <div class="lock-center"><p class="muted">普通锁机进行中</p><div class="focus-clock number" :class="{ 'long-clock': app.lock.remainingMs >= 3600000 }">{{ timer(app.lock.remainingMs) }}</div><h2>{{ session.title }}</h2><p role="status">{{ status?.reason || '正在检查保护状态' }}</p><p class="muted">本轮名单已固定 · {{ session.protection.source === 'custom' ? '独立白名单' : '跟随全局' }} · 允许 {{ session.protection.whitelist.length }} 个应用</p></div>
       <button class="secondary wide" @click="ending = true; error = ''">提前解除</button>
     </template>
     <template v-else>
@@ -85,6 +85,8 @@ onUnmounted(() => clearInterval(statusTimer))
 <style scoped>
 .lock-page { padding-bottom: 36px; } .page-header { gap: 12px; } .page-header h1 { flex: 1; }
 .lock-center { text-align: center; padding: 48px 0; } .lock-center p { line-height: 1.7; }
+.focus-clock { font-size: clamp(72px, 22vw, 112px); font-weight: 900; line-height: 1.2; letter-spacing: -0.065em; white-space: nowrap; }
+.focus-clock.long-clock { font-size: clamp(58px, 16vw, 83px); }
 .lock-configuration { display: grid; gap: 12px; padding: 20px; border-bottom: 1px solid var(--line); }
 .lock-configuration .row { justify-content: flex-end; } .lock-result { padding: 24px 0; }
 .lock-help { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 24px; }

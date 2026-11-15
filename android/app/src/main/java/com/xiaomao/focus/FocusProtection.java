@@ -123,7 +123,7 @@ final class FocusProtection {
             : !preferred ? "off" : granted && connected ? "ready" : "authorization";
         String reason = requested && withdrawn ? "本轮应用限制已主动撤销；服务重连不会重新开启，计时仍继续" : current && !executionFailure.isEmpty() ? executionFailure : current && (!granted || !connected) ? "本轮应用限制已失效，请检查无障碍授权与服务连接"
             : !granted ? "尚未启用无障碍服务" : !connected ? "已授权，等待无障碍服务连接"
-            : current ? "本轮有效白名单已固定；暂停计时仍限制应用"
+            : current ? "lock".equals(observation.optString("owner")) ? "本轮锁机保护中；有效白名单已固定" : "本轮有效白名单已固定；暂停计时仍限制应用"
             : preferred ? "开始专注后执行应用限制" : "应用限制未开启";
         return new JSONObject().put("supported", true).put("authorized", granted).put("connected", connected)
             .put("active", current && effective).put("preferenceEnabled", preferred)

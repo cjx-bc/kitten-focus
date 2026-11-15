@@ -84,6 +84,8 @@ final class FocusControl {
             if (strict && !strictModeConfirmed)
                 throw new IllegalStateException("请先确认严格倒计时：开始后不能暂停、取消或提前结束");
             JSONObject started = new JSONObject(session.toString()).put("strictMode", strict);
+            started.remove("kind");
+            started.remove("configurationId");
             started.remove("temporaryAccess");
             started.put("temporaryAccessRuntime", new JSONObject().put("used", 0).put("requests", new JSONArray()));
             started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
