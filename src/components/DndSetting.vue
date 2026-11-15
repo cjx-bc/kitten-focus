@@ -21,6 +21,7 @@ const phaseText = computed(() => {
     off: '本轮未启用', ready: '已设置，等待下一轮', unsupported: '此环境不支持独立声音规则',
     permission_required: '未获勿扰授权，计时可继续', requested: '已请求声音保护，系统尚未核实激活',
     active: '小猫声音规则正在生效', user_disabled: '系统规则已关闭，本轮不会自动重开',
+    inactive: '系统规则尚未激活或已停止，本轮不会自动重开',
     user_modified: '规则已有后续修改，已保留系统选择', missing: '小猫规则已移除，本轮不会自动重建',
     withdrawn: '本轮声音辅助已主动撤销', restored: '小猫声音规则已撤销',
     restoration_failed: '声音规则恢复未完成，可重试', error: '声音辅助执行异常，计时可继续',

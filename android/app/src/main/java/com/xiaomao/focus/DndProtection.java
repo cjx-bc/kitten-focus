@@ -58,8 +58,10 @@ final class DndProtection {
                 save(journal);
                 rule = system.read(id, condition);
             }
-            if (rule == null || !rule.original) throw new IllegalStateException("声音规则已被修改，请在系统设置中检查");
+            if (rule == null) throw new IllegalStateException("系统无法读取刚创建的声音规则");
             journal.put("ruleId", rule.id).put("fingerprint", rule.fingerprint);
+            save(journal);
+            if (!rule.original) throw new IllegalStateException("声音规则不符合默认范围，未请求激活；可撤销本应用规则");
             // The journal exists before the system can apply an effect.
             save(journal.put("phase", "requested").put("applied", true));
             system.activate(rule.id, condition);
@@ -83,7 +85,8 @@ final class DndProtection {
             DndSystem.Rule rule = journal.optString("ruleId").isEmpty()
                 ? system.find(condition) : system.read(journal.getString("ruleId"), condition);
             if (rule != null) {
-                if (!rule.original || !journal.optString("fingerprint", rule.fingerprint).equals(rule.fingerprint))
+                if (!rule.condition.equals(condition)
+                    || (journal.has("fingerprint") ? !journal.getString("fingerprint").equals(rule.fingerprint) : !rule.original))
                     throw new IllegalStateException("声音规则已有后续修改；已保留，请在系统勿扰设置中处理");
                 if (!system.remove(rule.id) || system.read(rule.id, condition) != null)
                     throw new IllegalStateException("系统未确认移除小猫声音规则，请重试");
@@ -124,9 +127,10 @@ final class DndProtection {
                 if (rule == null) phase = "missing";
                 else {
                     enabled = rule.enabled; ruleActive = rule.active;
-                    if (!rule.enabled || Boolean.FALSE.equals(rule.active) && journal.optBoolean("applied")) phase = "user_disabled";
+                    if (!rule.enabled) phase = "user_disabled";
                     else if (!rule.original || !journal.optString("fingerprint").equals(rule.fingerprint)) phase = "user_modified";
                     else if (Boolean.TRUE.equals(rule.active)) phase = "active";
+                    else if (Boolean.FALSE.equals(rule.active) && journal.optBoolean("applied")) phase = "inactive";
                     else if (journal.optBoolean("applied")) phase = "requested";
                 }
             }
