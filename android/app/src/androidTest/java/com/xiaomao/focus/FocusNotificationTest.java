@@ -123,6 +123,19 @@ public class FocusNotificationTest {
         assertEquals("lifecycle_pending", control.getNotificationStatus().getString("phase"));
         assertTrue(system.snoozed.isEmpty());
     }
+    @Test public void postedUpdateWhileSnoozedIsNotReportedAsRestoredAndEarlySurfaceIsHeldToOriginalDeadline() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("updated", "other.app", false));
+        now += 1000;
+        control.notificationPosted(notice("updated", "other.app", false));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        assertTrue(control.getNotificationStatus().getBoolean("recoveryPending"));
+        system.active.addAll(system.snoozed); system.snoozed.clear();
+        control.notificationPosted(notice("updated", "other.app", false));
+        assertEquals(Long.valueOf(59000), system.requests.get("updated"));
+        assertEquals(1, system.snoozed.size());
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+    }
     static final class FakeNotifications implements NotificationSystem {
         boolean granted = true, connected = true; int calls;
         final Map<String, Long> requests = new LinkedHashMap<>();

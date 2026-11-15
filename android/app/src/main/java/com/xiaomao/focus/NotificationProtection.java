@@ -41,6 +41,9 @@ final class NotificationProtection {
             throw new IllegalStateException("上一轮原通知仍待系统释放，请先进入故障恢复核实或重试");
     }
     private boolean ready() { return system.supported() && system.authorized() && system.connected(); }
+    private static String groupIdentity(NotificationSystem.Notice notice) {
+        return notice.packageName + ":" + notice.uid + ":" + notice.group;
+    }
     private boolean controlling(JSONObject journal, JSONObject active) {
         return active != null && active.optBoolean("notificationsRequested")
             && active.optBoolean("strictMode") && active.optString("mode").equals("countdown")
@@ -66,18 +69,16 @@ final class NotificationProtection {
         try {
             List<NotificationSystem.Notice> notices = system.active();
             Set<String> necessaryGroups = new HashSet<>();
-            for (NotificationSystem.Notice notice : notices) if (notice.necessary && !notice.group.isEmpty()) necessaryGroups.add(notice.group);
+            for (NotificationSystem.Notice notice : notices) if (notice.necessary && !notice.group.isEmpty()) necessaryGroups.add(groupIdentity(notice));
             for (NotificationSystem.Notice notice : notices)
-                if (notice.group.isEmpty() || !necessaryGroups.contains(notice.group)) hold(journal, active, notice);
+                if (notice.group.isEmpty() || !necessaryGroups.contains(groupIdentity(notice))) hold(journal, active, notice);
         } catch (RuntimeException error) { save(journal.put("error", error.getClass().getSimpleName())); }
     }
     void posted(JSONObject active, NotificationSystem.Notice notice) throws JSONException {
         JSONObject journal = read(); JSONObject saved = entry(journal, notice.key);
         if (saved != null) {
-            // A callback alone during a pending request may be an update, not restoration.
-            if (saved.optString("phase").equals("snoozed")) {
-                saved.put("phase", "restored").put("observedMono", clock.mono()); save(journal);
-            }
+            // A posted callback can be an update while Android still holds the key. Read both sets.
+            verify(journal); save(journal);
             return; // A key owned by this round is never held a second time after restoration.
         }
         if (controlling(journal, active) && ready()) {
@@ -98,7 +99,7 @@ final class NotificationProtection {
         // Save every sibling before a grouped request can implicitly snooze it.
         List<NotificationSystem.Notice> linked = new ArrayList<>(); linked.add(notice);
         if (!notice.group.isEmpty()) for (NotificationSystem.Notice sibling : system.active()) {
-            if (!sibling.group.equals(notice.group)) continue;
+            if (!sibling.group.equals(notice.group) || !sibling.packageName.equals(notice.packageName) || sibling.uid != notice.uid) continue;
             if (sibling.necessary) return; // Do not let a group summary hide an essential sibling.
             if (!sibling.key.equals(notice.key) && entry(journal, sibling.key) == null) linked.add(sibling);
         }
@@ -137,7 +138,16 @@ final class NotificationProtection {
                 JSONObject saved = entries.getJSONObject(i); if (!pending(saved)) continue;
                 String key = saved.optString("key");
                 if (held.contains(key)) saved.put("phase", "snoozed");
-                else if (active.contains(key) && saved.optString("phase").equals("snoozed")) saved.put("phase", "restored").put("observedMono", clock.mono());
+                else if (active.contains(key) && saved.optString("phase").equals("snoozed")) {
+                    if (!journal.optBoolean("withdrawn") && journal.optInt("bootId") == clock.boot()
+                        && clock.mono() < journal.optLong("deadlineMono")) {
+                        // Some systems surface an updated original before its cutoff. Keep the same key held.
+                        saved.put("phase", "requested"); save(journal);
+                        system.snooze(key, journal.optLong("deadlineMono") - clock.mono());
+                        for (NotificationSystem.Notice stillHeld : system.snoozed())
+                            if (stillHeld.key.equals(key)) saved.put("phase", "snoozed");
+                    } else saved.put("phase", "restored").put("observedMono", clock.mono());
+                }
                 else if (active.contains(key) && (journal.optBoolean("withdrawn") || clock.mono() >= journal.optLong("deadlineMono")))
                     saved.put("phase", "present"); // Active, but no observed hold: never label this verified restoration.
                 else if (!active.contains(key) && (!saved.optString("phase").equals("requested") || clock.mono() >= journal.optLong("deadlineMono") || journal.optInt("bootId") != clock.boot()))
@@ -161,7 +171,10 @@ final class NotificationProtection {
         return new JSONObject().put("sessionId", journal.optString("sessionId")).put("capability", "notificationInterception")
             .put("title", "原应用通知暂缓").put("withdrawn", journal.optBoolean("withdrawn"))
             .put("status", pending > 0 ? "limited" : controlling ? "active" : "restored")
-            .put("reason", pending > 0 ? "已停止新拦截时仍保留原通知责任；本版本等待原截止并核实，提前改期释放由后续实现完成，可重试核实" : controlling ? "停止本轮通知拦截；计时和严格约束保留" : status.optString("reason"));
+            .put("reason", pending > 0 ? journal.optBoolean("withdrawn")
+                ? "已停止新拦截，仍保留原通知责任；本版本等待原截止并核实，提前改期释放由后续实现完成，可重试核实"
+                : "撤销会停止新拦截，但尚在系统暂缓的原通知仍需等待原截止并核实；计时和严格约束保留"
+                : controlling ? "停止本轮通知拦截；计时和严格约束保留" : status.optString("reason"));
     }
     /** No preferences, journal, timer or system writes. */
     JSONObject observe(JSONObject active) throws JSONException {

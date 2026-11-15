@@ -2,11 +2,16 @@ package com.xiaomao.focus;
 
 import android.app.PendingIntent;
 import android.app.UiAutomation;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
+import android.graphics.Rect;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.service.notification.StatusBarNotification;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.json.*;
@@ -29,7 +34,8 @@ public class FocusNotificationDeviceTest {
         assertTrue("Only isolated QA identity is permitted", context.getPackageName().endsWith(".qa"));
         NotificationSystem system = new AndroidNotificationSystem(context);
         assertTrue("Prepare notification access before running", system.authorized());
-        waitFor(() -> system.connected(), 5000, "Listener did not connect");
+        FocusNotificationListener.rebind(context);
+        waitFor(() -> system.connected(), 15000, "Listener did not connect after explicit public requestRebind");
         LocalStore store = LocalStore.get(context);
         FocusControl control = new FocusControl(context);
         assertNull("An existing QA session must be left alone", store.read("active"));
@@ -68,8 +74,11 @@ public class FocusNotificationDeviceTest {
             assertEquals(originalClick, restored.getNotification().contentIntent);
             assertEquals(2, restored.getNotification().extras.getInt("probe_revision"));
             assertNull(find(true));
+            android.util.Log.i("FocusNotificationDeviceTest", "original_identity_update_and_deadline_verified");
             // This invokes a real notification-shade UI click, not PendingIntent.send().
+            shell("input keyevent WAKEUP"); shell("wm dismiss-keyguard");
             shell("cmd statusbar expand-notifications");
+            SystemClock.sleep(1800); // Shade animation only; never wait for a constantly updating timer UI to idle.
             waitFor(() -> clickShadeTitle("Synthetic probe #" + ID), 5000, "Could not click synthetic original in notification shade");
             waitFor(() -> senderClickObserved(epoch), 5000, "Sender did not receive its original UI click");
             control.synchronizeNotifications();
@@ -114,11 +123,31 @@ public class FocusNotificationDeviceTest {
         return false;
     }
     private static boolean clickShadeTitle(String text) {
-        AccessibilityNodeInfo root = InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow();
-        if (root == null) return false;
-        List<AccessibilityNodeInfo> matches = root.findAccessibilityNodeInfosByText(text);
-        for (AccessibilityNodeInfo value : matches) for (int depth = 0; value != null && depth < 6; depth++, value = value.getParent())
-            if (value.isClickable() && value.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+        UiAutomation automation = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        AccessibilityServiceInfo info = automation.getServiceInfo();
+        info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        automation.setServiceInfo(info);
+        java.util.ArrayList<AccessibilityNodeInfo> roots = new java.util.ArrayList<>();
+        AccessibilityNodeInfo active = automation.getRootInActiveWindow();
+        if (active != null) roots.add(active);
+        for (AccessibilityWindowInfo window : automation.getWindows()) if (window.getRoot() != null) roots.add(window.getRoot());
+        for (AccessibilityNodeInfo root : roots) {
+            List<AccessibilityNodeInfo> matches = root.findAccessibilityNodeInfosByText(text);
+            for (AccessibilityNodeInfo match : matches) {
+                if (!match.isVisibleToUser()) continue;
+                for (AccessibilityNodeInfo value = match; value != null; value = value.getParent())
+                    if (value.isClickable() && value.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+                Rect bounds = new Rect(); match.getBoundsInScreen(bounds);
+                if (!bounds.isEmpty()) {
+                    long time = SystemClock.uptimeMillis();
+                    MotionEvent down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, bounds.centerX(), bounds.centerY(), 0);
+                    MotionEvent up = MotionEvent.obtain(time, time + 60, MotionEvent.ACTION_UP, bounds.centerX(), bounds.centerY(), 0);
+                    down.setSource(InputDevice.SOURCE_TOUCHSCREEN); up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+                    try { return automation.injectInputEvent(down, true) && automation.injectInputEvent(up, true); }
+                    finally { down.recycle(); up.recycle(); }
+                }
+            }
+        }
         return false;
     }
     interface Check { boolean done() throws Exception; }

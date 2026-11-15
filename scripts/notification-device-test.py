@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import threading
 
 
 def main():
@@ -47,7 +48,7 @@ def main():
         match = re.search(r"package: name='([^']+)'", info)
         assert match and match[1] == package, 'Refusing unexpected package identity: ' + str(apk)
     baseline_listeners = shell('settings', 'get', 'secure', 'enabled_notification_listeners').strip()
-    sender_installed = bool(shell('pm', 'path', sender).strip())
+    sender_installed = 'package:' + sender in shell('pm', 'list', 'packages', sender).splitlines()
     sender_permission = shell('pm', 'check-permission', 'android.permission.POST_NOTIFICATIONS', sender).strip() == 'granted' if sender_installed else False
     listener_was_enabled = any(value in baseline_listeners.split(':') for value in
                                [listener, qa + '/.FocusNotificationListener'])
@@ -68,12 +69,29 @@ def main():
         if not listener_was_enabled:
             shell('cmd', 'notification', 'allow_listener', listener)
         shell('am', 'start', '-n', qa + '/com.xiaomao.focus.MainActivity')
-        result = shell('am', 'instrument', '-w', '-r', '-e', 'class',
-                       'com.xiaomao.focus.FocusNotificationTest,com.xiaomao.focus.FocusNotificationDeviceTest',
-                       '-e', 'runNotificationDeviceFixture', 'true',
-                       qa + '.test/androidx.test.runner.AndroidJUnitRunner', timeout=180)
+        command = [*device, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
+                   'com.xiaomao.focus.FocusNotificationTest,com.xiaomao.focus.FocusNotificationDeviceTest',
+                   '-e', 'runNotificationDeviceFixture', 'true', qa + '.test/androidx.test.runner.AndroidJUnitRunner']
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, encoding='utf-8', errors='replace')
+        timer = threading.Timer(180, process.kill)
+        timer.start()
+        lines = []
+        reconnected = False
+        try:
+            for line in process.stdout:
+                lines.append(line)
+                if not reconnected and line.strip() == 'INSTRUMENTATION_STATUS_CODE: 1':
+                    # Instrumentation restarts the target process. Rebind this exact component after it exists.
+                    shell('cmd', 'notification', 'disallow_listener', listener)
+                    shell('cmd', 'notification', 'allow_listener', listener)
+                    reconnected = True
+            process.wait(timeout=5)
+        finally:
+            timer.cancel()
+        result = ''.join(lines)
         (output / 'instrumentation.txt').write_text(result, encoding='utf-8')
-        passed = bool(re.search(r'OK \(7 tests\)', result)) and 'FAILURES!!!' not in result and 'INSTRUMENTATION_STATUS_CODE: -4' not in result
+        passed = bool(re.search(r'OK \(8 tests\)', result)) and 'FAILURES!!!' not in result and 'INSTRUMENTATION_STATUS_CODE: -4' not in result
         print(result[-6000:])
     finally:
         # Sender withdraws its own synthetic fixture; the controller never cancels another app's notification.
