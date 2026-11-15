@@ -33,8 +33,20 @@ final class NotificationProtection {
     }
     private static JSONObject entry(JSONObject journal, String key) throws JSONException {
         JSONArray entries = journal.getJSONArray("entries");
-        for (int i = 0; i < entries.length(); i++) if (entries.getJSONObject(i).optString("key").equals(key)) return entries.getJSONObject(i);
+        for (int i = entries.length() - 1; i >= 0; i--) if (entries.getJSONObject(i).optString("key").equals(key)) return entries.getJSONObject(i);
         return null;
+    }
+    private boolean canHold(JSONObject journal, NotificationSystem.Notice notice) throws JSONException {
+        JSONObject previous = entry(journal, notice.key);
+        if (previous == null) return true;
+        if (!previous.optString("phase").equals("absent") || notice.postTime == 0
+            || notice.postTime == previous.optLong("postTime")) return false;
+        // Absence belongs to the preceding original. Accept a different currently posted
+        // original, even after wall-clock rollback; a delayed callback alone is not proof.
+        for (NotificationSystem.Notice current : system.active())
+            if (current.key.equals(notice.key) && current.uid == notice.uid
+                && current.packageName.equals(notice.packageName) && current.postTime == notice.postTime) return true;
+        return false;
     }
     void checkStart(JSONObject active) throws JSONException {
         if (active.optBoolean("notificationsRequested") && pendingCount(read()) > 0)
@@ -65,7 +77,8 @@ final class NotificationProtection {
             && journal.optInt("bootId") == clock.boot() && active.optInt("bootId") == clock.boot()
             && clock.mono() >= active.optLong("anchorMono") && remaining(active) > 0;
     }
-    void synchronize(JSONObject active) throws JSONException {
+    void synchronize(JSONObject active) throws JSONException { synchronize(active, null); }
+    private void synchronize(JSONObject active, NotificationSystem.Notice posted) throws JSONException {
         JSONObject journal = read();
         boolean requested = active != null && active.optBoolean("notificationsRequested");
         if (requested && !journal.optString("sessionId").equals(active.optString("id"))) {
@@ -78,7 +91,7 @@ final class NotificationProtection {
         if (!requested || !journal.optString("sessionId").equals(active.optString("id"))) journal.put("ended", true);
         boolean controlling = controlling(journal, active);
         if (controlling) journal.put("deadlineMono", cutoff(active)).put("deadlineEpoch", clock.epoch() + cutoff(active) - clock.mono());
-        verify(journal, controlling);
+        verify(journal, controlling, posted);
         save(journal);
         if (!controlling) { release(journal); return; }
         if (!ready()) return;
@@ -94,7 +107,7 @@ final class NotificationProtection {
         JSONObject journal = read(); JSONObject saved = entry(journal, notice.key);
         if (saved != null) {
             // A posted callback can be an update while Android still holds the key. Read both sets.
-            synchronize(active);
+            synchronize(active, notice);
             return; // Only a still-controlled lease can be renewed; restored keys stay terminal.
         }
         if (controlling(journal, active) && ready()) {
@@ -105,7 +118,7 @@ final class NotificationProtection {
         }
     }
     private void hold(JSONObject journal, JSONObject active, NotificationSystem.Notice notice) throws JSONException {
-        if (entry(journal, notice.key) != null) return;
+        if (!canHold(journal, notice)) return;
         Set<String> whitelist = new HashSet<>(); whitelist.add(ownPackage);
         JSONObject protection = active.optJSONObject("protection");
         JSONArray packages = protection == null ? null : protection.optJSONArray("whitelist");
@@ -117,11 +130,11 @@ final class NotificationProtection {
         if (!notice.group.isEmpty()) for (NotificationSystem.Notice sibling : system.active()) {
             if (!sibling.group.equals(notice.group) || !sibling.packageName.equals(notice.packageName) || sibling.uid != notice.uid) continue;
             if (sibling.necessary) return; // Do not let a group summary hide an essential sibling.
-            if (!sibling.key.equals(notice.key) && entry(journal, sibling.key) == null) linked.add(sibling);
+            if (!sibling.key.equals(notice.key) && canHold(journal, sibling)) linked.add(sibling);
         }
         for (NotificationSystem.Notice member : linked) {
             journal.getJSONArray("entries").put(new JSONObject().put("key", member.key).put("package", member.packageName)
-                .put("uid", member.uid).put("group", member.group).put("phase", "requested")
+                .put("uid", member.uid).put("group", member.group).put("postTime", member.postTime).put("phase", "requested")
                 .put("requestMono", clock.mono()).put("deadlineMono", journal.optLong("deadlineMono")));
         }
         save(journal); // A durable responsibility must precede the system effect.
@@ -147,27 +160,37 @@ final class NotificationProtection {
         save(journal);
     }
     /** Executed on lifecycle/reconnect, never on observation. Absence does not claim restoration. */
-    private void verify(JSONObject journal, boolean controlling) throws JSONException {
+    private void verify(JSONObject journal, boolean controlling) throws JSONException { verify(journal, controlling, null); }
+    private void verify(JSONObject journal, boolean controlling, NotificationSystem.Notice posted) throws JSONException {
         if (!ready()) return;
         try {
-            Set<String> active = new HashSet<>(), held = new HashSet<>();
-            for (NotificationSystem.Notice notice : system.active()) active.add(notice.key);
-            for (NotificationSystem.Notice notice : system.snoozed()) held.add(notice.key);
+            Map<String, NotificationSystem.Notice> active = new HashMap<>();
+            Map<String, NotificationSystem.Notice> held = new HashMap<>();
+            for (NotificationSystem.Notice notice : system.active()) active.put(notice.key, notice);
+            for (NotificationSystem.Notice notice : system.snoozed()) held.put(notice.key, notice);
+            journal.remove("error");
             JSONArray entries = journal.getJSONArray("entries");
             for (int i = 0; i < entries.length(); i++) {
                 JSONObject saved = entries.getJSONObject(i); if (!pending(saved)) continue;
                 String key = saved.optString("key");
-                if (held.contains(key)) {
+                NotificationSystem.Notice observed = active.containsKey(key) ? active.get(key) : held.get(key);
+                if (observed != null && observed.postTime != 0) saved.put("postTime", observed.postTime);
+                NotificationSystem.Notice current = posted != null && posted.key.equals(key) ? posted
+                    : active.containsKey(key) ? active.get(key) : held.get(key);
+                // A necessary update ends the ordinary hold for this original. Keep the exemption
+                // through stale enumeration/callback races until its actual release is observed.
+                if (current != null && current.necessary) saved.put("exempt", true);
+                if (held.containsKey(key)) {
                     saved.put("observedHeld", true).put("phase", "snoozed");
-                    if (controlling && !journal.optBoolean("fixedDeadline") && saved.optLong("deadlineMono") - clock.mono() <= RENEW_BEFORE_MS)
+                    if (controlling && saved.optBoolean("exempt")) releaseEntry(journal, saved);
+                    else if (controlling && !journal.optBoolean("fixedDeadline") && saved.optLong("deadlineMono") - clock.mono() <= RENEW_BEFORE_MS)
                         renew(journal, saved);
-                } else if (active.contains(key)) {
-                    if (controlling) renew(journal, saved);
+                } else if (active.containsKey(key)) {
+                    if (controlling && !saved.optBoolean("exempt")) renew(journal, saved);
                     else saved.put("phase", saved.optBoolean("observedHeld") ? "restored" : "present").put("observedMono", clock.mono());
                 } else if (saved.optBoolean("observedHeld") || clock.mono() - saved.optLong("requestMono") >= 2000 || journal.optInt("bootId") != clock.boot())
                     saved.put("phase", "absent");
             }
-            journal.remove("error");
         } catch (RuntimeException error) { journal.put("error", error.getClass().getSimpleName()); }
     }
     private void renew(JSONObject journal, JSONObject saved) throws JSONException {
@@ -182,18 +205,18 @@ final class NotificationProtection {
     private void release(JSONObject journal) throws JSONException {
         if (!ready()) return;
         JSONArray entries = journal.getJSONArray("entries");
-        for (int i = 0; i < entries.length(); i++) {
-            JSONObject saved = entries.getJSONObject(i);
-            if (!pending(saved) || saved.optBoolean("releaseRequested") && clock.mono() - saved.optLong("releaseRequestMono") < 5000) continue;
-            // A returned request is not verified restoration. Keep the original responsibility.
-            saved.put("releaseRequested", true).put("releaseFailed", false).put("releaseRequestMono", clock.mono()); save(journal);
-            try { system.snooze(saved.optString("key"), 1L); }
-            catch (RuntimeException error) {
-                saved.put("releaseRequested", false).put("releaseFailed", true).put("phase", "failed");
-                journal.put("error", error.getClass().getSimpleName());
-            }
-            save(journal);
+        for (int i = 0; i < entries.length(); i++) releaseEntry(journal, entries.getJSONObject(i));
+    }
+    private void releaseEntry(JSONObject journal, JSONObject saved) throws JSONException {
+        if (!pending(saved) || saved.optBoolean("releaseRequested") && clock.mono() - saved.optLong("releaseRequestMono") < 5000) return;
+        // A returned request is not verified restoration. Keep the original responsibility.
+        saved.put("releaseRequested", true).put("releaseFailed", false).put("releaseRequestMono", clock.mono()); save(journal);
+        try { system.snooze(saved.optString("key"), 1L); }
+        catch (RuntimeException error) {
+            saved.put("releaseRequested", false).put("releaseFailed", true).put("phase", "failed");
+            journal.put("error", error.getClass().getSimpleName());
         }
+        save(journal);
     }
     JSONObject restore(JSONObject active) throws JSONException {
         JSONObject journal = read();

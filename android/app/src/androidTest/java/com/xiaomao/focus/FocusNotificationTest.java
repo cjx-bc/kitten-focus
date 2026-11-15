@@ -41,6 +41,60 @@ public class FocusNotificationTest {
     NotificationSystem.Notice notice(String key, String pkg, boolean necessary) {
         return new NotificationSystem.Notice(key, pkg, 10001, "", necessary);
     }
+    @Test public void newPostingReusesAbsentKeyWithoutRewritingWithdrawnOriginalHistory() throws Exception {
+        control.startFocus(session().put("targetMs", 300000), true);
+        NotificationSystem.Notice first = new NotificationSystem.Notice("reused", "other.app", 10001, "", false, 1001);
+        system.active.add(first); control.notificationPosted(first);
+        system.snoozed.clear(); control.notificationRemoved("reused", false); control.synchronizeNotifications();
+        assertEquals(1, control.getNotificationStatus().getInt("absentCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+        control.notificationPosted(first); // A delayed callback for the absent original is not a new posting.
+        assertTrue(system.snoozed.isEmpty());
+        now += 1000;
+        NotificationSystem.Notice next = new NotificationSystem.Notice("reused", "other.app", 10001, "", false, 502); // Wall-clock rollback must not exempt a new current posting.
+        system.active.add(next); control.notificationPosted(next);
+        assertEquals("A new ordinary original using the same key is controlled in this round", 1, system.snoozed.size());
+        assertEquals(1, control.getNotificationStatus().getInt("pendingCount"));
+        assertEquals("Withdrawal history belongs to the preceding original", 1, control.getNotificationStatus().getInt("absentCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        control.notificationPosted(new NotificationSystem.Notice("reused", "other.app", 10001, "", false, 603));
+        assertEquals("Updates to the current held original do not create another duty", 1, control.getNotificationStatus().getInt("pendingCount"));
+        now += 299000; control.reconcile();
+        system.active.addAll(system.snoozed); system.snoozed.clear(); control.synchronizeNotifications();
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertEquals(1, control.getNotificationStatus().getInt("absentCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+    }
+    @Test public void necessaryUpdateWhileStillHeldRequestsOriginalReleaseWithoutRenewing() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("held-call", "other.app", false));
+        // Posted metadata can arrive before the held enumeration reflects the update.
+        control.notificationPosted(notice("held-call", "other.app", true));
+        assertEquals("Release the same original instead of extending its ordinary lease", Long.valueOf(1), system.requests.get("held-call"));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        assertTrue(control.getNotificationStatus().getBoolean("recoveryPending"));
+        now += 45000;
+        system.snoozed.clear();
+        system.snoozed.add(notice("held-call", "other.app", true));
+        control.synchronizeNotifications();
+        assertEquals(Long.valueOf(1), system.requests.get("held-call"));
+        system.snoozed.clear(); system.active.add(notice("held-call", "other.app", true));
+        control.synchronizeNotifications(); control.synchronizeNotifications();
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+        assertEquals(1, system.active.size());
+    }
+    @Test public void trackedOrdinaryUpdateIntoNecessaryOriginalStaysReachable() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("updated-call", "other.app", false));
+        system.snoozed.clear();
+        system.active.add(notice("updated-call", "other.app", true));
+        control.notificationPosted(notice("updated-call", "other.app", true));
+        assertEquals("Necessary updates must not be snoozed as ordinary originals", 1, system.calls);
+        assertEquals(1, system.active.size());
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+    }
     @Test public void fixedDeadlineUsesFrozenWhitelistAndReleasesWithoutHoldingAgain() throws Exception {
         control.startFocus(session(), true);
         control.notificationPosted(notice("allowed", "allowed.app", false));
