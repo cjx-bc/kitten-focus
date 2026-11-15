@@ -36,6 +36,7 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void lockAction(PluginCall call){resolve(call,()->control.lockAction(call.getString("action","read"),Boolean.TRUE.equals(call.getBoolean("confirmed",false))));}
     @PluginMethod public void startRest(PluginCall call){resolve(call,()->control.startRest(call.getString("recordId","")));}
     @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}
+    @PluginMethod public void grantTemporaryAccess(PluginCall call){resolve(call,()->control.grantTemporaryAccess(call.getData()));}
     @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
     @PluginMethod public void getDndStatus(PluginCall call){resolve(call,()->control.getDndStatus());}
     @PluginMethod public void restoreDnd(PluginCall call){resolve(call,()->control.restoreDnd());}

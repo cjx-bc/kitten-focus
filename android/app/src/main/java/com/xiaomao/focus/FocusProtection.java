@@ -147,6 +147,8 @@ final class FocusProtection {
         JSONObject session = focus == null ? null : focus.optJSONObject("session");
         JSONObject protection = session == null ? null : session.optJSONObject("protection");
         if (protection == null || !protection.optBoolean("study") || protection.optBoolean("applicationsWithdrawn") || context.getPackageName().equals(packageName)) return false;
+        JSONObject temporary = session.optJSONObject("temporaryAccess");
+        if (temporary != null && temporary.optLong("remainingMs") > 0 && packageName.equals(temporary.optString("targetPackage"))) return false;
         JSONArray whitelist = protection.optJSONArray("whitelist");
         if (whitelist != null) for (int i = 0; i < whitelist.length(); i++)
             if (packageName.equals(whitelist.optString(i))) return false;
