@@ -126,8 +126,10 @@ final class FocusProtection {
         String input = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
         ComponentName keyboard = input == null ? null : ComponentName.unflattenFromString(input);
         if (keyboard != null) result.add(keyboard.getPackageName());
-        if (Build.VERSION.SDK_INT >= 29 && pm.getPermissionControllerPackageName() != null)
-            result.add(pm.getPermissionControllerPackageName());
+        for (String permissionPackage : new String[]{"com.android.permissioncontroller", "com.google.android.permissioncontroller"}) {
+            try { if ((pm.getApplicationInfo(permissionPackage, 0).flags & ApplicationInfo.FLAG_SYSTEM) != 0) result.add(permissionPackage); }
+            catch (PackageManager.NameNotFoundException ignored) { }
+        }
         return result;
     }
 
