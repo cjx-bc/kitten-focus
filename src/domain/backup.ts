@@ -78,6 +78,14 @@ export function readBackup(text: string): Backup {
     )
       throw new Error('待办数据损坏')
   for (const event of data.events) validateEvent(event)
+  for (const item of data.items) {
+    const list = item.whitelist
+    if (list !== undefined && (!list || typeof list !== 'object' ||
+      !['global', 'custom'].includes(list.source) ||
+      (list.source === 'custom' && (!Array.isArray(list.packages) ||
+        list.packages.some((name) => typeof name !== 'string' || !name.trim())))))
+      throw new Error('待办白名单损坏')
+  }
   if (data.deletedRecordIds.some((id) => typeof id !== 'string'))
     throw new Error('删除记录索引损坏')
   for (const record of data.records) {

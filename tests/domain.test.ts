@@ -205,6 +205,23 @@ describe('backup validation', () => {
     backup.version = 2
     expect(() => readBackup(JSON.stringify(backup))).toThrow()
   })
+  it('rejects a malformed independent whitelist before replacing saved data', () => {
+    const data = emptyData()
+    data.themes.push({ id: 'theme', name: '学习', color: '#222', order: 0, collapsed: false })
+    data.items.push({ id: 'item', themeId: 'theme', title: '阅读', note: '', mode: 'countdown', minutes: 25, order: 0 })
+    const backup = JSON.parse(makeBackup(data))
+    backup.data.items[0].whitelist = { source: 'custom', packages: 'same-name-is-not-a-package-list' }
+    expect(() => readBackup(JSON.stringify(backup))).toThrow('待办白名单损坏')
+  })
+  it('preserves empty and uninstalled independent lists while accepting legacy items without a list', () => {
+    const data = emptyData()
+    data.themes.push({ id: 'theme', name: '学习', color: '#222', order: 0, collapsed: false })
+    const base = { themeId: 'theme', title: '阅读', note: '', mode: 'countdown' as const, minutes: 25, order: 0 }
+    data.items.push({ ...base, id: 'empty', whitelist: { source: 'custom', packages: [] } },
+      { ...base, id: 'missing', whitelist: { source: 'custom', packages: ['missing.reader.tool'] } },
+      { ...base, id: 'legacy' })
+    expect(readBackup(makeBackup(data)).data.items).toEqual(data.items)
+  })
   it('rejects inconsistent focus totals', () => {
     const data = emptyData()
     const value = record('2026-11-14T10:00:00Z', '2026-11-14T10:01:00Z')

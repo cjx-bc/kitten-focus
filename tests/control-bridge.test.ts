@@ -114,3 +114,37 @@ it('refuses requested application protection on the browser rather than starting
   await expect(focusDriver.start(session())).rejects.toThrow('Android')
   expect((await controlDriver.observe()).owner).toBeNull()
 })
+
+it('starts from the saved item whitelist and preserves its snapshot across later global and item edits', async () => {
+  const { focusDriver, controlDriver, repository } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  const data = emptyData()
+  data.preferences.protection = { ...defaultProtection(), globalWhitelist: ['global.tool'] }
+  data.items.push({ id: 'reading', themeId: 'study', title: '阅读', note: '', mode: 'countdown', minutes: 25,
+    order: 0, whitelist: { source: 'custom', packages: ['reader.tool'] } })
+  await repository.save(data)
+  const request = { ...session(), itemId: 'reading', protection: { study: true, source: 'global' as const, whitelist: ['forged.tool'] } }
+  expect((await focusDriver.start(request)).session?.protection).toEqual({ study: false, source: 'custom', whitelist: ['reader.tool'] })
+  data.preferences.protection.globalWhitelist = ['new.global.tool']
+  data.items[0]!.whitelist = { source: 'global' }
+  await repository.save(data)
+  expect((await controlDriver.observe()).focus.session?.protection).toEqual({ study: false, source: 'custom', whitelist: ['reader.tool'] })
+  await focusDriver.action('finish')
+  expect((await focusDriver.start(request)).session?.protection).toEqual({ study: false, source: 'global', whitelist: ['new.global.tool'] })
+})
+
+it('keeps an empty independent whitelist distinct from another item and legacy or free focus', async () => {
+  const { focusDriver, repository } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  const data = emptyData()
+  data.preferences.protection = { ...defaultProtection(), globalWhitelist: ['global.tool'] }
+  data.items.push({ id: 'reading', themeId: 'study', title: 'Reading', note: '', mode: 'countdown', minutes: 25,
+    order: 0, whitelist: { source: 'custom', packages: [] } },
+    { id: 'math', themeId: 'study', title: 'Math', note: '', mode: 'countdown', minutes: 25, order: 1 })
+  await repository.save(data)
+  expect((await focusDriver.start({ ...session(), itemId: 'reading' })).session?.protection).toEqual({ study: false, source: 'custom', whitelist: [] })
+  await focusDriver.action('finish')
+  expect((await focusDriver.start({ ...session(), itemId: 'math' })).session?.protection).toEqual({ study: false, source: 'global', whitelist: ['global.tool'] })
+  await focusDriver.action('finish')
+  expect((await focusDriver.start(session())).session?.protection).toEqual({ study: false, source: 'global', whitelist: ['global.tool'] })
+})

@@ -30,7 +30,7 @@ const app = useApp()
         <p class="field-help">本轮可以暂停和手动结束。</p>
       </template>
       <template v-if="app.startConfirmation.study">
-        <p><strong>学霸模式 · 跟随全局白名单</strong></p>
+        <p><strong>学霸模式 · {{ app.startConfirmation.whitelistSource === 'custom' ? '子待办独立白名单' : '跟随全局白名单' }}</strong></p>
         <p>
           已选
           {{

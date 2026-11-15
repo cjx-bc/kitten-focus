@@ -57,25 +57,39 @@ final class FocusProtection {
         return false;
     }
 
-    static JSONObject capture(Context context, LocalStore store) throws JSONException {
-        return capture(context, store, new AccessibilityState() {
+    static JSONObject capture(Context context, LocalStore store, JSONObject session) throws JSONException {
+        return capture(context, store, session, new AccessibilityState() {
             public boolean authorized() { return FocusProtection.authorized(context); }
             public boolean connected() { return FocusAccessibilityService.connected(); }
         });
     }
-    static JSONObject capture(Context context, LocalStore store, AccessibilityState accessibility) throws JSONException {
+    static JSONObject capture(Context context, LocalStore store, JSONObject session, AccessibilityState accessibility) throws JSONException {
         JSONObject prefs = preferences(store);
         boolean study = prefs.optBoolean("study", false);
         if (study && (!accessibility.authorized() || !accessibility.connected()))
             throw new IllegalStateException("学霸模式待授权：请启用小猫专注无障碍服务，并返回确认服务已连接");
         LinkedHashSet<String> packages = new LinkedHashSet<>();
         JSONArray selected = prefs.optJSONArray("globalWhitelist");
+        String source = "global";
+        JSONObject data = store.read("data");
+        JSONArray items = data == null ? null : data.optJSONArray("items");
+        String itemId = session.optString("itemId", "");
+        if (items != null && !itemId.isEmpty()) for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null || item.optBoolean("deleted") || !itemId.equals(item.optString("id"))) continue;
+            JSONObject configuration = item.optJSONObject("whitelist");
+            if (configuration != null && "custom".equals(configuration.optString("source"))) {
+                source = "custom";
+                selected = configuration.optJSONArray("packages");
+            }
+            break;
+        }
         if (selected != null) for (int i = 0; i < selected.length(); i++) {
             Object value = selected.opt(i);
             if (value instanceof String && !((String) value).isEmpty()) packages.add((String) value);
         }
         packages.add(context.getPackageName());
-        return new JSONObject().put("study", study).put("source", "global")
+        return new JSONObject().put("study", study).put("source", source)
             .put("whitelist", new JSONArray(packages));
     }
 
@@ -165,10 +179,19 @@ final class FocusProtection {
         }
         try { rows.put(context.getPackageName(), appRow(context, pm.getApplicationInfo(context.getPackageName(), 0))); }
         catch (PackageManager.NameNotFoundException ignored) { }
-        JSONArray selected = preferences(store).optJSONArray("globalWhitelist");
-        if (selected != null) for (int i = 0; i < selected.length(); i++) {
-            String name = selected.optString(i);
-            if (name.isEmpty() || rows.containsKey(name)) continue;
+        LinkedHashSet<String> selected = new LinkedHashSet<>();
+        addPackages(selected, preferences(store).optJSONArray("globalWhitelist"));
+        JSONObject data = store.read("data");
+        JSONArray items = data == null ? null : data.optJSONArray("items");
+        if (items != null) for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null || item.optBoolean("deleted")) continue;
+            JSONObject configuration = item.optJSONObject("whitelist");
+            if (configuration != null && "custom".equals(configuration.optString("source")))
+                addPackages(selected, configuration.optJSONArray("packages"));
+        }
+        for (String name : selected) {
+            if (rows.containsKey(name)) continue;
             try { rows.put(name, appRow(context, pm.getApplicationInfo(name, 0))); }
             catch (PackageManager.NameNotFoundException missing) {
                 rows.put(name, new JSONObject().put("packageName", name).put("name", name).put("icon", JSONObject.NULL)
@@ -178,6 +201,13 @@ final class FocusProtection {
         ArrayList<JSONObject> sorted = new ArrayList<>(rows.values());
         sorted.sort(Comparator.comparing(row -> row.optString("name"), String.CASE_INSENSITIVE_ORDER));
         return new JSONArray(sorted);
+    }
+
+    private static void addPackages(Set<String> packages, JSONArray selected) {
+        if (selected != null) for (int i = 0; i < selected.length(); i++) {
+            Object value = selected.opt(i);
+            if (value instanceof String && !((String) value).trim().isEmpty()) packages.add((String) value);
+        }
     }
 
     private static JSONObject appRow(Context context, ApplicationInfo app) throws JSONException {
