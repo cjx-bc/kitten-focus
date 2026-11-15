@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>小猫专注 · 学霸模式 v0</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+        color: #222222;
+        background: #f1f1f1;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        --ink: #222222;
+        --muted: #737378;
+        --surface: #f5f5f5;
+        --line: #eaeaea;
+        --accent: #ef4e36;
+        --white: #ffffff;
+        --row-gap: 18px;
+        --row-pad: 14px;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; min-height: 100dvh; }
+      button { font: inherit; color: inherit; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      button:focus-visible { outline: 2px solid #838388; outline-offset: 3px; }
+      button:active { opacity: .72; }
+      svg { display: block; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      .stage { min-height: 100dvh; display: grid; place-items: center; padding: 20px; }
+      .app-shell { position: relative; width: min(100%, 520px); height: min(900px, calc(100dvh - 40px)); min-height: 600px; overflow: hidden; background: var(--white); border-radius: 28px; box-shadow: 0 0 0 1px #e7e7e7, 0 20px 80px #0000000a; }
+      .page { height: 100%; overflow: auto; padding: 36px 24px 112px; scrollbar-width: none; }
+      .page::-webkit-scrollbar { display: none; }
+      .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 25px; }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: 28px; line-height: 1.2; font-weight: 750; letter-spacing: 0; }
+      h2 { font-size: 19px; line-height: 1.35; font-weight: 700; letter-spacing: 0; }
+      h3 { font-size: 15px; line-height: 1.45; font-weight: 650; letter-spacing: 0; }
+      p { line-height: 1.6; text-wrap: pretty; }
+      .icon-button { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: transparent; }
+      .icon-button.soft { background: var(--surface); }
+      .daily-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 22px; color: var(--muted); font-size: 12px; }
+      .daily-line strong { color: var(--ink); font: 800 16px/1.1 "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }
+      .entry-card { display: flex; width: 100%; min-height: 76px; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 18px; background: #fff4f1; text-align: left; }
+      .entry-mark { width: 36px; height: 36px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 12px; color: var(--accent); background: #ffffff; }
+      .entry-copy { min-width: 0; flex: 1; }
+      .entry-copy strong { display: block; font-size: 14px; line-height: 1.4; }
+      .entry-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+      .entry-status { flex: 0 0 auto; color: #c13a25; font-size: 12px; }
+      .entry-card > svg { width: 18px; height: 18px; color: var(--muted); }
+      .lock-entry { display: flex; align-items: center; width: 100%; min-height: 58px; padding: 8px 4px; gap: 10px; text-align: left; }
+      .lock-entry svg { color: var(--muted); }
+      .lock-entry span { flex: 1; font-size: 14px; }
+      .lock-entry small { color: var(--muted); font-size: 12px; }
+      .divider { height: 1px; background: var(--line); }
+      .section-head { display: flex; justify-content: space-between; align-items: baseline; margin: 25px 0 12px; }
+      .section-head small { color: var(--muted); font-size: 12px; }
+      .task-list { display: grid; gap: 8px; }
+      .task-row { display: flex; align-items: center; min-height: 68px; background: var(--surface); border-radius: 14px; }
+      .task-copy { min-width: 0; flex: 1; padding: 11px 4px 11px 14px; }
+      .task-copy h3 { overflow-wrap: anywhere; }
+      .task-copy p { margin-top: 3px; color: var(--muted); font-size: 12px; }
+      .play-button { display: grid; place-items: center; width: 54px; height: 58px; flex: 0 0 auto; border-radius: 0 14px 14px 0; }
+      .play-button span { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: var(--white); background: var(--ink); }
+      .play-button svg { width: 14px; height: 14px; fill: currentColor; stroke-width: 1.2; }
+      .free-button { display: flex; justify-content: center; align-items: center; width: 100%; min-height: 50px; margin-top: 16px; gap: 8px; border: 1px solid var(--line); border-radius: 100px; background: var(--white); font-size: 14px; font-weight: 600; }
+      .free-button svg { width: 18px; height: 18px; }
+      .tabbar { position: absolute; z-index: 2; right: 0; bottom: 0; left: 0; display: flex; justify-content: space-around; align-items: center; height: 78px; padding: 8px 10px 10px; border-top: 1px solid #f1f1f1; background: #fffffff7; }
+      .tab { position: relative; display: grid; place-items: center; min-width: 52px; min-height: 54px; color: #8c8c91; background: transparent; }
+      .tab svg { width: 24px; height: 24px; }
+      .tab.active { color: var(--ink); }
+      .tab.active svg { stroke-width: 2.4; }
+      .tab-name { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+      .backdrop { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 20px; background: #0005; }
+      .backdrop[hidden] { display: none; }
+      .sheet { width: min(100%, 496px); max-height: min(90dvh, 820px); overflow: auto; border-radius: 26px; background: var(--white); box-shadow: 0 20px 80px #0002; overscroll-behavior: contain; }
+      .sheet-inner { padding: 20px 22px 24px; }
+      .sheet-header { position: sticky; top: -20px; z-index: 1; display: flex; align-items: center; justify-content: space-between; margin: -20px -22px 10px; padding: 14px 16px 10px 22px; background: var(--white); }
+      .sheet-header h2 { font-size: 20px; }
+      .close-button { width: 42px; height: 42px; border-radius: 50%; background: transparent; color: var(--muted); font-size: 28px; line-height: 1; }
+      .sheet-note { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+      .setting-list { display: grid; gap: var(--row-gap); }
+      .setting-row { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: var(--row-pad) 0; border-bottom: 1px solid var(--line); }
+      .setting-copy { min-width: 0; flex: 1; }
+      .setting-copy strong { display: block; font-size: 14px; line-height: 1.4; font-weight: 650; }
+      .setting-copy small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .switch { position: relative; width: 44px; height: 27px; flex: 0 0 auto; border-radius: 30px; padding: 3px; background: #d8d8db; transition: background-color 160ms ease; }
+      .switch::after { content: ""; display: block; width: 21px; height: 21px; border-radius: 50%; background: var(--white); transition: transform 160ms ease; }
+      .switch[aria-checked="true"] { background: var(--ink); }
+      .switch[aria-checked="true"]::after { transform: translateX(17px); }
+      .subnav { display: grid; gap: 0; margin-top: 8px; }
+      .subnav button { display: flex; width: 100%; min-height: 56px; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); background: var(--white); text-align: left; }
+      .subnav button > span:first-child { min-width: 0; flex: 1; font-size: 14px; }
+      .subnav small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+      .subnav svg { width: 18px; height: 18px; color: #8c8c91; }
+      .status-note { display: flex; gap: 9px; align-items: flex-start; margin-top: 16px; padding: 12px 13px; border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 12px; line-height: 1.55; }
+      .status-note svg { width: 17px; height: 17px; flex: 0 0 auto; color: var(--muted); }
+      .primary { display: flex; justify-content: center; align-items: center; width: 100%; min-height: 50px; margin-top: 20px; border-radius: 100px; background: var(--ink); color: var(--white); font-size: 14px; font-weight: 650; }
+      .toast { position: fixed; z-index: 30; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 11px 16px; border-radius: 100px; color: var(--white); background: #222f; font-size: 13px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
+      .toast.show { opacity: 1; }
+      .tweaks-toggle { position: fixed; z-index: 21; right: 18px; bottom: 18px; min-height: 42px; padding: 0 14px; border: 1px solid #dddddf; border-radius: 100px; background: var(--white); box-shadow: 0 4px 16px #00000012; font-size: 12px; }
+      .tweaks { position: fixed; z-index: 20; right: 18px; bottom: 70px; width: min(270px, calc(100vw - 36px)); padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--white); box-shadow: 0 12px 36px #0002; }
+      .tweaks[hidden] { display: none; }
+      .tweaks h2 { font-size: 14px; margin-bottom: 12px; }
+      .density-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 4px; border-radius: 12px; background: var(--surface); }
+      .density-options button { min-height: 36px; border-radius: 9px; background: transparent; color: var(--muted); font-size: 12px; }
+      .density-options button[aria-pressed="true"] { background: var(--white); color: var(--ink); box-shadow: 0 1px 4px #00000012; }
+      body[data-density="compact"] { --row-gap: 10px; --row-pad: 9px; }
+      body[data-density="spacious"] { --row-gap: 25px; --row-pad: 20px; }
+      @media (max-width: 600px) {
+        .stage { display: block; padding: 0; }
+        .app-shell { width: 100%; height: 100dvh; min-height: 560px; border-radius: 0; box-shadow: none; }
+        .page { padding-top: calc(24px + env(safe-area-inset-top)); }
+        .backdrop { align-items: end; padding: 0; }
+        .sheet { width: 100%; max-height: 90dvh; border-radius: 26px 26px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+        .tweaks-toggle { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
+        .tweaks { right: 12px; bottom: calc(64px + env(safe-area-inset-bottom)); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+      }
+      #appRoot { height: 100%; }
+      .demo-strip { min-height: 28px; padding: 7px 14px; color: #66666b; background: #f5f5f5; font-size: 10px; text-align: center; }
+      .page { height: calc(100% - 28px); padding-top: 26px; }
+      .page-head { display: flex; align-items: center; justify-content: space-between; min-height: 48px; gap: 8px; margin-bottom: 20px; }
+      .page-head h1 { flex: 1; font-size: 21px; }
+      .page-head .head-spacer { width: 42px; flex: 0 0 auto; }
+      .back-button { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: transparent; color: var(--muted); }
+      .back-button svg { width: 20px; height: 20px; }
+      .page-content { padding-bottom: 30px; }
+      .page-note { margin: 0 0 18px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+      .notice-box { padding: 13px 14px; border-radius: 14px; background: var(--surface); color: var(--muted); font-size: 12px; line-height: 1.65; }
+      .notice-box.warm { color: #8e3a2e; background: #fff4f1; }
+      .section-label { margin: 24px 0 9px; color: var(--muted); font-size: 12px; font-weight: 600; }
+      .menu-list { display: grid; }
+      .menu-row { display: flex; width: 100%; min-height: 62px; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); background: var(--white); text-align: left; }
+      .menu-row .menu-copy { min-width: 0; flex: 1; }
+      .menu-row strong { display: block; font-size: 14px; line-height: 1.45; font-weight: 650; }
+      .menu-row small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .menu-row > svg { width: 18px; height: 18px; color: #8c8c91; }
+      .switch-row { display: flex; min-height: 64px; align-items: center; gap: 12px; padding: var(--row-pad) 0; border-bottom: 1px solid var(--line); }
+      .switch-copy { min-width: 0; flex: 1; }
+      .switch-copy strong { display: block; font-size: 14px; line-height: 1.4; font-weight: 650; }
+      .switch-copy small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .pill { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px; border-radius: 100px; background: var(--surface); color: var(--muted); font-size: 11px; white-space: nowrap; }
+      .pill.alert { background: #fff1ef; color: #b13a28; }
+      .pill.ok { background: #f0f0f0; color: #48484d; }
+      .text-button { min-height: 44px; padding: 8px 4px; color: var(--muted); background: transparent; font-size: 13px; }
+      .primary-button, .secondary-button, .danger-button { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 8px; padding: 11px 18px; border-radius: 100px; font-size: 14px; font-weight: 650; }
+      .primary-button { color: var(--white); background: var(--ink); }
+      .secondary-button { color: var(--ink); background: var(--surface); }
+      .danger-button { color: #ad3020; background: #fff1ef; }
+      .wide-button { width: 100%; }
+      .button-row { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+      .button-row > * { flex: 1; }
+      .segmented-control { display: flex; gap: 3px; padding: 4px; border-radius: 14px; background: var(--surface); }
+      .segmented-control button { flex: 1; min-width: 0; min-height: 40px; padding: 6px 8px; border-radius: 10px; color: var(--muted); background: transparent; font-size: 13px; }
+      .segmented-control button[aria-pressed="true"] { color: var(--ink); background: var(--white); font-weight: 650; box-shadow: 0 1px 4px #00000010; }
+      .field-label { display: grid; gap: 8px; margin: 16px 0; font-size: 13px; }
+      .field-label input, .search-field input { width: 100%; min-height: 48px; padding: 11px 13px; border: 1.5px solid #ececee; border-radius: 12px; outline: none; background: var(--surface); color: var(--ink); font: inherit; }
+      .field-label input:focus, .search-field input:focus { border-color: #838388; background: var(--white); }
+      .search-field { position: relative; margin: 14px 0 10px; }
+      .search-field svg { position: absolute; top: 14px; left: 13px; width: 18px; height: 18px; color: var(--muted); }
+      .search-field input { padding-left: 40px; }
+      .app-list { display: grid; margin-top: 8px; }
+      .app-row { display: flex; width: 100%; min-height: 62px; align-items: center; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--line); background: var(--white); text-align: left; }
+      .app-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 11px; color: #737378; background: #fafafa; font-size: 9px; }
+      .app-meta { min-width: 0; flex: 1; }
+      .app-meta strong { display: block; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+      .app-meta small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+      .checkmark { display: grid; place-items: center; width: 22px; height: 22px; flex: 0 0 auto; border: 1.5px solid #c7c7ca; border-radius: 7px; color: transparent; }
+      .app-row[aria-checked="true"] .checkmark { border-color: var(--ink); color: var(--white); background: var(--ink); }
+      .app-row.fixed { opacity: .78; cursor: default; }
+      .choice-card { display: flex; align-items: flex-start; gap: 10px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+      .choice-card input { width: 18px; height: 18px; min-height: 18px; margin-top: 2px; accent-color: var(--ink); }
+      .choice-card label { flex: 1; font-size: 13px; line-height: 1.5; }
+      .choice-card small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+      .force-group { margin-top: 19px; }
+      .force-group h2 { margin-bottom: 5px; color: var(--muted); font-size: 12px; font-weight: 650; }
+      .force-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 74px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+      .force-title { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 1.45; font-weight: 650; }
+      .info-button { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: var(--muted); background: transparent; }
+      .info-button svg { width: 16px; height: 16px; }
+      .force-row small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+      .capability-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 70px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+      .capability-row strong { display: block; font-size: 13px; }
+      .capability-row small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+      .link-button { min-height: 40px; padding: 7px 12px; border-radius: 100px; background: var(--surface); color: var(--ink); font-size: 12px; }
+      .detail-list { display: grid; gap: 12px; margin: 18px 0; }
+      .detail-card { padding: 14px; border-radius: 14px; background: var(--surface); }
+      .detail-card strong { display: block; margin-bottom: 5px; font-size: 13px; }
+      .detail-card p { color: var(--muted); font-size: 12px; }
+      .details-list { display: grid; gap: 8px; }
+      .details-list details { border: 1px solid var(--line); border-radius: 12px; background: var(--white); }
+      .details-list summary { min-height: 50px; padding: 15px 14px; cursor: pointer; font-size: 13px; font-weight: 650; }
+      .details-list details p, .details-list details ol { padding: 0 14px 14px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+      .details-list details ol { padding-left: 32px; }
+      .timer-page { display: flex; height: calc(100% - 28px); flex-direction: column; padding: 10px 24px 26px; }
+      .timer-header { display: flex; align-items: center; justify-content: space-between; min-height: 48px; color: var(--muted); font-size: 13px; }
+      .timer-header .back-button { margin-left: -8px; }
+      .timer-center { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px 0; text-align: center; }
+      .timer-mode { color: var(--muted); font-size: 13px; }
+      .timer-number { margin-top: 12px; font-family: Nunito, "Segoe UI", sans-serif; font-size: 68px; line-height: 1.15; font-weight: 850; font-variant-numeric: tabular-nums; letter-spacing: 0; white-space: nowrap; }
+      .timer-title { max-width: 100%; margin-top: 18px; font-size: 18px; line-height: 1.45; font-weight: 650; overflow-wrap: anywhere; }
+      .timer-status { margin-top: 10px; color: var(--muted); font-size: 13px; }
+      .session-state { display: grid; width: 100%; gap: 0; margin-top: 25px; text-align: left; }
+      .session-state .capability-row { min-height: 52px; padding: 8px 0; }
+      .timer-actions { display: grid; gap: 10px; padding-bottom: 12px; }
+      .timer-actions .button-row { margin-top: 0; }
+      .timer-actions small { text-align: center; color: var(--muted); font-size: 11px; line-height: 1.5; }
+      .rest-dial { position: relative; display: grid; place-items: center; width: min(240px, 72vw); aspect-ratio: 1; margin: 26px 0; }
+      .rest-dial svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+      .rest-dial circle { fill: none; stroke-width: 2; }
+      .rest-dial .track { stroke: var(--line); }
+      .rest-dial .progress { stroke: var(--ink); stroke-linecap: round; }
+      .rest-caption { color: var(--muted); font-size: 13px; }
+      .block-mark { display: grid; place-items: center; width: 62px; height: 62px; margin: 0 auto 12px; border-radius: 20px; background: var(--surface); color: var(--ink); }
+      .block-mark svg { width: 28px; height: 28px; }
+      .pass-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; margin-top: 20px; }
+      .pass-options button { min-height: 52px; border-radius: 13px; background: var(--surface); font-size: 14px; font-weight: 650; }
+      .pass-options small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 400; }
+      .modal-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 18px; background: #0005; }
+      .modal-backdrop[hidden] { display: none; }
+      .modal { width: min(100%, 430px); max-height: 88dvh; overflow: auto; padding: 21px; border-radius: 22px; background: var(--white); box-shadow: 0 20px 70px #0003; }
+      .modal h2 { font-size: 18px; }
+      .modal p { margin-top: 10px; color: var(--muted); font-size: 13px; }
+      .modal .button-row { margin-top: 20px; }
+      .modal .button-row.stack { flex-direction: column; align-items: stretch; }
+      .modal .button-row.stack > * { flex: auto; width: 100%; }
+      .app-nav { position: absolute; z-index: 5; right: 0; bottom: 0; left: 0; display: flex; height: 78px; align-items: center; justify-content: space-around; padding: 8px 10px 10px; border-top: 1px solid #f1f1f1; background: #fffffff7; }
+      .app-nav[hidden] { display: none; }
+      .app-nav button { display: grid; width: 52px; height: 54px; place-items: center; color: #8c8c91; background: transparent; }
+      .app-nav button[aria-current="page"] { color: var(--ink); }
+      .app-nav button[aria-current="page"] svg { stroke-width: 2.4; }
+      .result-icon { display: grid; width: 74px; height: 74px; margin: 0 auto 18px; place-items: center; border-radius: 50%; background: var(--surface); }
+      .result-icon svg { width: 30px; height: 30px; }
+      .result-time { margin: 16px 0 6px; text-align: center; font-family: Nunito, "Segoe UI", sans-serif; font-size: 45px; font-weight: 850; font-variant-numeric: tabular-nums; }
+      .result-actions { display: grid; gap: 8px; margin-top: 25px; }
+      .tools-toggle { position: fixed; z-index: 60; right: 16px; bottom: 16px; min-height: 40px; padding: 0 13px; border: 1px solid #ddd; border-radius: 100px; background: var(--white); box-shadow: 0 4px 14px #00000012; font-size: 11px; }
+      .tools-panel { position: fixed; z-index: 59; right: 16px; bottom: 66px; width: min(300px, calc(100vw - 32px)); max-height: 75dvh; overflow: auto; padding: 15px; border: 1px solid var(--line); border-radius: 15px; background: var(--white); box-shadow: 0 12px 36px #0002; }
+      .tools-panel[hidden] { display: none; }
+      .tools-panel h2 { margin: 0 0 10px; font-size: 14px; }
+      .tools-panel .tools-group { margin-top: 13px; }
+      .tools-panel .tools-group p { margin-bottom: 7px; color: var(--muted); font-size: 11px; }
+      .tools-panel .tool-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .tools-panel .tool-buttons button { min-height: 38px; padding: 5px 8px; border-radius: 9px; background: var(--surface); font-size: 11px; }
+      .tools-panel .density-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 4px; border-radius: 12px; background: var(--surface); }
+      .tools-panel .density-options button { min-height: 34px; border-radius: 9px; background: transparent; color: var(--muted); font-size: 11px; }
+      .tools-panel .density-options button[aria-pressed="true"] { color: var(--ink); background: var(--white); box-shadow: 0 1px 4px #00000012; }
+      .toast { position: fixed; z-index: 70; left: 50%; bottom: 75px; transform: translateX(-50%); max-width: min(90vw, 420px); padding: 11px 16px; border-radius: 100px; color: var(--white); background: #222f; font-size: 12px; text-align: center; opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
+      .toast.show { opacity: 1; }
+      body[data-density="compact"] { --row-gap: 8px; --row-pad: 8px; }
+      body[data-density="spacious"] { --row-gap: 26px; --row-pad: 20px; }
+      @media (max-width: 600px) {
+        .stage { padding: 0; display: block; }
+        .app-shell { width: 100%; height: 100dvh; min-height: 560px; border-radius: 0; box-shadow: none; }
+        .page { padding: calc(22px + env(safe-area-inset-top)) 22px calc(100px + env(safe-area-inset-bottom)); }
+        .timer-page { height: calc(100% - 28px); padding: 8px 22px calc(22px + env(safe-area-inset-bottom)); }
+        .timer-number { font-size: 60px; }
+        .tools-toggle { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
+        .tools-panel { right: 12px; bottom: calc(62px + env(safe-area-inset-bottom)); }
+      }
+      @media (max-width: 350px) { .page { padding-right: 18px; padding-left: 18px; } .timer-number { font-size: 52px; } }
+    </style>
+  </head>
+  <body data-density="standard">
+    <div class="stage">
+      <div class="app-shell">
+        <main class="page">
+          <header class="page-header">
+            <h1>待办</h1>
+            <button class="icon-button soft" type="button" aria-label="添加待办" title="添加待办">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+          </header>
+          <div class="daily-line"><span>今天</span><span>今日专注 <strong>00:00</strong></span></div>
+          <button class="entry-card" id="openSheet" type="button" aria-haspopup="dialog" aria-controls="focusSheet">
+            <span class="entry-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v2M12 19v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M3 12h2m14 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><circle cx="12" cy="12" r="5"/></svg></span>
+            <span class="entry-copy"><strong>专注保护</strong><small>设置学霸模式、通知和保护选项</small></span>
+            <span class="entry-status">未开启</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <button class="lock-entry" type="button" data-message="独立锁机配置页占位">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <span>独立锁机</span><small>设置时长与名单</small>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <div class="divider"></div>
+          <div class="section-head"><h2>示例待办</h2><small>示例内容</small></div>
+          <div class="task-list">
+            <article class="task-row">
+              <div class="task-copy"><h3>待办名称示例</h3><p>倒计时 · 25 分钟</p></div>
+              <button class="play-button" type="button" aria-label="开始示例待办" data-message="专注运行页面占位">
+                <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z"/></svg></span>
+              </button>
+            </article>
+            <article class="task-row">
+              <div class="task-copy"><h3>另一条待办示例</h3><p>正计时</p></div>
+              <button class="play-button" type="button" aria-label="开始另一条示例待办" data-message="专注运行页面占位">
+                <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z"/></svg></span>
+              </button>
+            </article>
+          </div>
+          <button class="free-button" type="button" data-message="自由专注入口占位">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            自由专注
+          </button>
+        </main>
+        <nav class="tabbar" aria-label="主导航">
+          <button class="tab active" type="button" aria-label="待办" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1 1 2-2m-3 7 1 1 2-2m-3 7 1 1 2-2"/></svg><span class="tab-name">待办</span></button>
+          <button class="tab" type="button" aria-label="日历" data-message="日历页占位"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg><span class="tab-name">日历</span></button>
+          <button class="tab" type="button" aria-label="小猫" data-message="小猫页占位"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9 4 4l5 3a11 11 0 0 1 6 0l5-3-1 5a8 8 0 1 1-14 0Z"/><path d="M9 13h.01M15 13h.01M10 17h4"/></svg><span class="tab-name">小猫</span></button>
+          <button class="tab" type="button" aria-label="统计" data-message="统计页占位"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="tab-name">统计</span></button>
+          <button class="tab" type="button" aria-label="我的" data-message="我的页面占位"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/></svg><span class="tab-name">我的</span></button>
+        </nav>
+      </div>
+    </div>
+
+    <div class="backdrop" id="focusSheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <section class="sheet">
+        <div class="sheet-inner">
+          <header class="sheet-header">
+            <h2 id="sheetTitle">专注保护</h2>
+            <button class="close-button" id="closeSheet" type="button" aria-label="关闭">×</button>
+          </header>
+          <p class="sheet-note">选择本轮要使用的保护。打开开关不会立即限制应用。</p>
+          <div class="setting-list">
+            <div class="setting-row">
+              <span class="setting-copy"><strong>学霸模式</strong><small>专注或锁机开始后限制名单以外的应用</small></span>
+              <button class="switch" type="button" role="switch" aria-checked="false" aria-label="学霸模式"></button>
+            </div>
+            <div class="setting-row">
+              <span class="setting-copy"><strong>严格模式</strong><small>只约束倒计时；正计时仍可手动结束</small></span>
+              <button class="switch" type="button" role="switch" aria-checked="false" aria-label="严格模式"></button>
+            </div>
+            <div class="setting-row">
+              <span class="setting-copy"><strong>拦截通知</strong><small>与应用限制独立，实际效果取决于授权和系统支持</small></span>
+              <button class="switch" type="button" role="switch" aria-checked="false" aria-label="拦截通知"></button>
+            </div>
+          </div>
+          <div class="subnav">
+            <button type="button" data-message="全局白名单页面占位"><span>学霸模式全局白名单<small>默认配置 · 可设置独立名单</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            <button type="button" data-message="六项增强保护页面占位"><span>提升强制性选项<small>六项设置 · 默认关闭</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            <button type="button" data-message="权限与保护状态页面占位"><span>权限与保护状态<small>授权状态与运行状态分开展示</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            <button type="button" data-message="帮助与故障恢复页面占位"><span>帮助与故障恢复</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+          <div class="status-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>偏好开关不代表权限已授予。开始前会检查本轮能力；运行中修改只影响下一轮。</span></div>
+          <button class="primary" id="doneButton" type="button">完成</button>
+        </div>
+      </section>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <button class="tweaks-toggle" id="tweaksToggle" type="button" aria-expanded="false" aria-controls="tweaksPanel">调整</button>
+    <aside class="tweaks" id="tweaksPanel" aria-label="原型调整" hidden>
+      <h2>密度</h2>
+      <div class="density-options" role="group" aria-label="设置行密度">
+        <button type="button" data-density-option="spacious" aria-pressed="false">舒展</button>
+        <button type="button" data-density-option="standard" aria-pressed="true">标准</button>
+        <button type="button" data-density-option="compact" aria-pressed="false">紧凑</button>
+      </div>
+    </aside>
+    <script>
+      const sheet = document.getElementById('focusSheet');
+      const sheetPanel = sheet.querySelector('.sheet');
+      const toast = document.getElementById('toast');
+      const tweaks = document.getElementById('tweaksPanel');
+      let toastTimer;
+
+      function openSheet() {
+        sheet.hidden = false;
+        document.getElementById('closeSheet').focus();
+      }
+      function closeSheet() {
+        sheet.hidden = true;
+        document.getElementById('openSheet').focus();
+      }
+      function showMessage(message) {
+        toast.textContent = message;
+        toast.classList.add('show');
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => toast.classList.remove('show'), 1700);
+      }
+
+      document.getElementById('openSheet').addEventListener('click', openSheet);
+      document.getElementById('closeSheet').addEventListener('click', closeSheet);
+      document.getElementById('doneButton').addEventListener('click', closeSheet);
+      sheet.addEventListener('click', (event) => {
+        if (event.target === sheet) closeSheet();
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !sheet.hidden) closeSheet();
+      });
+      document.querySelectorAll('.switch').forEach((control) => {
+        control.addEventListener('click', () => {
+          control.setAttribute('aria-checked', String(control.getAttribute('aria-checked') !== 'true'));
+        });
+      });
+      document.querySelectorAll('[data-message]').forEach((control) => {
+        control.addEventListener('click', () => showMessage(control.dataset.message));
+      });
+      document.getElementById('tweaksToggle').addEventListener('click', (event) => {
+        const button = event.currentTarget;
+        tweaks.hidden = !tweaks.hidden;
+        button.setAttribute('aria-expanded', String(!tweaks.hidden));
+      });
+      document.querySelectorAll('[data-density-option]').forEach((control) => {
+        control.addEventListener('click', () => {
+          const density = control.dataset.densityOption;
+          document.body.dataset.density = density;
+          document.querySelectorAll('[data-density-option]').forEach((option) => {
+            option.setAttribute('aria-pressed', String(option === control));
+          });
+        });
+      });
+      sheetPanel.addEventListener('keydown', (event) => {
+        if (event.key !== 'Tab') return;
+        const controls = [...sheetPanel.querySelectorAll('button:not([disabled])')];
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    </script>
+  </body>
+</html>

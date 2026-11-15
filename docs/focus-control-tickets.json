@@ -1,0 +1,296 @@
+{
+  "schemaVersion": 1,
+  "status": "published-and-verified",
+  "approval": "User explicitly approved publication of the 23-ticket breakdown.",
+  "approvedPlanSha256": "a560d4d301371dc3b53ec2fbd0695dddac3f2e3528b0b63aec0c4acf24e51e76",
+  "parent": {
+    "repository": "cjx-bc/kitten-focus",
+    "number": 1,
+    "url": "https://github.com/cjx-bc/kitten-focus/issues/1",
+    "title": "完整实现学霸模式与独立锁机：复用控制模块，自研补齐通知、六项增强及恢复",
+    "state": "OPEN",
+    "bodySha256": "d0c411ade40deed3e8cd735ea901c179643b455c3be93ce90649bf2e8ca9d7ca",
+    "labels": [
+      "ready-for-agent"
+    ]
+  },
+  "tickets": [
+    {
+      "id": "T01",
+      "title": "[T01] 保持现有专注行为，接通统一控制入口与只读状态",
+      "blockedBy": [],
+      "bodySha256": "7dcc057d86790e3e04c6987cfd84f939f8f21b4ba1f7fdcfbce53bca97c2e224",
+      "number": 2,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/2",
+      "verification": "verified"
+    },
+    {
+      "id": "T02",
+      "title": "[T02] 验证原通知暂存、正常到期与提前释放路线",
+      "blockedBy": [],
+      "bodySha256": "ed92294924031e695d6b4fe3f9e631becb5454cb21b8b26da3ba4ac7e873b98c",
+      "number": 3,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/3",
+      "verification": "verified"
+    },
+    {
+      "id": "T03",
+      "title": "[T03] 验证壁纸辅助保护及原状态恢复",
+      "blockedBy": [],
+      "bodySha256": "72f4916f7206034fe632d34915aaa105b01694f555f025b5581b655dd585b44d",
+      "number": 4,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/4",
+      "verification": "verified"
+    },
+    {
+      "id": "T04",
+      "title": "[T04] 完成普通学霸模式的全局白名单限制闭环",
+      "blockedBy": [
+        "T01"
+      ],
+      "bodySha256": "79d662abf317cdd415b79b74c56983ebb380844b46ee05b3b2d49ad2a9c88286",
+      "number": 5,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/5",
+      "verification": "verified"
+    },
+    {
+      "id": "T05",
+      "title": "[T05] 完成独立于应用限制的严格倒计时",
+      "blockedBy": [
+        "T01"
+      ],
+      "bodySha256": "06fc417443d4d873c5bd9fd0e648f7b4df0036eaccf24dfa1cae127c54bd0b4a",
+      "number": 6,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/6",
+      "verification": "verified"
+    },
+    {
+      "id": "T06",
+      "title": "[T06] 完成子待办独立白名单与恢复跟随全局",
+      "blockedBy": [
+        "T04"
+      ],
+      "bodySha256": "e4137d81bc1012003d96550d707ecaab6eaa58d1fe41b74a2a144cdc52afc963",
+      "number": 7,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/7",
+      "verification": "verified"
+    },
+    {
+      "id": "T07",
+      "title": "[T07] 完成限次、限时且单目标的临时放行",
+      "blockedBy": [
+        "T04",
+        "T05"
+      ],
+      "bodySha256": "d33d661fed985151794db31058f6e2d691eaf6411d4b2a500efad702244790ec",
+      "number": 8,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/8",
+      "verification": "verified"
+    },
+    {
+      "id": "T08",
+      "title": "[T08] 完成可确认、可重试且保留计时的故障恢复",
+      "blockedBy": [
+        "T04"
+      ],
+      "bodySha256": "e6b2387728abe284dc12c2286874936d8863359038a030cd454964fb0c820041",
+      "number": 9,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/9",
+      "verification": "verified"
+    },
+    {
+      "id": "T09",
+      "title": "[T09] 完成可复用配置的普通独立锁机",
+      "blockedBy": [
+        "T06",
+        "T08"
+      ],
+      "bodySha256": "dfb9e36b1b28b3ac9fdda797680995224e0a8450378349dbc4bba520f86f3d83",
+      "number": 10,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/10",
+      "verification": "verified"
+    },
+    {
+      "id": "T10",
+      "title": "[T10] 完成严格独立锁机",
+      "blockedBy": [
+        "T05",
+        "T09"
+      ],
+      "bodySha256": "71230f442edbee75a5ccbbbca36e17f61d93457dc25f64165a57e930d85a05e0",
+      "number": 11,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/11",
+      "verification": "verified"
+    },
+    {
+      "id": "T11",
+      "title": "[T11] 完成固定截止会话的通知拦截与正常到期释放",
+      "blockedBy": [
+        "T02",
+        "T08"
+      ],
+      "bodySha256": "0329a9e08efb1960d613b2c2e3bcaf8c8cc0827af43b8adbba34d391c2fdb6e5",
+      "number": 12,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/12",
+      "verification": "verified"
+    },
+    {
+      "id": "T12",
+      "title": "[T12] 完成提前结束、正计时与异常时的通知释放",
+      "blockedBy": [
+        "T11"
+      ],
+      "bodySha256": "4229fc7099a5a3066220f074b5388f5fdc012a2edde49ed7c3f48e829da1a297",
+      "number": 13,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/13",
+      "verification": "verified"
+    },
+    {
+      "id": "T13",
+      "title": "[T13] 完成独立的声音免打扰辅助",
+      "blockedBy": [
+        "T01"
+      ],
+      "bodySha256": "2a5ca975bf40a2dafd7cc8ccc50f3fcbb474668fabf5dc06a859c341a3a01505",
+      "number": 14,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/14",
+      "verification": "verified"
+    },
+    {
+      "id": "T14",
+      "title": "[T14] 完成计时中限制桌面与多任务（FORCE-01）",
+      "blockedBy": [
+        "T08"
+      ],
+      "bodySha256": "68e86de36d3da16ad3f135b758a445f346eab2a630ce3b2ddaa8dbbbd7de94ae",
+      "number": 15,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/15",
+      "verification": "verified"
+    },
+    {
+      "id": "T15",
+      "title": "[T15] 完成自身最近任务卡隐藏与恢复（FORCE-02）",
+      "blockedBy": [
+        "T08"
+      ],
+      "bodySha256": "44a9e5fc66c9ebf6eb8711431f8a34e3f656366482bab5d8b7adb3d6b822deaa",
+      "number": 16,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/16",
+      "verification": "verified"
+    },
+    {
+      "id": "T16",
+      "title": "[T16] 完成锁机时限制主界面入口（FORCE-03）",
+      "blockedBy": [
+        "T09"
+      ],
+      "bodySha256": "635fb4e6b6bb3692e30abf40e79d5a088376079009221576b673cf68a8c8e7f2",
+      "number": 17,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/17",
+      "verification": "verified"
+    },
+    {
+      "id": "T17",
+      "title": "[T17] 完成壁纸辅助保护的会话接入与恢复（FORCE-04）",
+      "blockedBy": [
+        "T03",
+        "T08"
+      ],
+      "bodySha256": "33386f371a8c7c80df14c381eed2ee8741d8e50cf4499750471f532ffd315b0f",
+      "number": 18,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/18",
+      "verification": "verified"
+    },
+    {
+      "id": "T18",
+      "title": "[T18] 完成精确防关闭与真实权限反馈（FORCE-05）",
+      "blockedBy": [
+        "T08"
+      ],
+      "bodySha256": "df59df25f8da241e082a8a441b2c3bc6959e23f33d45f8572938206522279676",
+      "number": 19,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/19",
+      "verification": "verified"
+    },
+    {
+      "id": "T19",
+      "title": "[T19] 完成桌面图标隐藏与可达恢复（FORCE-06）",
+      "blockedBy": [
+        "T08"
+      ],
+      "bodySha256": "e317523d007eec0a1acfb900d4d2b652a7b50a1f1d0fd7943caa5ffe0ae93de8",
+      "number": 20,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/20",
+      "verification": "verified"
+    },
+    {
+      "id": "T20",
+      "title": "[T20] 完成旧备份、手动恢复与升级恢复的保护兼容",
+      "blockedBy": [
+        "T07",
+        "T09"
+      ],
+      "bodySha256": "42a48c9b1237e7ba5d783d5fda3a2333b17ea132887d494b4432929c4a06a64b",
+      "number": 21,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/21",
+      "verification": "verified"
+    },
+    {
+      "id": "T21",
+      "title": "[T21] 完成离线帮助与保护状态排障入口",
+      "blockedBy": [
+        "T08"
+      ],
+      "bodySha256": "0edd77a8be442f40c22387fa59438596674c173f2bbee47a393cf9559c014e7a",
+      "number": 22,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/22",
+      "verification": "verified"
+    },
+    {
+      "id": "T22",
+      "title": "[T22] 验证组合保护在失联、进程重建与重启后的恢复",
+      "blockedBy": [
+        "T07",
+        "T10",
+        "T12",
+        "T13",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T18",
+        "T19"
+      ],
+      "bodySha256": "934eb1f7becc3e4771cab9e01ab8e68e751ba089d3b623258330f59018cc5974",
+      "number": 23,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/23",
+      "verification": "verified"
+    },
+    {
+      "id": "T23",
+      "title": "[T23] 完成 A01—A18 设备验收、旧业务回归与可审阅 APK",
+      "blockedBy": [
+        "T20",
+        "T21",
+        "T22"
+      ],
+      "bodySha256": "deefd0d5032af5ce27180fb20f18b0435a534aefe7de5ef92afad5ca2573ff89",
+      "number": 24,
+      "url": "https://github.com/cjx-bc/kitten-focus/issues/24",
+      "verification": "verified"
+    }
+  ],
+  "frontier": [
+    "T01",
+    "T02",
+    "T03"
+  ],
+  "verification": {
+    "ticketsVerified": 23,
+    "nativeBlockingEdgesVerified": 37,
+    "parentBodyTitleLabelsAndStateUnchanged": true
+  },
+  "snapshotOnly": true,
+  "verifiedAtUtc": "2026-11-15T18:12:47.512955+00:00",
+  "stateAuthority": "GitHub native issue state and blocking relationships; this receipt is a publication snapshot."
+}
