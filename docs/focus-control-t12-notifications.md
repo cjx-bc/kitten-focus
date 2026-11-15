@@ -53,4 +53,6 @@ python scripts/notification-device-test.py --lifecycle --reboot --classes com.xi
 
 真实锁机与重启测试所用 QA APK SHA-256 为 `a638dd4831e739e2cfa661386388462f0139ea4f073ec1a58f0abfc7b1a9bedb`，test APK 为 `0403211b18b3e210a3259b5a1bc402eea79189eafcf92dc247ce3bf7a840e81b`。后续合并构建的 APK 另记构建哈希，不能把上述旧 APK 结果冒充新集成 APK 的设备结果。
 
-34 项 Vitest、通知政策 5 项、Python 执行器语法检查通过。所有新增授权撤销，原两个系统 listener 保留，QA 业务快照及 runtime journal 恢复。API24/25 门禁、其他 API/OEM、真机电话/紧急通知、完整工作资料生命周期与最终组合验收仍需覆盖，未据此将完整 A06 标为全部通过。
+最终分支合并 `958dbb2`（含 T14/T15）后，37 项 Vitest、通知政策 5 项、Python 执行器语法检查及 TypeScript/Vite 通过；`npm run build` → `cap sync android` → `.qa` 主 APK 与 test APK 构建通过，Gradle 26s、`--no-daemon --max-workers=2`。最终 QA 哈希 `49c391949ce95269402eedae13a5ea8e37826fbd8f4aee43932bfb6402fd4b01`，test 哈希 `20f79db9e8c57e16823b6773e58a1cf3b30f29f5603c80b29ff90e7d692777b8`；内置 `NotificationSetting-vJhVVp7a.js` 已无 `lifecycle_pending`。
+
+所有新增授权撤销，原两个系统 listener 保留，QA 业务快照及 runtime journal 恢复。API24/25 门禁、其他 API/OEM、真机电话/紧急通知、完整工作资料生命周期与最终组合验收仍需覆盖，未据此将完整 A06 标为全部通过。
