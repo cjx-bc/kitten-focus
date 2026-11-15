@@ -512,7 +512,7 @@ final class FocusControl {
                 throw new IllegalStateException("自身任务卡仍待恢复，请先进入故障恢复重试，再替换备份");
             launcher.restore(null);
             if (launcher.observe(null).optBoolean("recoveryPending"))
-                throw new IllegalStateException("?????????????????????????");
+                throw new IllegalStateException("桌面入口仍待恢复，请先进入故障恢复重试，再替换备份");
             store.saveData(data, true);
             Reminders.cancelFocus(context);
             Reminders.cancelRest(context);

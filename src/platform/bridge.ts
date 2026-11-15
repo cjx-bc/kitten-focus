@@ -118,7 +118,7 @@ export const focusDriver = {
     const db = await webReadFocus()
     const preferredProtection = (await repository.load()).preferences.protection
     if (preferredProtection?.enhancements?.includes('launcherIconHidden'))
-      throw new Error('????????? Android ??????????????')
+      throw new Error('桌面图标隐藏仅支持 Android 本机版本，请关闭此选项后继续')
     if (preferredProtection?.enhancements?.includes('recentTasksHidden'))
       throw new Error('最近任务卡隐藏仅支持 Android 本机版本，请关闭此选项后继续')
     if (preferredProtection?.enhancements?.some(value => ['navigationHomeRecents', 'preciseAntiClose'].includes(value)))
@@ -246,7 +246,7 @@ export const protectionDriver = {
       supported: false, requested: false, preferenceEnabled: false, recoveryAvailable: false, recoveryReachable: false,
       phase: 'unsupported', active: false, verified: false, recoveryPending: false,
       componentState: -1, launcherResolved: false, launcherCacheVerified: false,
-      error: '????????? Android ????',
+      error: '桌面图标隐藏仅支持 Android 本机版本',
     }
   },
   async recentTasks(): Promise<RecentTasksStatus> {

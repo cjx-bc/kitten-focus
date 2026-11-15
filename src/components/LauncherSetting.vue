@@ -7,7 +7,7 @@ import { protectionDriver, requestNotifications } from '../platform/bridge'
 const app = useApp(), option = 'launcherIconHidden'
 const selected = computed(() => app.data.preferences.protection?.enhancements?.includes(option) ?? false)
 const status = ref<LauncherStatus>(), busy = ref(false), error = ref('')
-const labels = { off: '未开启', ready: '等待执行', active: '本轮任务卡已隐藏', failed: '保护失效', restoration_failed: '恢复失败，可重试', withdrawn: '本轮已撤销', restored: '原任务卡状态已恢复', unsupported: '本机不支持' }
+const labels = { off: '未开启', ready: '等待执行', active: '本轮启动入口已停用', failed: '保护失效', restoration_failed: '恢复失败，可重试', withdrawn: '本轮已撤销', restored: '原启动入口状态已恢复', unsupported: '本机不支持' }
 let timer: ReturnType<typeof setInterval> | undefined
 async function refresh() {
   try { status.value = await protectionDriver.launcher() }
@@ -46,16 +46,16 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
 </script>
 <template>
   <div class="launcher-setting" :aria-busy="busy">
-    <label class="switch"><span>隐藏自身最近任务卡<small>仅在本轮保护期间隐藏小猫卡片</small></span><input type="checkbox" :checked="selected" :disabled="busy" @change="toggle" /></label>
-    <p>无需额外系统身份，仅修改小猫自己的主任务。开始前保存原状态；结束、休息或重启中断后恢复。隐藏任务卡不代表无法被系统强停。</p>
-    <p>需保留小猫控制通知，其中“帮助与故障恢复”可重新进入应用。未确认通知入口可达时不会隐藏；拒绝通知后可暂不开启本选项。</p>
+    <label class="switch"><span>隐藏桌面图标<small>默认关闭；仅用于下一轮专注或锁机</small></span><input type="checkbox" :checked="selected" :disabled="busy" @change="toggle" /></label>
+    <p>仅停用小猫自己的普通桌面入口，不影响控制页和恢复页。开始前保存原状态；结束、休息、重启中断或升级后恢复。此功能不能禁止卸载或系统强停。</p>
+    <p>隐藏前会实际检查小猫控制通知和“帮助与故障恢复”入口。图标隐藏后，从该通知返回控制页；在恢复页确认撤销即可恢复本轮更改。下一轮不再隐藏时，请关闭此开关。</p>
     <div class="launcher-status" role="status">
-      <strong>{{ status ? labels[status.phase] : '正在检查任务卡状态' }}</strong>
+      <strong>{{ status ? labels[status.phase] : '正在检查启动入口状态' }}</strong>
       <p v-if="status?.supported">下一轮偏好：{{ selected ? '已开启' : '未开启' }} · 本轮请求：{{ status.requested ? '已选择' : '未选择' }}</p>
       <p v-if="status?.supported && selected && !status.requested">{{ status.recoveryAvailable ? '通知入口可用，下一轮开始时再检查并执行' : '待开启通知，暂不具备可达恢复入口' }}</p>
       <p v-if="status?.error">{{ status.error }}</p>
     </div>
-    <p v-if="status?.supported" class="muted">???????????????????????????????????????????????????????</p>
+    <p v-if="status?.supported" class="muted">状态仅验证系统组件和启动器查询结果；桌面图标可能因启动器缓存延迟更新，请等待刷新。原本已停用的入口保持原状态。</p>
     <button v-if="status?.supported && selected && !status.recoveryAvailable" class="secondary wide" :disabled="busy" @click="authorize">开启控制通知</button>
     <button v-if="status?.recoveryPending || status?.requested" class="secondary wide" :disabled="busy" @click="recover">查看本轮恢复项目</button>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>

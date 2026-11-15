@@ -19,7 +19,7 @@ final class AndroidLauncherSystem implements LauncherSystem {
     public int componentState() { return context.getPackageManager().getComponentEnabledSetting(alias); }
     public void componentState(int state) {
         context.getPackageManager().setComponentEnabledSetting(alias, state, PackageManager.DONT_KILL_APP);
-        if (componentState() != state) throw new IllegalStateException("???????????????????????");
+        if (componentState() != state) throw new IllegalStateException("系统未确认桌面入口组件状态，请进入故障恢复重试");
     }
     public boolean launcherVisible() {
         Intent launch = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.getPackageName());
@@ -40,10 +40,10 @@ final class AndroidLauncherSystem implements LauncherSystem {
         if (!recoveryAvailable()) return false;
         for (StatusBarNotification item : context.getSystemService(NotificationManager.class).getActiveNotifications()) {
             Notification notice = item.getNotification();
-            if (item.getId() != Reminders.FOCUS_ID || !"focus-status".equals(notice.getChannelId())
+            if (item.getId() != Reminders.FOCUS_ID || (android.os.Build.VERSION.SDK_INT >= 26 && !"focus-status".equals(notice.getChannelId()))
                 || notice.contentIntent == null || !context.getPackageName().equals(notice.contentIntent.getCreatorPackage()) || notice.actions == null) continue;
             for (Notification.Action action : notice.actions)
-                if ("???????".contentEquals(action.title) && action.actionIntent != null
+                if ("帮助与故障恢复".contentEquals(action.title) && action.actionIntent != null
                     && context.getPackageName().equals(action.actionIntent.getCreatorPackage())) return true;
         }
         return false;
