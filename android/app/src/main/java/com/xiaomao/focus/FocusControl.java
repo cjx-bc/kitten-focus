@@ -430,7 +430,10 @@ final class FocusControl {
         synchronized (store) { notifications.posted(store.read("active"), notice); }
     }
     void notificationRemoved(String key, boolean snoozed) throws JSONException {
-        synchronized (store) { notifications.removed(key, snoozed); }
+        notificationRemoved(key, snoozed, false);
+    }
+    void notificationRemoved(String key, boolean snoozed, boolean clicked) throws JSONException {
+        synchronized (store) { notifications.removed(key, snoozed, clicked); }
     }
 
     void replaceData(JSONObject data) throws JSONException {
