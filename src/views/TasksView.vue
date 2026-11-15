@@ -9,6 +9,7 @@ import { statistics, itemToday } from '../domain/statistics'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
+import AppWhitelistEditor from '../components/AppWhitelistEditor.vue'
 import { protectionDriver } from '../platform/bridge'
 import type { ProtectionStatus } from '../domain/model'
 const app = useApp(),
@@ -18,6 +19,11 @@ const app = useApp(),
   busy = ref(false),
   studyOpen = ref(false)
 const protectionState = ref<ProtectionStatus | null>(null)
+const itemWhitelistOpen = ref(false)
+const itemPackages = computed(() => itemForm.whitelist?.source === 'custom' ? itemForm.whitelist.packages : app.data.preferences.protection?.globalWhitelist ?? [])
+function setItemWhitelist(source: 'global' | 'custom') {
+  itemForm.whitelist = source === 'global' ? { source } : { source, packages: [...itemPackages.value] }
+}
 const protectionLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持' }
 async function refreshProtection() {
   try { protectionState.value = await protectionDriver.status() } catch { protectionState.value = null }
@@ -67,10 +73,12 @@ function openTheme(theme?: Theme) {
   sheet.value = 'theme'
 }
 function openItem(themeId: string, item?: FocusItem) {
+  delete itemForm.whitelist
+  itemWhitelistOpen.value = false
   Object.assign(
     itemForm,
     item
-      ? { ...item }
+      ? structuredClone(item)
       : {
           id: uid(),
           themeId,
@@ -138,6 +146,8 @@ function toggleTheme(theme: Theme) {
     </header>
     <button class="study-entry secondary wide" @click="studyOpen = true"><span>学霸模式</span><span>{{ protectionState ? protectionLabels[protectionState.state] : '正在检查' }}</span></button>
     <StudyModeSheet v-if="studyOpen" :open="studyOpen" @close="studyOpen = false" />
+    <AppWhitelistEditor :open="itemWhitelistOpen && sheet === 'item'" title="子待办独立白名单" :packages="itemPackages"
+      @close="itemWhitelistOpen = false" @confirm="(packages) => { itemForm.whitelist = { source: 'custom', packages }; itemWhitelistOpen = false }" />
     <div class="daily-line">
       <span>{{ readableDate(today) }} {{ weekdayName(today) }}</span
       ><span
@@ -346,6 +356,13 @@ function toggleTheme(theme: Theme) {
               正计时
             </button>
           </div>
+        </fieldset>
+        <fieldset>
+          <legend>应用白名单</legend>
+          <label class="switch"><span>跟随全局<small>每轮开始时使用最新全局名单</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source !== 'custom'" @change="setItemWhitelist('global')" /></label>
+          <label class="switch"><span>独立白名单<small>替代全局名单，不自动合并</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source === 'custom'" @change="setItemWhitelist('custom')" /></label>
+          <button v-if="itemForm.whitelist?.source === 'custom'" type="button" class="secondary wide" @click="itemWhitelistOpen = true">编辑独立白名单（{{ itemPackages.length }} 个包）</button>
+          <p class="muted">独立空名单仅保留小猫与必要功能例外。保存待办后生效；本轮专注保持开始时的名单。</p>
         </fieldset>
         <label v-if="itemForm.mode === 'countdown'"
           >专注时长（分钟）<input

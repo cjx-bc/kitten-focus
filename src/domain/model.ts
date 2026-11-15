@@ -1,4 +1,5 @@
 export type Mode = 'countdown' | 'stopwatch'
+export type WhitelistConfiguration = { source: 'global' } | { source: 'custom'; packages: string[] }
 export interface Theme {
   id: string
   name: string
@@ -16,6 +17,7 @@ export interface FocusItem {
   minutes: number
   order: number
   deleted?: boolean
+  whitelist?: WhitelistConfiguration
 }
 export interface Segment {
   start: number
@@ -52,8 +54,14 @@ export const defaultProtection = (): ProtectionPreferences => ({
 })
 export interface ProtectionSnapshot {
   study: boolean
-  source: 'global'
+  source: 'global' | 'custom'
   whitelist: string[]
+}
+export function effectiveWhitelist(data: AppData, itemId: string | null): Pick<ProtectionSnapshot, 'source' | 'whitelist'> {
+  const item = data.items.find((row) => row.id === itemId && !row.deleted)
+  const custom = item?.whitelist?.source === 'custom' ? item.whitelist : undefined
+  return { source: custom ? 'custom' : 'global',
+    whitelist: [...new Set(custom ? custom.packages : data.preferences.protection?.globalWhitelist ?? [])] }
 }
 export interface ProtectionStatus {
   supported: boolean

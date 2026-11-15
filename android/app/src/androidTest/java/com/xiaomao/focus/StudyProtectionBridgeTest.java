@@ -110,4 +110,60 @@ public class StudyProtectionBridgeTest {
         assertEquals("rest", observe().getString("owner"));
         assertFalse(status().getBoolean("active"));
     }
+    private void saveItems(JSONArray global, JSONArray items) throws Exception {
+        JSONObject data = new JSONObject().put("schemaVersion", 1).put("records", new JSONArray())
+            .put("deletedRecordIds", new JSONArray()).put("items", items)
+            .put("preferences", new JSONObject().put("sound", false).put("vibration", false)
+                .put("protection", new JSONObject().put("study", false).put("strict", false).put("globalWhitelist", global)));
+        Call saved = new Call(new JSObject().put("data", data)); plugin.saveData(saved); assertNull(saved.rejection);
+    }
+    private JSONObject startItem(String id) throws Exception {
+        JSONObject request = session().put("itemId", id == null ? JSONObject.NULL : id)
+            .put("whitelist", new JSONObject().put("source", "custom").put("packages", new JSONArray().put("forged.tool")))
+            .put("protection", new JSONObject().put("source", "custom").put("whitelist", new JSONArray().put("forged.tool")));
+        Call start = new Call(new JSObject().put("session", request)); plugin.startFocus(start); assertNull(start.rejection);
+        return start.result.getJSONObject("session").getJSONObject("protection");
+    }
+    private void endRound() {
+        Call finished = new Call(new JSObject().put("action", "finish")); plugin.focusAction(finished); assertNull(finished.rejection);
+        Call exited = new Call(new JSObject().put("action", "exit")); plugin.restAction(exited); assertNull(exited.rejection);
+    }
+    @Test public void savedCustomItemPolicyOverridesGlobalAndClientThenRemainsFrozen() throws Exception {
+        JSONArray items = new JSONArray().put(new JSONObject().put("id", "reading")
+            .put("whitelist", new JSONObject().put("source", "custom").put("packages", new JSONArray().put("missing.reader.tool"))));
+        saveItems(new JSONArray().put("global.tool"), items);
+        JSONObject first = startItem("reading");
+        assertEquals("custom", first.getString("source"));
+        assertEquals(new JSONArray().put("missing.reader.tool").put(context.getPackageName()).toString(), first.getJSONArray("whitelist").toString());
+        items.getJSONObject(0).put("whitelist", new JSONObject().put("source", "global"));
+        saveItems(new JSONArray().put("new.global.tool"), items);
+        assertEquals(first.toString(), observe().getJSONObject("focus").getJSONObject("session").getJSONObject("protection").toString());
+        endRound();
+        JSONObject following = startItem("reading");
+        assertEquals("global", following.getString("source"));
+        assertEquals(new JSONArray().put("new.global.tool").put(context.getPackageName()).toString(), following.getJSONArray("whitelist").toString());
+        endRound();
+        items.getJSONObject(0).put("whitelist", new JSONObject().put("source", "custom").put("packages", new JSONArray()));
+        items.put(new JSONObject().put("id", "math"));
+        saveItems(new JSONArray().put("new.global.tool"), items);
+        JSONObject empty = startItem("reading");
+        assertEquals("custom", empty.getString("source"));
+        assertEquals(new JSONArray().put(context.getPackageName()).toString(), empty.getJSONArray("whitelist").toString());
+        endRound();
+        assertEquals(following.toString(), startItem("math").toString());
+        endRound();
+        assertEquals(following.toString(), startItem(null).toString());
+    }
+    @Test public void applicationPickerRetainsUninstalledPackagesFromIndependentItems() throws Exception {
+        JSONArray items = new JSONArray().put(new JSONObject().put("id", "reading")
+            .put("whitelist", new JSONObject().put("source", "custom").put("packages", new JSONArray().put("missing.reader.tool"))));
+        saveItems(new JSONArray().put("global.tool"), items);
+        Call apps = call(); plugin.listProtectionApps(apps); assertNull(apps.rejection);
+        JSONObject missing = null;
+        JSONArray rows = apps.result.getJSONArray("apps");
+        for (int i = 0; i < rows.length(); i++) if (rows.getJSONObject(i).optString("packageName").equals("missing.reader.tool")) missing = rows.getJSONObject(i);
+        assertNotNull("Saved independent package remains editable after uninstall", missing);
+        assertEquals("missing.reader.tool", missing.getString("name"));
+        assertFalse(missing.getBoolean("installed"));
+    }
 }

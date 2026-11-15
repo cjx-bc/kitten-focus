@@ -38,7 +38,7 @@ final class FocusControl {
             JSONObject started = new JSONObject(session.toString()).put("strictMode", strict);
             started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
                 .put("segments", new JSONArray());
-            started.put("protection", FocusProtection.capture(context, store));
+            started.put("protection", FocusProtection.capture(context, store, session));
             return focus.start(started);
         }
     }

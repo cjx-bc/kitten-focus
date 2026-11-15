@@ -12,7 +12,7 @@ import type {
   Course,
   Occurrence,
 } from '../domain/model'
-import { emptyData, uid } from '../domain/model'
+import { emptyData, uid, effectiveWhitelist } from '../domain/model'
 import { focusDriver, restDriver, repository, syncReminders } from '../platform/bridge'
 import { validateEvent } from '../domain/calendar'
 import { dateKey, weekday } from '../domain/dates'
@@ -32,6 +32,7 @@ export const useApp = defineStore('app', () => {
     strict: boolean
     study: boolean
     whitelistCount: number
+    whitelistSource: 'global' | 'custom'
   } | null>(null)
   let resolveStartConfirmation: ((accepted: boolean) => void) | undefined
   function confirmStart(accepted: boolean) {
@@ -154,7 +155,8 @@ export const useApp = defineStore('app', () => {
             minutes,
             strict: !!protection.strict,
             study: !!protection.study,
-            whitelistCount: new Set(protection.globalWhitelist).size,
+            whitelistCount: effectiveWhitelist(data.value, item?.id ?? null).whitelist.length,
+            whitelistSource: effectiveWhitelist(data.value, item?.id ?? null).source,
           }
         })
         if (!accepted) throw new Error('已取消开始专注')
