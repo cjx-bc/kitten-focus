@@ -38,3 +38,21 @@ T11 只执行当前确有固定截止的严格倒计时。普通可暂停倒计�
 - QA 主 APK 与 AndroidTest 最终构建通过，且包含集成分支 `b5f27a3` 的临时放行兼容。API36 七项原生控制 seam 用例通过。
 - 第一次双应用运行因 instrumentation 重启目标进程后 listener 未重连失败；执行器改为目标进程存在后只切换 QA listener，再调用公开 requestRebind。第二次原通知暂缓、更新到 revision2、原 key/package/uid/PendingIntent 正常截止均通过，但真实通知栏点击没有找到节点；该次仍记失败，证据保留在本机忽略目录 `artifacts/focus-control/t11-api36-first` 与 `t11-api36-green`。窗口检索与真实坐标输入修正等待最终设备复跑，不将 PendingIntent 保持偷换成真实点击通过。
 - 提前立即释放、开放式计时、普通暂停续期、重启/工作资料/OEM 完整矩阵仍由 T12 与后续组合验收承担，A06 尚未全部通过。
+
+## API36 最终设备结果
+
+2026-11-15 20:26:44—20:27:01 UTC，`emulator-5580` 官方 API36，独立 QA 与 sender 身份最终 `OK (8 tests)`，原生运行 10.982s。七项控制 seam 与真实双应用固定截止案例全部通过。实测包括原键被系统暂缓、持有期间更新到 revision2、截止后保持原 package/uid/key/PendingIntent 与更新 revision、没有再次无限拦截，以及通知栏真实点击后 sender 收到本次 `content_intent_opened(id=21101, revision=2)`。
+
+Accessibility tree 在本镜像没有暴露该合成标题，因此先保存并目视核对真实通知栏截图：540×960，sender 唯一合成卡片 x24..516 / y325..502，标题约 (200,418)。最终运行显式使用 `--observed-tap 200,420`，测试同时核对屏幕尺寸和原通知仍活动，再用真实系统 `input tap`；不调用 PendingIntent.send。该坐标仅适用于已检查的当前 fixture，其他设备/布局必须先检查截图或改用正常节点点击。保留之前节点路线失败，不能将其擦除成一次全通过。
+
+命令：`python scripts/notification-device-test.py --observed-tap 200,420 --output <ignored-artifacts>/t11-api36-verified`。证据位于主工作区忽略目录 `artifacts/focus-control/t11-api36-verified`，含 instrumentation、APK 哈希、授权/独立包基线与清理结果。诊断截图在 `t11-api36-shade-diagnostic/original-notification-shade.png`。执行器新增的 QA listener 授权已撤销，新安装的 sender 已卸载；原两个系统 listener 保留，QA 业务库和原 journal 已恢复。原包 `com.xiaomao.focus` 没有安装、清空或替换。
+
+最终 SHA-256：
+
+```text
+QA app     895170d0dbeaa129b64ea1e5bd8cf090044e530bf9129c1ef8a344e735d360db
+QA test    2ad125b2ac132965da88b906ded88f77916173daab6d42cb800c2ff6f379a6f7
+sender     06b0d4201806d332b0694825f14ddecf0d677a65102bd7ed1cd22730fccc12b1
+```
+
+构建流程是 `npm run build` → `cap sync android` → `.qa` APK，Gradle 全程持有主流程租约且使用 `--no-daemon --max-workers=2`；最终点击修正只重建 AndroidTest APK。包含集成 `b5f27a3` 与 T07 注入构造器兼容。T11 固定截止切片通过，不代表提前释放/正计时完整 A06 通过。
