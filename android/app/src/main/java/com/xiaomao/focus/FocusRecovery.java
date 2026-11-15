@@ -13,6 +13,7 @@ import java.util.List;
 /** Runtime restoration duties, deliberately outside business data and upgrade backups. */
 final class FocusRecovery {
     static final String APPLICATIONS = "applicationRestriction";
+    static final String NAVIGATION = "navigationRestriction";
     static final String DISMISS_BLOCK = "com.xiaomao.focus.DISMISS_RECOVERED_BLOCK";
     interface DeviceEffects { void releaseApplicationRestriction() throws Exception; }
     /** Adapters keep their own original-state journal; preview must be read-only. */
@@ -43,20 +44,25 @@ final class FocusRecovery {
     }
     void prepare(JSONObject session) throws JSONException {
         JSONObject protection = session.optJSONObject("protection");
-        if (protection == null || !protection.optBoolean("study")) return;
+        if (protection == null || (!protection.optBoolean("study") && !FocusProtection.navigationRequested(protection))) return;
         JSONObject value = read(); JSONArray steps = value.getJSONArray("steps");
         for (int i = 0; i < steps.length(); i++) {
             JSONObject step = steps.getJSONObject(i);
-            if (step.optString("capability").equals(APPLICATIONS) && !step.optString("status").equals("restored"))
-                throw new IllegalStateException("上一轮应用限制仍有待恢复项目，请先进入故障恢复重试");
+            boolean required = step.optString("capability").equals(APPLICATIONS) && protection.optBoolean("study")
+                || step.optString("capability").equals(NAVIGATION) && FocusProtection.navigationRequested(protection);
+            if (required && !step.optString("status").equals("restored"))
+                throw new IllegalStateException("上一轮保护仍有待恢复项目，请先进入故障恢复重试");
         }
         // Retain outstanding responsibilities and the current round, not unlimited history.
         JSONArray retained = new JSONArray();
         for (int i = 0; i < steps.length(); i++)
             if (!steps.getJSONObject(i).optString("status").equals("restored")) retained.put(steps.getJSONObject(i));
-        retained.put(new JSONObject().put("sessionId", session.getString("id")).put("capability", APPLICATIONS)
+        if (protection.optBoolean("study")) retained.put(new JSONObject().put("sessionId", session.getString("id")).put("capability", APPLICATIONS)
             .put("title", "应用使用限制").put("status", "active").put("withdrawn", false)
             .put("reason", "撤销本轮应用限制；计时、严格规则和保存的白名单继续保留"));
+        if (FocusProtection.navigationRequested(protection)) retained.put(new JSONObject().put("sessionId", session.getString("id")).put("capability", NAVIGATION)
+            .put("title", "桌面与最近任务限制").put("status", "active").put("withdrawn", false)
+            .put("reason", "撤销本轮桌面与最近任务限制；计时、严格规则和增强偏好继续保留"));
         write(value.put("steps", retained));
     }
     boolean withdrawn(String sessionId, String capability) throws JSONException {
@@ -108,9 +114,9 @@ final class FocusRecovery {
             // Persist the user's withdrawal before changing any effect. Rebind must honor this even after a crash.
             step.put("withdrawn", true); write(value);
             try {
-                if (step.optString("capability").equals(APPLICATIONS)) effects.releaseApplicationRestriction();
+                if (step.optString("capability").equals(APPLICATIONS) || step.optString("capability").equals(NAVIGATION)) effects.releaseApplicationRestriction();
                 else throw new UnsupportedOperationException("此版本无法恢复该项目，请更新后重试");
-                step.put("status", "restored").put("reason", "已撤销本轮应用限制；计时和偏好保留");
+                step.put("status", "restored").put("reason", "已撤销本轮保护；计时和偏好保留");
             } catch (UnsupportedOperationException limited) {
                 step.put("status", "limited").put("reason", limited.getMessage());
             } catch (Exception error) {
