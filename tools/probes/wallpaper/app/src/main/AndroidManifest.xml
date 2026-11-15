@@ -22,6 +22,11 @@
             <intent-filter><action android:name="android.service.wallpaper.WallpaperService" /></intent-filter>
             <meta-data android:name="android.service.wallpaper" android:resource="@xml/probe_wallpaper" />
         </service>
+        <service android:name=".BaselineWallpaperService" android:label="Known purple original fixture"
+            android:process=":baseline" android:permission="android.permission.BIND_WALLPAPER" android:exported="true">
+            <intent-filter><action android:name="android.service.wallpaper.WallpaperService" /></intent-filter>
+            <meta-data android:name="android.service.wallpaper" android:resource="@xml/baseline_wallpaper" />
+        </service>
         <receiver android:name=".ProbeBootReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
