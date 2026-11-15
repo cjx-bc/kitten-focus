@@ -112,29 +112,30 @@ public class FocusBlockActivity extends Activity {
     }
     private void chooseDuration() {
         if (granting || blockedPackage.isEmpty()) return;
+        final String target = blockedPackage, owner = sessionId;
         final int[] choice = {0};
         final int[] minutes = {1, 3, 5};
         new AlertDialog.Builder(this).setTitle("临时打开 " + appLabel(blockedPackage))
             .setSingleChoiceItems(new String[]{"1 分钟", "3 分钟", "5 分钟"}, 0, (dialog, which) -> choice[0] = which)
             .setNegativeButton("取消", null)
-            .setPositiveButton("打开应用", (dialog, which) -> grant(minutes[choice[0]], UUID.randomUUID().toString(), false))
+            .setPositiveButton("打开应用", (dialog, which) -> grant(minutes[choice[0]], UUID.randomUUID().toString(), false, target, owner))
             .show();
     }
-    private void grant(int minutes, String requestId, boolean confirmed) {
+    private void grant(int minutes, String requestId, boolean confirmed, String target, String owner) {
         if (granting) return;
         granting = true; temporary.setEnabled(false);
         try {
-            JSONObject result = new FocusControl(this).grantTemporaryAccess(new JSONObject().put("sessionId", sessionId)
-                .put("targetPackage", blockedPackage).put("durationMinutes", minutes).put("requestId", requestId)
+            JSONObject result = new FocusControl(this).grantTemporaryAccess(new JSONObject().put("sessionId", owner)
+                .put("targetPackage", target).put("durationMinutes", minutes).put("requestId", requestId)
                 .put("replaceConfirmed", confirmed));
             String outcome = result.optString("status");
             if (outcome.equals("granted")) { finish(); return; }
             if (outcome.equals("confirmation-required")) {
                 JSONObject current = result.getJSONObject("state");
                 new AlertDialog.Builder(this).setTitle("结束上一个临时放行？")
-                    .setMessage("将立即结束 " + current.optString("targetLabel") + " 的放行，然后打开 " + appLabel(blockedPackage) + "。新放行成功后扣一次。")
+                    .setMessage("将立即结束 " + current.optString("targetLabel") + " 的放行，然后打开 " + appLabel(target) + "。新放行成功后扣一次。")
                     .setNegativeButton("取消", null)
-                    .setPositiveButton("结束并打开", (dialog, which) -> grant(minutes, requestId, true)).show();
+                    .setPositiveButton("结束并打开", (dialog, which) -> grant(minutes, requestId, true, target, owner)).show();
             } else {
                 new AlertDialog.Builder(this).setTitle("未能临时打开")
                     .setMessage(result.optString("reason")).setPositiveButton("知道了", null).show();

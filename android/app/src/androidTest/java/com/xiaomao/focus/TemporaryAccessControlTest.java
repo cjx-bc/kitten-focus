@@ -83,4 +83,90 @@ public class TemporaryAccessControlTest {
     private JSONObject state() throws Exception {
         return control.observeControl().getJSONObject("focus").getJSONObject("session").getJSONObject("temporaryAccess");
     }
+    @Test public void failedReplacementAndRevokedPermissionKeepPreviousGrantAndDebitUnchanged() throws Exception {
+        control.startFocus(session());
+        control.grantTemporaryAccess(request("example.first", 3, "first"));
+        clock.advance(10000);
+        JSONObject before = state();
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), accessibility,
+            packageName -> () -> { throw new SecurityException("OS rejected launch"); });
+        JSONObject failed = control.grantTemporaryAccess(request("example.second", 5, "second").put("replaceConfirmed", true));
+        assertEquals("failed", failed.getString("status"));
+        assertEquals(before.toString(), state().toString());
+        assertFalse(FocusProtection.shouldBlock(context, control.observeControl(), "example.first", ""));
+        assertTrue(FocusProtection.shouldBlock(context, control.observeControl(), "example.second", ""));
+        FocusProtection.AccessibilityState revoked = new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return false; }
+            public boolean connected() { return false; }
+        };
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), revoked, packageName -> () -> {});
+        assertEquals("failed", control.grantTemporaryAccess(request("example.second", 5, "second").put("replaceConfirmed", true)).getString("status"));
+        assertEquals(before.toString(), state().toString());
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), accessibility, packageName -> () -> {});
+        assertEquals("granted", control.grantTemporaryAccess(request("example.second", 5, "second").put("replaceConfirmed", true)).getString("status"));
+        assertEquals(2, state().getInt("used"));
+        assertTrue(FocusProtection.shouldBlock(context, control.observeControl(), "example.first", ""));
+        assertFalse(FocusProtection.shouldBlock(context, control.observeControl(), "example.second", ""));
+        assertEquals(300000, state().getLong("remainingMs"));
+    }
+    @Test public void parallelRequestsNeverExceedThreeAndIdenticalRetriesNeverReopenOrExtend() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger launches = new java.util.concurrent.atomic.AtomicInteger();
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), accessibility,
+            packageName -> () -> launches.incrementAndGet());
+        control.startFocus(session());
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(6);
+        try {
+            java.util.List<java.util.concurrent.Future<JSONObject>> replies = new java.util.ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                final int number = i;
+                replies.add(pool.submit(() -> control.grantTemporaryAccess(request("example.app" + number, 1, "request-" + number).put("replaceConfirmed", true))));
+            }
+            int granted = 0;
+            for (java.util.concurrent.Future<JSONObject> reply : replies)
+                if (reply.get().optString("status").equals("granted")) granted++;
+            assertEquals(3, granted); assertEquals(3, launches.get());
+            assertEquals(3, state().getInt("used")); assertEquals(0, state().getInt("remainingUses"));
+            assertEquals("denied", control.grantTemporaryAccess(request("example.extra", 1, "extra").put("replaceConfirmed", true)).getString("status"));
+        } finally { pool.shutdownNow(); }
+        // Complete the round and start a fresh one to test a concurrently repeated request.
+        control.focusAction("finish");
+        control.startFocus(session().put("id", "retry-round"));
+        JSONObject request = request("example.retry", 5, "same").put("sessionId", "retry-round");
+        assertEquals("granted", control.grantTemporaryAccess(request).getString("status"));
+        clock.advance(7000);
+        assertTrue(control.grantTemporaryAccess(request).getBoolean("replayed"));
+        assertEquals(4, launches.get()); assertEquals(1, state().getInt("used"));
+        assertEquals(293000, state().getLong("remainingMs"));
+        assertEquals("denied", control.grantTemporaryAccess(new JSONObject(request.toString()).put("durationMinutes", 3)).getString("status"));
+        assertEquals(4, launches.get());
+    }
+    @Test public void strictRecoveryAndRebootDenyGrantsAndNewRoundsResetClientForgedRuntime() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").getJSONObject("protection").put("strict", true);
+        store.saveData(data, false);
+        control.startFocus(session(), true);
+        assertEquals("denied", control.grantTemporaryAccess(request("example.blocked", 1, "strict").put("replaceConfirmed", true)).getString("status"));
+        assertEquals(0, state().getInt("used"));
+        clock.advance(900000); control.focusAction("read"); control.restAction("exit");
+        data.getJSONObject("preferences").getJSONObject("protection").put("strict", false);
+        store.saveData(data, false);
+        JSONObject forged = session().put("temporaryAccessRuntime", new JSONObject().put("used", -100)
+            .put("grant", new JSONObject().put("targetPackage", "example.forged").put("deadlineMono", Long.MAX_VALUE)));
+        control.startFocus(forged);
+        assertEquals(0, state().getInt("used")); assertTrue(state().isNull("targetPackage"));
+        control.grantTemporaryAccess(request("example.blocked", 5, "ordinary"));
+        JSONObject preview = control.previewRecovery(); control.confirmRecovery(preview.getString("revision"));
+        assertTrue(state().isNull("targetPackage"));
+        assertEquals("denied", control.grantTemporaryAccess(request("example.other", 1, "withdrawn")).getString("status"));
+        control.focusAction("finish"); control.startFocus(session());
+        control.grantTemporaryAccess(request("example.blocked", 5, "before-reboot"));
+        clock.boot++;
+        assertTrue(control.observeControl().getBoolean("needsReconcile"));
+        assertTrue(state().isNull("targetPackage"));
+        assertEquals("denied", control.grantTemporaryAccess(request("example.other", 1, "rebooted")).getString("status"));
+        control.reconcile(); assertTrue(control.observeControl().getJSONObject("focus").isNull("session"));
+        control.startFocus(session()); assertEquals(0, state().getInt("used"));
+        control.focusAction("finish");
+        assertEquals("denied", control.grantTemporaryAccess(request("example.other", 1, "ended")).getString("status"));
+    }
 }
