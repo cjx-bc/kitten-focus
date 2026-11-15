@@ -10,7 +10,8 @@ const foreground = () => command('shell', 'dumpsys', 'activity', 'activities')
 const launch = (...args) => command('shell', 'am', 'start', ...args)
 const click = label => evaluate(`(() => {
   const button = [...document.querySelectorAll('button')].find(el =>
-    el.getAttribute('aria-label') === ${JSON.stringify(label)} || el.textContent.trim() === ${JSON.stringify(label)});
+    el.getAttribute('aria-label') === ${JSON.stringify(label)} || el.textContent.trim() === ${JSON.stringify(label)}
+      || el.firstElementChild?.textContent.trim() === ${JSON.stringify(label)});
   if (!button) throw new Error('Missing QA control: ' + ${JSON.stringify(label)});
   button.click();
 })()`)
@@ -23,8 +24,9 @@ try {
   data.preferences.protection = { study: true, strict: false, interceptNotifications: false,
     dnd: false, globalWhitelist: ['com.android.chrome'], enhancements: [] }
   await native('replaceData', { data })
+  await evaluate("location.hash = '#/tasks'")
   await qa.send('Page.reload', {})
-  await until(async () => (await evaluate('document.body.innerText')).includes('待办'), 'tasks screen')
+  await until(() => evaluate("location.hash === '#/tasks' && !!document.querySelector('.study-entry')"), 'tasks study entry')
   await until(async () => (await native('protectionStatus')).connected, 'real accessibility service')
   await click('学霸模式')
   await until(() => evaluate('!!document.querySelector("dialog[open]")'), 'study Sheet')

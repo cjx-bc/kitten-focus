@@ -3,10 +3,10 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import assert from 'node:assert/strict'
+import { androidDevice } from './lib/android-device.mjs'
 
 const root = resolve(import.meta.dirname, '..')
-const adb = process.env.ADB || resolve(root, '.tools/android-sdk/platform-tools/adb.exe')
-const serial = process.env.ANDROID_SERIAL
+const { adb, serial } = androidDevice(root)
 const appId = process.env.ANDROID_APP_ID || 'com.xiaomao.focus.qa'
 assert(serial && /^(?:emulator-\d+|127\.0\.0\.1:\d+)$/.test(serial), 'Select an emulator explicitly')
 assert(appId.endsWith('.qa'), 'This mutating smoke test only runs on the separate QA package')
