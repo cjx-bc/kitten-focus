@@ -177,3 +177,15 @@ it('rejects requested native navigation enhancement in the browser instead of si
   await repository.save(data)
   await expect(focusDriver.start(session())).rejects.toThrow(/Android/)
 })
+
+
+it('refuses launcher icon hiding outside Android and reports its unsupported recovery status', async () => {
+  const { focusDriver, repository, controlDriver, protectionDriver } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  const data = emptyData()
+  data.preferences.protection = { ...defaultProtection(), enhancements: ['launcherIconHidden'] }
+  await repository.save(data)
+  await expect(focusDriver.start(session())).rejects.toThrow('Android')
+  expect((await controlDriver.observe()).owner).toBeNull()
+  expect(await protectionDriver.launcher()).toMatchObject({ supported: false, phase: 'unsupported', verified: false, recoveryReachable: false })
+})

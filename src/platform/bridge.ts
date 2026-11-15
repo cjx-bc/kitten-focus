@@ -15,6 +15,7 @@ import type {
   TemporaryAccessRequest,
   TemporaryAccessResult,
   RecentTasksStatus,
+  LauncherStatus,
 } from '../domain/model'
 import { emptyData, effectiveWhitelist } from '../domain/model'
 import { elapsed, settle } from '../domain/focus'
@@ -37,6 +38,7 @@ interface NativeBridge {
   grantTemporaryAccess(options: TemporaryAccessRequest): Promise<TemporaryAccessResult>
   observeControl(): Promise<ControlSnapshot>
   getRecentTasksStatus(): Promise<RecentTasksStatus>
+  getLauncherStatus(): Promise<LauncherStatus>
   consumeFocusReturn(): Promise<{ requested: boolean }>
   consumeLockReturn(): Promise<{ requested: boolean }>
   protectionStatus(): Promise<ProtectionStatus>
@@ -115,6 +117,8 @@ export const focusDriver = {
     if (native) return plugin.startFocus({ session, strictModeConfirmed })
     const db = await webReadFocus()
     const preferredProtection = (await repository.load()).preferences.protection
+    if (preferredProtection?.enhancements?.includes('launcherIconHidden'))
+      throw new Error('桌面图标隐藏仅支持 Android 本机版本，请关闭此选项后继续')
     if (preferredProtection?.enhancements?.includes('recentTasksHidden'))
       throw new Error('最近任务卡隐藏仅支持 Android 本机版本，请关闭此选项后继续')
     if (preferredProtection?.enhancements?.some(value => ['navigationHomeRecents', 'preciseAntiClose'].includes(value)))
@@ -237,6 +241,14 @@ export const openAlarmSettings = () => plugin.openAlarmSettings()
 export const syncReminders = () => (native ? plugin.syncReminders() : Promise.resolve())
 
 export const protectionDriver = {
+  async launcher(): Promise<LauncherStatus> {
+    return native ? plugin.getLauncherStatus() : {
+      supported: false, requested: false, preferenceEnabled: false, recoveryAvailable: false, recoveryReachable: false,
+      phase: 'unsupported', active: false, verified: false, recoveryPending: false,
+      componentState: -1, launcherResolved: false, launcherCacheVerified: false,
+      error: '桌面图标隐藏仅支持 Android 本机版本',
+    }
+  },
   async recentTasks(): Promise<RecentTasksStatus> {
     return native ? plugin.getRecentTasksStatus() : {
       supported: false, requested: false, preferenceEnabled: false, recoveryAvailable: false,
