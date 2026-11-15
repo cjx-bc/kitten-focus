@@ -54,6 +54,8 @@ export const defaultProtection = (): ProtectionPreferences => ({
 })
 export interface ProtectionSnapshot {
   applicationsWithdrawn?: boolean
+  navigationWithdrawn?: boolean
+  enhancements?: string[]
   study: boolean
   source: 'global' | 'custom'
   whitelist: string[]
@@ -64,7 +66,20 @@ export function effectiveWhitelist(data: AppData, itemId: string | null): Pick<P
   return { source: custom ? 'custom' : 'global',
     whitelist: [...new Set(custom ? custom.packages : data.preferences.protection?.globalWhitelist ?? [])] }
 }
+export interface NavigationProtectionStatus {
+  supported: boolean
+  authorized: boolean
+  connected: boolean
+  active: boolean
+  preferenceEnabled: boolean
+  requested: boolean
+  state: 'off' | 'authorization' | 'ready' | 'armed' | 'protecting' | 'failed' | 'unsupported' | 'recovered'
+  reason: string
+  lastReturnedAt: number | null
+  lastTarget: 'home' | 'recents' | 'launcher' | null
+}
 export interface ProtectionStatus {
+  navigation?: NavigationProtectionStatus
   supported: boolean
   authorized: boolean
   connected: boolean
@@ -73,6 +88,17 @@ export interface ProtectionStatus {
   state: 'off' | 'authorization' | 'ready' | 'protecting' | 'failed' | 'unsupported' | 'recovered'
   reason: string
   effectiveWhitelist: string[]
+}
+export interface RecentTasksStatus {
+  supported: boolean
+  requested: boolean
+  preferenceEnabled: boolean
+  recoveryAvailable: boolean
+  phase: 'off' | 'ready' | 'active' | 'failed' | 'restoration_failed' | 'withdrawn' | 'restored' | 'unsupported'
+  active: boolean
+  verified: boolean
+  recoveryPending: boolean
+  error: string
 }
 export interface RecoveryStep {
   sessionId: string
@@ -155,6 +181,7 @@ export interface RestSnapshot {
   remainingMs: number
 }
 export interface ControlSnapshot {
+  recentTasks?: RecentTasksStatus
   owner: 'focus' | 'rest' | 'lock' | null
   focus: FocusSnapshot
   rest: RestSnapshot
