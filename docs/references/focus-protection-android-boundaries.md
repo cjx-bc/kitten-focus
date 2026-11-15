@@ -33,6 +33,12 @@
 | P5 图标隐藏 | 单独 launcher alias 切换；在隐藏前后、进程死亡、重启、升级、授权撤销后打开恢复 Activity 并重新显示图标。不能证明强停后恢复入口仍可达时不得启用该能力。 |
 | P6 管理模式 | 仅在可重置的自有测试设备/模拟器验证 DO、PO、delegate 与普通模式；分别调用 uninstall block true/false 并查询实际状态，记录 SecurityException 和 Android 14+ policy result。单独验证 lock task allowlist/退出；不得在真实日用设备试验性配置 owner 或重置设备。 |
 
+## 2026-11-15 T02 设备补充
+
+已完成[独立 sender/controller 探针](../../tools/probes/notification/README.md)与 [API 35 MuMu 实测](../../tools/probes/notification/RESULTS.md)。固定截止保留原包、key 与 PendingIntent；**对已经暂缓的原 key 再调用公开 `snoozeNotification(key, 1L)`，五轮均在 208–240ms 后恢复，早于原截止约 5.1–6.3s**，并有原通知栏点击回执。这是本设备可复现的提前改期候选路线，修正“缺少 unsnooze 就绝无公开提前路线”的过强推论；普通 NLS 没有公开通用 unsnooze 方法这一 API 事实仍然成立。
+
+更新、撤回、分组联动、重复、必要通知例外与 listener 断开已覆盖；无固定结束时间策略、其他 API/OEM、重启及声音/曝光尚未完成验证。不得据此宣称 A06 或 T12 已完成，也不把当前设备现象推广成系统保证。原始元数据与恢复基线说明见实测记录。
+
 ## 官方来源
 
 - S1 — NLS public API：<https://developer.android.com/reference/android/service/notification/NotificationListenerService>（`snoozeNotification`、`getSnoozedNotifications`）。
