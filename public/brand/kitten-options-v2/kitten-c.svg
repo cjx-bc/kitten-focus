@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" role="img" aria-label="趴睡小黑猫"><rect width="512" height="512" rx="126" fill="#f5f4f2"/>
+<path d="M318 331c50 22 72-20 57-48-12-22-41-20-41-42" fill="none" stroke="#292827" stroke-width="27" stroke-linecap="round"/>
+<path d="M227 221c60-35 133-3 136 61 2 38-25 63-80 63h-73c-41-9-52-45-37-77 10-23 31-39 54-47z" fill="#292827"/>
+<path d="M124 250c-9-15-11-42-2-47 9-5 23 7 33 18 25-9 56-8 79 2 14-14 29-24 37-16 8 7 3 30-5 46 14 19 15 38 5 55-12 25-41 38-77 38-39 0-67-12-81-35-12-20-8-43 11-61z" fill="#292827"/>
+<path d="M145 281q10 10 21 0m47 0q10 10 21 0" fill="none" stroke="#fffdf9" stroke-width="5.5" stroke-linecap="round"/>
+<path d="m185 298 5 4 5-4m-5 5q-2 8-9 7m9-7q3 8 10 6" fill="none" stroke="#fffdf9" stroke-width="4" stroke-linecap="round"/>
+<ellipse cx="164" cy="342" rx="26" ry="12" fill="#fffdf9" stroke="#292827" stroke-width="6"/>
+<ellipse cx="223" cy="342" rx="26" ry="12" fill="#fffdf9" stroke="#292827" stroke-width="6"/>
+<path d="M287 281q-7 19 0 33" stroke="#66615e" stroke-width="4" fill="none" stroke-linecap="round"/>
+</svg>

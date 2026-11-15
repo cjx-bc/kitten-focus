@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" role="img" aria-label="盒子里的猫"><rect width="512" height="512" rx="126" fill="#f5f4f2"/>
+<path d="M150 218c-8-16-14-48-5-56 8-7 28 4 43 18 43-20 97-20 138-1 16-14 35-25 43-16 9 10 1 40-8 59 17 22 18 47 9 68-15 33-57 49-113 49-59 0-102-18-115-50-9-23-5-48 8-71z" fill="#292827"/>
+<ellipse cx="215" cy="255" rx="12" ry="15" fill="#fffdf9"/><ellipse cx="301" cy="255" rx="12" ry="15" fill="#fffdf9"/>
+<ellipse cx="219" cy="256" rx="5" ry="7" fill="#292827"/><ellipse cx="305" cy="256" rx="5" ry="7" fill="#292827"/>
+<path d="m251 278 7 4 7-4m-7 5q-2 10-11 7m11-7q3 10 12 7" fill="none" stroke="#fffdf9" stroke-width="4" stroke-linecap="round"/>
+<path d="M139 313h237l-12 89H151z" fill="#dfdbd5" stroke="#292827" stroke-width="7" stroke-linejoin="round"/>
+<path d="m139 313 35-31 84 31 83-31 35 31-43 32-75-21-76 21z" fill="#eeebe6" stroke="#292827" stroke-width="7" stroke-linejoin="round"/>
+<path d="M257 328v72" stroke="#292827" stroke-width="5"/>
+<path d="M182 309c-8-18 0-28 16-28 17 0 24 13 16 29-5 11-25 12-32-1m117 0c-8-18 0-28 16-28 17 0 24 13 16 29-5 11-25 12-32-1" fill="#fffdf9" stroke="#292827" stroke-width="6"/>
+</svg>

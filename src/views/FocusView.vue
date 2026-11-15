@@ -43,6 +43,18 @@ async function again() {
     app.notify(String(e))
   }
 }
+async function rest() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    await app.startRest()
+    await router.replace('/rest')
+  } catch (error) {
+    app.notify(error instanceof Error ? error.message : String(error))
+  } finally {
+    busy.value = false
+  }
+}
 </script>
 <template>
   <div class="focus-page">
@@ -102,7 +114,15 @@ async function again() {
           <span>暂停 {{ duration(result.pausedMs) }}</span
           ><span>{{ result.mode === 'countdown' ? '倒计时' : '正计时' }}</span>
         </div>
-        <button class="primary wide" @click="again">
+        <button
+          v-if="result.status === 'early'"
+          class="primary wide"
+          :disabled="busy"
+          @click="rest"
+        >
+          <Icon name="clock" :size="18" />休息 5 分钟
+        </button>
+        <button v-else class="primary wide" @click="again">
           <Icon name="refresh" :size="18" />再次开始</button
         ><button class="text-button" @click="router.replace('/tasks')">返回待办</button>
       </div></template

@@ -15,11 +15,13 @@ import java.util.Comparator;
 
 /** App-private recovery snapshots. No upload; manual exports remain separate. */
 final class UpgradeBackups {
+    private final Context context;
     private final LocalStore store;
     private final File directory;
     private final SharedPreferences preferences;
 
     UpgradeBackups(Context context) {
+        this.context = context.getApplicationContext();
         store = LocalStore.get(context);
         directory = new File(context.getFilesDir(), "upgrade-backups");
         preferences = context.getSharedPreferences("upgrade-protection", Context.MODE_PRIVATE);
@@ -110,6 +112,7 @@ final class UpgradeBackups {
             // Keep a safety snapshot of current data before replacing anything.
             create(BuildConfig.VERSION_CODE, BuildConfig.VERSION_CODE);
             store.restoreSnapshot(value.getJSONObject("snapshot"));
+            Reminders.cancelRest(context);
         }
     }
 }

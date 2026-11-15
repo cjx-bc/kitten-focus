@@ -1,8 +1,16 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { openDB } from 'idb'
-import type { ActiveFocus, AppData, FocusSnapshot } from '../domain/model'
+import type {
+  ActiveFocus,
+  AppData,
+  FocusRecord,
+  FocusSnapshot,
+  RestSession,
+  RestSnapshot,
+} from '../domain/model'
 import { emptyData } from '../domain/model'
 import { settle } from '../domain/focus'
+import { makeRest, readRest } from '../domain/rest'
 
 interface NativeBridge {
   loadData(): Promise<{ data: AppData | null }>
@@ -10,6 +18,8 @@ interface NativeBridge {
   replaceData(options: { data: AppData }): Promise<void>
   startFocus(options: { session: ActiveFocus }): Promise<FocusSnapshot>
   focusAction(options: { action: 'read' | 'pause' | 'resume' | 'finish' }): Promise<FocusSnapshot>
+  startRest(options: { recordId: string }): Promise<RestSnapshot>
+  restAction(options: { action: 'read' | 'exit' }): Promise<RestSnapshot>
   exportFile(options: { text: string; name: string }): Promise<void>
   importFile(): Promise<{ text: string }>
   permissions(): Promise<{ notifications: boolean; exactAlarms: boolean }>
@@ -54,6 +64,7 @@ export const repository = {
     const tx = db.transaction('kv', 'readwrite')
     await tx.store.put(data, 'data')
     await tx.store.delete('active')
+    await tx.store.delete('rest')
     await tx.done
     browserSession = null
     initialized = true
@@ -64,6 +75,9 @@ export const focusDriver = {
     if (native) return plugin.startFocus({ session })
     const db = await webReadFocus()
     if (browserSession) throw new Error('请先结束当前专注')
+    if ((await restDriver.read()).session?.state === 'running')
+      throw new Error('请先退出休息，再开始新的专注')
+    await restDriver.exit()
     browserSession = { ...session, anchorMono: Date.now(), bootId: 0 }
     await db.put('kv', browserSession, 'active')
     return { session: browserSession, elapsedMs: 0 }
@@ -73,9 +87,53 @@ export const focusDriver = {
     const db = await webReadFocus()
     if (!browserSession) return { session: null, elapsedMs: 0 }
     const result = settle(browserSession, clock(), action)
+    const tx = db.transaction('kv', 'readwrite')
+    await tx.store.put(result.session, 'active')
+    if (result.record) {
+      const data: AppData = (await tx.store.get('data')) || emptyData()
+      if (
+        !data.deletedRecordIds.includes(result.record.id) &&
+        !data.records.some((r) => r.id === result.record!.id)
+      ) {
+        data.records.push(result.record)
+        await tx.store.put(data, 'data')
+      }
+    }
+    if (result.record?.status === 'completed') {
+      const rest = makeRest(result.record)
+      await tx.store.put(readRest(rest, Date.now()).session, 'rest')
+    }
+    await tx.done
     browserSession = result.session
-    await db.put('kv', browserSession, 'active')
     return result
+  },
+}
+export const restDriver = {
+  async read(): Promise<RestSnapshot> {
+    if (native) return plugin.restAction({ action: 'read' })
+    const db = await database()
+    const stored: RestSession | null = (await db.get('kv', 'rest')) || null
+    const snapshot = readRest(stored, Date.now())
+    if (stored?.state === 'running' && snapshot.session?.state === 'completed')
+      await db.put('kv', snapshot.session, 'rest')
+    return snapshot
+  },
+  async start(record: FocusRecord): Promise<RestSnapshot> {
+    if (native) return plugin.startRest({ recordId: record.id })
+    const db = await webReadFocus()
+    if (browserSession) throw new Error('请先结束当前专注')
+    const existing = await restDriver.read()
+    if (existing.session?.record.id === record.id) return existing
+    if (existing.session?.state === 'running') throw new Error('已有一段休息正在进行')
+    const session = makeRest(record, Date.now())
+    await db.put('kv', session, 'rest')
+    return { session, remainingMs: session.endsAt - session.startedAt }
+  },
+  async exit(): Promise<RestSnapshot> {
+    if (native) return plugin.restAction({ action: 'exit' })
+    const db = await database()
+    await db.delete('kv', 'rest')
+    return { session: null, remainingMs: 0 }
   },
 }
 export async function exportFile(text: string, name: string) {

@@ -90,6 +90,7 @@ async function begin(item: FocusItem | null) {
   } catch (e) {
     app.notify(String(e instanceof Error ? e.message : e))
     if (app.focus.session) await router.push('/focus')
+    else if (app.rest.session) await router.push('/rest')
   }
 }
 function openFree() {
@@ -141,60 +142,71 @@ function toggleTheme(theme: Theme) {
     </button>
     <section v-for="theme in app.themes" :key="theme.id" class="theme-section">
       <header class="theme-header">
-        <button class="theme-title" :aria-expanded="!theme.collapsed" @click="toggleTheme(theme)">
+        <button class="theme-title" :aria-label="'编辑主题' + theme.name" @click="openTheme(theme)">
           <span class="theme-dot" :style="{ background: theme.color }" />
           <h2>{{ theme.name }}</h2>
-          <Icon :name="theme.collapsed ? 'right' : 'down'" :size="16" />
         </button>
         <div class="row theme-actions">
           <button
-            class="icon-button small"
-            :aria-label="'编辑主题' + theme.name"
-            @click="openTheme(theme)"
-          >
-            <Icon name="more" :size="20" /></button
-          ><button
-            class="icon-button small"
+            class="icon-button"
             :aria-label="'在' + theme.name + '下添加待办'"
             @click="openItem(theme.id)"
           >
-            <Icon name="plus" :size="21" />
+            <Icon name="plus" :size="19" />
+          </button>
+          <button
+            class="icon-button theme-toggle"
+            :class="{ collapsed: theme.collapsed }"
+            :aria-label="(theme.collapsed ? '展开主题' : '收起主题') + theme.name"
+            :aria-expanded="!theme.collapsed"
+            :aria-controls="'theme-items-' + theme.id"
+            @click="toggleTheme(theme)"
+          >
+            <Icon name="down" :size="18" />
           </button>
         </div>
       </header>
-      <div v-if="!theme.collapsed" class="item-list">
-        <article
-          v-for="item in app.items.filter((i) => i.themeId === theme.id)"
-          :key="item.id"
-          class="task-card"
-        >
-          <div class="task-main">
-            <button class="task-text" @click="openItem(theme.id, item)">
-              <h3>{{ item.title }}</h3>
-              <p>
-                {{ item.mode === 'stopwatch' ? '正计时' : item.minutes + ' 分钟'
-                }}<span v-if="itemStats.get(item.id)?.count">
-                  · 今日 {{ itemStats.get(item.id)?.count }} 次</span
-                >
-              </p></button
-            ><button class="start-button" :aria-label="'开始' + item.title" @click="begin(item)">
-              <Icon name="play" :size="15" /><span>开始</span>
+      <div
+        :id="'theme-items-' + theme.id"
+        class="theme-items"
+        :class="{ collapsed: theme.collapsed }"
+        :inert="theme.collapsed"
+        :aria-hidden="theme.collapsed"
+      >
+        <div class="theme-items-inner">
+          <div class="item-list">
+            <article
+              v-for="item in app.items.filter((i) => i.themeId === theme.id)"
+              :key="item.id"
+              class="task-card"
+            >
+              <button
+                class="task-text"
+                :aria-label="'编辑待办' + item.title"
+                @click="openItem(theme.id, item)"
+              >
+                <h3>{{ item.title }}</h3>
+                <p>
+                  {{ item.mode === 'stopwatch' ? '正计时' : '倒计时 · ' + item.minutes + ' 分钟'
+                  }}<span v-if="itemStats.get(item.id)?.count">
+                    · 今日 {{ itemStats.get(item.id)?.count }} 次，{{
+                      duration(itemStats.get(item.id)!.totalMs)
+                    }}</span
+                  >
+                </p></button
+              ><button class="start-button" :aria-label="'开始' + item.title" @click="begin(item)">
+                <span class="start-icon"><Icon name="play" :size="14" /></span>
+              </button>
+            </article>
+            <button
+              v-if="!app.items.some((i) => i.themeId === theme.id)"
+              class="add-first"
+              @click="openItem(theme.id)"
+            >
+              <Icon name="plus" :size="16" />添加第一个待办
             </button>
           </div>
-          <div v-if="itemStats.get(item.id)?.totalMs" class="task-bottom">
-            <span>今日已专注 {{ duration(itemStats.get(item.id)!.totalMs) }}</span
-            ><button :aria-label="'编辑' + item.title" @click="openItem(theme.id, item)">
-              <Icon name="more" :size="17" />
-            </button>
-          </div>
-        </article>
-        <button
-          v-if="!app.items.some((i) => i.themeId === theme.id)"
-          class="add-first"
-          @click="openItem(theme.id)"
-        >
-          <Icon name="plus" :size="16" />添加第一个待办
-        </button>
+        </div>
       </div>
     </section>
     <div v-if="!app.themes.length" class="empty task-empty">
@@ -211,7 +223,7 @@ function toggleTheme(theme: Theme) {
     </button>
     <p class="footer-note">待办一直都在，按自己的节奏来。</p>
     <Sheet
-      v-if="sheet === 'theme'"
+      :open="sheet === 'theme'"
       :title="app.themes.some((t) => t.id === themeForm.id) ? '编辑主题' : '新建主题'"
       @close="sheet = null"
       ><form
@@ -225,7 +237,6 @@ function toggleTheme(theme: Theme) {
             placeholder="例如：英语、数学、阅读"
             maxlength="80"
             required
-            autofocus
         /></label>
         <fieldset>
           <legend>主题颜色</legend>
@@ -276,7 +287,7 @@ function toggleTheme(theme: Theme) {
       </form></Sheet
     >
     <Sheet
-      v-if="sheet === 'item'"
+      :open="sheet === 'item'"
       :title="app.items.some((i) => i.id === itemForm.id) ? '编辑待办' : '新建待办'"
       @close="sheet = null"
       ><form
@@ -295,8 +306,7 @@ function toggleTheme(theme: Theme) {
             v-model="itemForm.title"
             placeholder="例如：背单词"
             maxlength="120"
-            required
-            autofocus /></label
+            required /></label
         ><label
           >所属主题<select v-model="itemForm.themeId">
             <option v-for="theme in app.themes" :key="theme.id" :value="theme.id">
@@ -380,7 +390,7 @@ function toggleTheme(theme: Theme) {
         </button>
       </form></Sheet
     >
-    <Sheet v-if="sheet === 'free'" title="自由专注" @close="sheet = null"
+    <Sheet :open="sheet === 'free'" title="自由专注" @close="sheet = null"
       ><form
         @submit.prevent="
           execute(async () => {
@@ -431,7 +441,7 @@ function toggleTheme(theme: Theme) {
         </button>
       </form></Sheet
     >
-    <Sheet v-if="sheet === 'removeTheme'" title="删除主题" @close="sheet = null"
+    <Sheet :open="sheet === 'removeTheme'" title="删除主题" @close="sheet = null"
       ><form @submit.prevent="execute(() => app.removeTheme(themeForm.id, moveTo || null))">
         <p>删除“{{ themeForm.name }}”后，历史专注记录仍会保留。</p>
         <label
@@ -467,60 +477,95 @@ function toggleTheme(theme: Theme) {
   margin-left: 4px;
 }
 .theme-section {
-  margin-bottom: 26px;
+  margin-bottom: 18px;
 }
 .theme-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 13px;
+  min-height: 48px;
+  gap: 4px;
 }
 .theme-title {
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 44px;
-  padding: 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 4px;
+  text-align: left;
+  border-radius: 10px;
+  transition: background-color 120ms ease;
 }
 .theme-title h2 {
-  font-size: 19px;
-}
-.theme-title svg {
-  color: #96969a;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 650;
 }
 .theme-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
   border-radius: 50%;
 }
 .theme-actions {
   gap: 0;
-  color: #919196;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.theme-actions .icon-button {
+  transition: background-color 120ms ease;
+}
+.theme-toggle svg {
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+.theme-toggle.collapsed svg {
+  transform: rotate(-90deg);
+}
+.theme-items {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 180ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 140ms ease;
+}
+.theme-items.collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.theme-items-inner {
+  min-height: 0;
+  overflow: hidden;
 }
 .item-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  padding-top: 6px;
 }
 .task-card {
-  border-radius: 20px;
-  background: var(--surface);
-  padding: 18px 18px 15px;
-}
-.task-main {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: stretch;
+  min-height: 64px;
+  border-radius: 14px;
+  background: var(--surface);
 }
 .task-text {
   min-width: 0;
   flex: 1;
   text-align: left;
-  padding: 2px 0;
-  min-height: 48px;
+  padding: 10px 0 10px 14px;
+  min-height: 64px;
+  border-radius: 14px 0 0 14px;
+  transition: background-color 120ms ease;
 }
 .task-text h3 {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -528,42 +573,45 @@ function toggleTheme(theme: Theme) {
 .task-text p {
   font-size: 12px;
   color: var(--muted);
-  margin-top: 8px;
+  margin-top: 3px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .start-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  border-radius: 100px;
+  width: 56px;
+  flex-shrink: 0;
+  min-height: 48px;
+  padding: 8px;
+  border-radius: 0 14px 14px 0;
+  transition: opacity 120ms ease;
+}
+.start-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   color: white;
   background: var(--ink);
-  font-size: 12px;
-  min-width: 74px;
-  min-height: 42px;
-  padding: 10px 13px;
 }
 .start-button svg {
   fill: currentColor;
+  margin-left: 1px;
 }
-.task-bottom {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: var(--muted);
-  font-size: 11px;
-  margin-top: 10px;
-  padding-top: 9px;
-  border-top: 1px solid #e9e9e9;
+.theme-title:active,
+.theme-actions .icon-button:active {
+  opacity: 1;
+  background: var(--surface);
 }
-.task-bottom button {
-  display: grid;
-  place-items: center;
-  min-width: 32px;
-  min-height: 28px;
+.task-text:active {
+  opacity: 1;
+  background: var(--line);
 }
 .add-first {
-  min-height: 58px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -571,7 +619,7 @@ function toggleTheme(theme: Theme) {
   color: var(--muted);
   font-size: 13px;
   border: 1px dashed #ddd;
-  border-radius: 16px;
+  border-radius: 14px;
   width: 100%;
 }
 .add-theme {

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 9,
+    "versionName": "0.2.3",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.3/xiaomao-focus-0.2.3-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.3/xiaomao-focus-0.2.3-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.3-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.3/xiaomao-focus-0.2.3-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.3-debug.apk"
+    ],
+    "size": 5358719,
+    "sha256": "93ce9011ac503da4fd37cdf16c3315259c5fe3a709ba49494e7aec7ead73698b",
+    "notes": "新增专注后的五分钟休息：正常结束自动休息，提前结束可手动开始；支持退出确认和再次专注，休息不计入专注统计。调整待办布局、主题折叠及弹窗动效，保留原有数据和下载备用线路。本次按用户要求未运行测试或设备验收。"
+  }
+}

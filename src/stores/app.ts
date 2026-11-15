@@ -6,19 +6,21 @@ import type {
   Theme,
   ActiveFocus,
   FocusSnapshot,
+  RestSnapshot,
   CalendarEvent,
   Semester,
   Course,
   Occurrence,
 } from '../domain/model'
 import { emptyData, uid } from '../domain/model'
-import { focusDriver, repository, syncReminders } from '../platform/bridge'
+import { focusDriver, restDriver, repository, syncReminders } from '../platform/bridge'
 import { validateEvent } from '../domain/calendar'
 import { dateKey, weekday } from '../domain/dates'
 
 export const useApp = defineStore('app', () => {
   const data = shallowRef<AppData>(emptyData()),
     focus = shallowRef<FocusSnapshot>({ session: null, elapsedMs: 0 }),
+    rest = shallowRef<RestSnapshot>({ session: null, remainingMs: 0 }),
     ready = ref(false),
     error = ref(''),
     toast = ref('')
@@ -34,6 +36,19 @@ export const useApp = defineStore('app', () => {
     timerHandle: ReturnType<typeof setInterval> | undefined,
     toastHandle: ReturnType<typeof setTimeout>,
     ticking = false
+  let sessionQueue: Promise<unknown> = Promise.resolve()
+  function sessionOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const pending = sessionQueue.catch(() => {}).then(operation)
+    sessionQueue = pending
+    return pending
+  }
+  async function refreshRest() {
+    const before = rest.value.session
+    rest.value = await restDriver.read()
+    if (rest.value.session) lastResult.value = rest.value.session.record
+    if (before?.state === 'running' && rest.value.session?.state === 'completed')
+      notify('休息结束，准备好再开始')
+  }
   function notify(message: string) {
     toast.value = message
     clearTimeout(toastHandle)
@@ -74,7 +89,10 @@ export const useApp = defineStore('app', () => {
     if (ticking) return
     ticking = true
     try {
-      await acceptSnapshot(await focusDriver.action('read'))
+      await sessionOperation(async () => {
+        await acceptSnapshot(await focusDriver.action('read'))
+        await refreshRest()
+      })
     } catch (e) {
       error.value = String(e)
     } finally {
@@ -103,36 +121,56 @@ export const useApp = defineStore('app', () => {
     mode = item?.mode || 'countdown',
     minutes = item?.minutes || data.value.preferences.defaultMinutes,
   ) {
-    if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
-    if (focus.value.session) throw new Error('已有一条未结束的专注，请先返回或结束它')
-    if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes))
-      throw new Error('请填写正整数分钟')
-    const theme = data.value.themes.find((t) => t.id === item?.themeId),
-      now = Date.now()
-    const session: ActiveFocus = {
-      id: uid(),
-      itemId: item?.id || null,
-      themeId: theme?.id || null,
-      title: item?.title || '自由专注',
-      themeName: theme?.name || '自由专注',
-      color: theme?.color || '#222222',
-      mode,
-      targetMs: minutes * 60000,
-      startedAt: now,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      state: 'running',
-      elapsedMs: 0,
-      pausedMs: 0,
-      anchorMono: now,
-      anchorEpoch: now,
-      bootId: 0,
-      segments: [],
-    }
-    lastResult.value = undefined
-    await acceptSnapshot(await focusDriver.start(session))
+    return sessionOperation(async () => {
+      if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
+      if (focus.value.session) throw new Error('已有一条未结束的专注，请先返回或结束它')
+      await refreshRest()
+      if (rest.value.session?.state === 'running') throw new Error('请先退出休息，再开始新的专注')
+      if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes))
+        throw new Error('请填写正整数分钟')
+      const theme = data.value.themes.find((t) => t.id === item?.themeId),
+        now = Date.now()
+      const session: ActiveFocus = {
+        id: uid(),
+        itemId: item?.id || null,
+        themeId: theme?.id || null,
+        title: item?.title || '自由专注',
+        themeName: theme?.name || '自由专注',
+        color: theme?.color || '#222222',
+        mode,
+        targetMs: minutes * 60000,
+        startedAt: now,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        state: 'running',
+        elapsedMs: 0,
+        pausedMs: 0,
+        anchorMono: now,
+        anchorEpoch: now,
+        bootId: 0,
+        segments: [],
+      }
+      lastResult.value = undefined
+      await acceptSnapshot(await focusDriver.start(session))
+      rest.value = { session: null, remainingMs: 0 }
+    })
   }
   async function action(action: 'pause' | 'resume' | 'finish') {
-    await acceptSnapshot(await focusDriver.action(action))
+    return sessionOperation(async () => {
+      await acceptSnapshot(await focusDriver.action(action))
+      await refreshRest()
+    })
+  }
+  async function startRest() {
+    return sessionOperation(async () => {
+      if (focus.value.session) throw new Error('请先结束当前专注')
+      if (!lastResult.value) throw new Error('没有可用于休息的专注记录')
+      rest.value = await restDriver.start(lastResult.value)
+    })
+  }
+  async function exitRest() {
+    return sessionOperation(async () => {
+      rest.value = await restDriver.exit()
+    })
   }
   async function saveTheme(theme: Theme) {
     if (!theme.name.trim()) throw new Error('请填写主题名称')
@@ -314,6 +352,7 @@ export const useApp = defineStore('app', () => {
     data.value = restored
     await syncReminders()
     lastResult.value = undefined
+    rest.value = { session: null, remainingMs: 0 }
     notify('备份已恢复')
   }
   function itemRecordsToday(id: string) {
@@ -325,6 +364,7 @@ export const useApp = defineStore('app', () => {
   return {
     data,
     focus,
+    rest,
     ready,
     error,
     toast,
@@ -335,6 +375,8 @@ export const useApp = defineStore('app', () => {
     tick,
     start,
     action,
+    startRest,
+    exitRest,
     mutate,
     notify,
     saveTheme,

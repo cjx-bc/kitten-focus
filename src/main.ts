@@ -13,6 +13,7 @@ const router = createRouter({
     { path: '/statistics', component: () => import('./views/StatisticsView.vue') },
     { path: '/settings', component: () => import('./views/SettingsView.vue') },
     { path: '/focus', component: () => import('./views/FocusView.vue') },
+    { path: '/rest', component: () => import('./views/RestView.vue') },
   ],
 })
 createApp(App).use(createPinia()).use(router).mount('#app')

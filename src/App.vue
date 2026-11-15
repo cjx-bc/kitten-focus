@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App as CapacitorApp } from '@capacitor/app'
 import { native } from './platform/bridge'
@@ -11,7 +11,10 @@ const app = useApp(),
   updates = useUpdates(),
   route = useRoute(),
   router = useRouter(),
-  full = computed(() => route.path === '/focus')
+  full = computed(() => route.path === '/focus' || route.path === '/rest')
+watch([() => app.ready, () => app.rest.session?.record.id], ([ready, id]) => {
+  if (ready && id && route.path !== '/rest') void router.replace('/rest')
+})
 const tabs = [
   { path: '/tasks', label: '待办', icon: 'tasks' },
   { path: '/calendar', label: '日历', icon: 'calendar' },
@@ -37,11 +40,12 @@ onMounted(async () => {
       }
     })
     await CapacitorApp.addListener('backButton', () => {
-      if (route.path === '/focus') void router.replace('/tasks')
-      else if (document.querySelector('dialog[open]'))
+      if (document.querySelector('dialog[open]'))
         (document.querySelector('dialog[open]') as HTMLDialogElement).dispatchEvent(
           new Event('cancel'),
         )
+      else if (route.path === '/rest') document.dispatchEvent(new Event('rest-exit-request'))
+      else if (route.path === '/focus') void router.replace('/tasks')
       else if (route.path !== '/tasks') void router.replace('/tasks')
       else void CapacitorApp.minimizeApp()
     })

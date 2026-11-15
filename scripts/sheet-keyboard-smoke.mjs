@@ -191,6 +191,7 @@ try {
     () => evaluate('document.querySelector("dialog[open] h2")?.textContent === "编辑待办"'),
     'edit item dialog',
   )
+  await evaluate(`(()=>{if(!document.querySelector('dialog[open] input[type=number]'))[...document.querySelectorAll('dialog[open] button')].find(e=>e.textContent.trim()==='倒计时').click()})()`)
   await hideKeyboard()
   await evaluate(
     'document.activeElement?.blur(); document.querySelector("dialog[open]").scrollTop=0',

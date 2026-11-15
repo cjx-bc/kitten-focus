@@ -256,9 +256,9 @@ try {
   )
   assert.equal(state.release.versionCode, targetCode)
   assert.equal(state.currentCode, baseCode)
-  assert(
-    await evaluate("!!document.querySelector('.nav-update-dot')"),
-    'Daily check should only add a badge',
+  await until(
+    () => evaluate("!!document.querySelector('.nav-update-dot')"),
+    'daily check badge after UI state refresh',
   )
 
   const active = {

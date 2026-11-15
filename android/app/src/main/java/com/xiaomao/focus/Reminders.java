@@ -27,6 +27,20 @@ import java.util.Set;
 
 final class Reminders {
     static final int FOCUS_ID=40;static final String FOCUS_ACTION="com.xiaomao.focus.FOCUS_DUE";
+    static final int REST_ID=43;
+    static final String REST_ACTION="com.xiaomao.focus.REST_DUE";
+    private static PendingIntent restIntent(Context c){return PendingIntent.getBroadcast(c,REST_ID,new Intent(c,ReminderReceiver.class).setAction(REST_ACTION),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    static void scheduleRest(Context c,long due){schedule(c,AlarmManager.ELAPSED_REALTIME_WAKEUP,due,restIntent(c));}
+    static void cancelRest(Context c){c.getSystemService(AlarmManager.class).cancel(restIntent(c));NotificationManagerCompat.from(c).cancel(REST_ID);}
+    static void showRestFinished(Context c){
+        if(!notificationsAllowed(c))return;
+        boolean sound=true,vibration=true;
+        try{JSONObject data=LocalStore.get(c).read("data");if(data!=null){JSONObject preferences=data.optJSONObject("preferences");if(preferences!=null){sound=preferences.optBoolean("sound",true);vibration=preferences.optBoolean("vibration",true);}}}catch(Exception ignored){}
+        String id="rest-done-"+sound+"-"+vibration;
+        channel(c,id,"休息结束提醒",sound,vibration,false);
+        NotificationManagerCompat.from(c).notify(REST_ID,builder(c,id).setContentTitle("休息结束，准备好再开始")
+            .setContentText("下一段专注，由你自己开始。").setAutoCancel(true).build());
+    }
     static boolean notificationsAllowed(Context c){return Build.VERSION.SDK_INT<33||ContextCompat.checkSelfPermission(c,Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED;}
     static boolean exactAllowed(Context c){return Build.VERSION.SDK_INT<31||c.getSystemService(AlarmManager.class).canScheduleExactAlarms();}
     private static PendingIntent focusIntent(Context c){return PendingIntent.getBroadcast(c,FOCUS_ID,new Intent(c,ReminderReceiver.class).setAction(FOCUS_ACTION),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}

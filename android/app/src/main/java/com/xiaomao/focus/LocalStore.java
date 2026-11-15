@@ -26,13 +26,14 @@ final class LocalStore extends SQLiteOpenHelper {
     private void upsertRecord(JSONObject record) { ContentValues row=new ContentValues();row.put("id",record.optString("id"));row.put("value",record.toString());getWritableDatabase().insertWithOnConflict("focus_records",null,row,SQLiteDatabase.CONFLICT_REPLACE); }
     synchronized void saveData(JSONObject data, boolean replace) throws JSONException {
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{
-            if(replace){db.delete("focus_records",null,null);write("active",null);write("lastFinished",null);}
+            if(replace){db.delete("focus_records",null,null);write("active",null);write("lastFinished",null);write("rest",null);}
             JSONArray records=data.optJSONArray("records");if(records!=null)for(int i=0;i<records.length();i++)upsertRecord(records.getJSONObject(i));
             JSONArray deleted=data.optJSONArray("deletedRecordIds");if(deleted!=null)for(int i=0;i<deleted.length();i++)db.delete("focus_records","id=?",new String[]{deleted.getString(i)});
             write("data",data);db.setTransactionSuccessful();
         }finally{db.endTransaction();}
     }
-    synchronized void finish(JSONObject record) {SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{if(record!=null&&record.optLong("durationMs")>0){upsertRecord(record);write("lastFinished",record);}write("active",null);db.setTransactionSuccessful();}finally{db.endTransaction();}}
+    synchronized void finish(JSONObject record) { finish(record, null); }
+    synchronized void finish(JSONObject record, JSONObject rest) {SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{if(record!=null&&record.optLong("durationMs")>0){upsertRecord(record);write("lastFinished",record);}write("active",null);write("rest",rest);db.setTransactionSuccessful();}finally{db.endTransaction();}}
 
     synchronized JSONObject snapshot() throws JSONException {
         SQLiteDatabase db = getWritableDatabase();
@@ -72,7 +73,7 @@ final class LocalStore extends SQLiteOpenHelper {
             keys = documents.keys();
             while (keys.hasNext()) {
                 String key = keys.next();
-                if (!key.equals("active") && !key.equals("lastFinished")) write(key, documents.getJSONObject(key));
+                if (!key.equals("active") && !key.equals("lastFinished") && !key.equals("rest")) write(key, documents.getJSONObject(key));
             }
             for (int i = 0; i < records.length(); i++) upsertRecord(records.getJSONObject(i));
             db.setTransactionSuccessful();

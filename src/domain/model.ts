@@ -62,6 +62,16 @@ export interface FocusSnapshot {
   elapsedMs: number
   record?: FocusRecord
 }
+export interface RestSession {
+  record: FocusRecord
+  startedAt: number
+  endsAt: number
+  state: 'running' | 'completed'
+}
+export interface RestSnapshot {
+  session: RestSession | null
+  remainingMs: number
+}
 export interface CalendarEvent {
   id: string
   title: string
