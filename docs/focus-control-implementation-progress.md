@@ -24,7 +24,9 @@ T01 源码提交 `19b3a7d`，合入提交 `65ed4bc`。只读观察不结算、�
 
 T02 合入提交 `6c42dcb`。API35 普通 listener 对已暂缓的原 key 再调用公开 `snoozeNotification(key, 1L)`，五轮在 208—240ms 恢复，原包、key、PendingIntent 及真实通知栏点击保持；不存在通用公开 unsnooze 方法不代表本设备无法通过重新暂缓改期。该路线仍需产品级批量释放、正计时及更多 API/OEM 验证。探针的两包均已卸载，监听授权恢复原始 null，详见 notification probe 的 RESULTS。
 
-当前并行任务：T04 / #5 普通学霸模式、T05 / #6 严格倒计时、T13 / #14 声音辅助。T03 完整壁纸矩阵不因仅门禁通过被关闭为成功。
+T04 / #5、T05 / #6 已完成本轮 API36 验收并关闭：普通学霸模式实际验证允许 Chrome、拦截 Settings 并显示当前事项、暂停仍限制、结束和休息解除；严格模式实际验证开始确认/取消、原生拒绝各提前操作、Android 返回/通知返回 intent/重载/进程重进保持同轮、一分钟自然到期只记一次并进入五分钟休息、正计时仍可暂停结束。运行器分别为 `scripts/study-mode-device-smoke.mjs` 和 `scripts/strict-mode-device-smoke.mjs`，证据在本机忽略目录 `artifacts/focus-control/api36/{study-device,strict-device}`。通知返回 intent 已执行，不将其描述成实际通知栏点击或声音验收。
+
+T08 恢复控制和 T13 声音辅助已分别合入 `537b7f3`、`5c83f65`；共享恢复确认可逐项撤销应用限制和本应用声音规则，保留严格计时与偏好，合并后的原生四组恢复及六组声音测试仍须设备复跑。当前 T06 独立白名单、T07 临时放行及 T11 通知拦截并行实现。T06 的“卸载包仍可编辑”新用例在 API36 已实测失败后修复，等待最终绿色；T07 首组限时、单目标、幂等、暂停和重建原生测试已在 API36 通过。T03 完整壁纸矩阵不因仅门禁通过被关闭为成功。
 
 恢复执行时：T04/T05 源码已合入集成分支，API36 设备复验排队；T06 独立白名单、T08 故障恢复、T13 声音辅助分别在既有工作区由新子 agent 继续。新 API36 镜像实际能解析 `com.android.wallpaper.livepicker/.LiveWallpaperChange`，此前 MuMu 缺选择器的限制不能直接套用，壁纸探针可在新机重新验证。
 
