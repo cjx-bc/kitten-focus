@@ -158,6 +158,35 @@ public class FocusNotificationTest {
         assertEquals(Long.valueOf(1), system.requests.get("paused-new"));
         assertEquals("rest", control.observeControl().getString("owner"));
     }
+    @Test public void failedReleaseIsDurableRetryableAndRequestsAreNotVerifiedSuccess() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("release-failure", "other.app", false));
+        system.failRelease = true;
+        JSONObject preview = control.previewRecovery();
+        JSONObject result = control.confirmRecovery(preview.getString("revision"));
+        assertEquals("failed", result.getJSONArray("steps").getJSONObject(0).getString("status"));
+        assertEquals(1, control.getNotificationStatus().getInt("releaseFailedCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        system.failRelease = false;
+        control = new FocusControl(context, store, clock, system);
+        preview = control.previewRecovery(); result = control.confirmRecovery(preview.getString("revision"));
+        assertTrue(result.getBoolean("pending"));
+        assertEquals(1, control.getNotificationStatus().getInt("releaseRequestedCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("releaseFailedCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        system.active.addAll(system.snoozed); system.snoozed.clear(); control.synchronizeNotifications();
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+        assertEquals("notice-round", control.observeControl().getJSONObject("focus").getJSONObject("session").getString("id"));
+    }
+    @Test public void originalClickAfterHoldVerifiesConsumedOriginalWithoutAPostedSnapshot() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("clicked", "other.app", false));
+        now += 60000; system.snoozed.clear();
+        control.notificationRemoved("clicked", false, true);
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+    }
     @Test public void postedUpdateWhileSnoozedIsNotReportedAsRestoredAndEarlySurfaceIsHeldToOriginalDeadline() throws Exception {
         control.startFocus(session(), true);
         control.notificationPosted(notice("updated", "other.app", false));
@@ -171,7 +200,7 @@ public class FocusNotificationTest {
         assertEquals(1, system.snoozed.size());
         assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
     }
-    @Test public void independentLockReportsPendingNotificationLifecycleAndRetainsOwner() throws Exception {
+    @Test public void independentLockHoldsAndReleasesOriginalOnConfirmedCancellation() throws Exception {
         JSONObject data = control.loadData();
         data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "lock-notifications")
             .put("name", "锁机通知边界").put("minutes", 1).put("whitelist", new JSONObject().put("source", "global"))));
@@ -182,10 +211,10 @@ public class FocusNotificationTest {
         control.startLock("lock-notifications");
         assertEquals("lock", control.observeControl().getString("owner"));
         assertTrue(control.getNotificationStatus().getBoolean("requested"));
-        assertEquals("lifecycle_pending", control.getNotificationStatus().getString("phase"));
-        assertFalse(control.getNotificationStatus().getBoolean("active"));
+        assertEquals("ready", control.getNotificationStatus().getString("phase"));
+        assertTrue(control.getNotificationStatus().getBoolean("active"));
         control.notificationPosted(notice("during-lock", "other.app", false));
-        assertTrue(system.requests.isEmpty());
+        assertEquals(Long.valueOf(60000), system.requests.get("during-lock"));
         JSONObject edited = control.loadData();
         edited.getJSONObject("preferences").getJSONObject("protection").put("interceptNotifications", false);
         store.saveData(edited, false);
@@ -193,6 +222,10 @@ public class FocusNotificationTest {
         assertTrue("This round keeps its notification preference snapshot", control.getNotificationStatus().getBoolean("requested"));
         control.lockAction("finish", true);
         assertFalse(control.getNotificationStatus().getBoolean("requested"));
+        assertTrue(control.getNotificationStatus().getBoolean("recoveryPending"));
+        assertEquals(Long.valueOf(1), system.requests.get("during-lock"));
+        system.active.addAll(system.snoozed); system.snoozed.clear(); control.synchronizeNotifications();
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
         assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
         assertTrue(control.observeControl().isNull("owner"));
         assertEquals(0, control.loadData().getJSONArray("records").length());
@@ -227,7 +260,7 @@ public class FocusNotificationTest {
         assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
     }
     static final class FakeNotifications implements NotificationSystem {
-        boolean granted = true, connected = true; int calls;
+        boolean granted = true, connected = true, failRelease; int calls;
         final Map<String, Long> requests = new LinkedHashMap<>();
         final List<Notice> active = new ArrayList<>(), snoozed = new ArrayList<>();
         public boolean supported() { return true; }
@@ -236,6 +269,7 @@ public class FocusNotificationTest {
         public List<Notice> active() { return new ArrayList<>(active); }
         public List<Notice> snoozed() { return new ArrayList<>(snoozed); }
         public void snooze(String key, long ms) {
+            if (ms == 1 && failRelease) throw new SecurityException("Synthetic OS failure");
             calls++; requests.put(key, ms);
             Notice value = active.stream().filter(n -> n.key.equals(key)).findFirst().orElse(new Notice(key, "other.app", 10001, "", false));
             active.removeIf(n -> n.key.equals(key)); snoozed.removeIf(n -> n.key.equals(key)); snoozed.add(value);

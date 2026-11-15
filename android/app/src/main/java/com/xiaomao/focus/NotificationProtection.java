@@ -137,11 +137,12 @@ final class NotificationProtection {
             save(journal.put("error", error.getClass().getSimpleName()));
         }
     }
-    void removed(String key, boolean snoozed) throws JSONException {
+    void removed(String key, boolean snoozed, boolean clicked) throws JSONException {
         JSONObject journal = read(); JSONObject saved = entry(journal, key);
         // Later consumption cannot undo a restoration already verified from Android.
         if (saved == null || !pending(saved)) return;
-        if (snoozed) saved.put("observedHeld", true).put("phase", "snoozed");
+        if (clicked && saved.optBoolean("observedHeld")) saved.put("phase", "restored").put("observedMono", clock.mono());
+        else if (snoozed) saved.put("observedHeld", true).put("phase", "snoozed");
         else saved.put("phase", "removed");
         save(journal);
     }
@@ -183,12 +184,12 @@ final class NotificationProtection {
         JSONArray entries = journal.getJSONArray("entries");
         for (int i = 0; i < entries.length(); i++) {
             JSONObject saved = entries.getJSONObject(i);
-            if (!pending(saved) || saved.optBoolean("releaseRequested")) continue;
+            if (!pending(saved) || saved.optBoolean("releaseRequested") && clock.mono() - saved.optLong("releaseRequestMono") < 5000) continue;
             // A returned request is not verified restoration. Keep the original responsibility.
-            saved.put("releaseRequested", true).put("releaseRequestMono", clock.mono()); save(journal);
+            saved.put("releaseRequested", true).put("releaseFailed", false).put("releaseRequestMono", clock.mono()); save(journal);
             try { system.snooze(saved.optString("key"), 1L); }
             catch (RuntimeException error) {
-                saved.put("releaseRequested", false).put("phase", "failed");
+                saved.put("releaseRequested", false).put("releaseFailed", true).put("phase", "failed");
                 journal.put("error", error.getClass().getSimpleName());
             }
             save(journal);
@@ -208,7 +209,7 @@ final class NotificationProtection {
         int pending = pendingCount(journal);
         return new JSONObject().put("sessionId", journal.optString("sessionId")).put("capability", "notificationInterception")
             .put("title", "原应用通知暂缓").put("withdrawn", journal.optBoolean("withdrawn"))
-            .put("status", pending > 0 ? "limited" : controlling ? "active" : "restored")
+            .put("status", pending > 0 ? status.optInt("releaseFailedCount") > 0 ? "failed" : "limited" : controlling ? "active" : "restored")
             .put("reason", pending > 0 ? journal.optBoolean("withdrawn")
                 ? "已停止新拦截，仍保留原通知责任；本版本等待原截止并核实，提前改期释放由后续实现完成，可重试核实"
                 : "撤销会停止新拦截，但尚在系统暂缓的原通知仍需等待原截止并核实；计时和严格约束保留"
@@ -217,10 +218,13 @@ final class NotificationProtection {
     /** No preferences, journal, timer or system writes. */
     JSONObject observe(JSONObject active) throws JSONException {
         JSONObject journal = read(); boolean requested = active != null && active.optBoolean("notificationsRequested");
-        int pending = pendingCount(journal), restored = 0, absent = 0, present = 0, snoozed = 0;
+        int pending = pendingCount(journal), restored = 0, absent = 0, present = 0, snoozed = 0, releaseRequested = 0, releaseFailed = 0;
         JSONArray entries = journal.getJSONArray("entries");
         for (int i = 0; i < entries.length(); i++) {
-            String phase = entries.getJSONObject(i).optString("phase");
+            JSONObject saved = entries.getJSONObject(i);
+            String phase = saved.optString("phase");
+            if (pending(saved) && saved.optBoolean("releaseRequested")) releaseRequested++;
+            if (pending(saved) && saved.optBoolean("releaseFailed")) releaseFailed++;
             if (phase.equals("restored")) restored++;
             if (phase.equals("absent")) absent++;
             if (phase.equals("present")) present++;
@@ -237,7 +241,8 @@ final class NotificationProtection {
             .put("requested", requested).put("phase", phase).put("active", controlling && authorized && connected && error.isEmpty())
             .put("sessionId", journal.optString("sessionId")).put("deadlineEpoch", journal.optLong("deadlineEpoch"))
             .put("pendingCount", pending).put("restoredCount", restored).put("absentCount", absent).put("presentCount", present)
-            .put("snoozedCount", snoozed)
+            .put("snoozedCount", snoozed).put("releaseRequestedCount", releaseRequested).put("releaseFailedCount", releaseFailed)
+            .put("leaseDurationMs", journal.optBoolean("fixedDeadline") ? 0 : LEASE_MS)
             .put("recoveryPending", pending > 0).put("error", error)
             .put("reason", "固定截止严格专注的原通知由 Android 暂缓和恢复；请求返回不等于实际恢复。普通可暂停倒计时、正计时、锁机与提前立即释放仍待后续实现。");
     }

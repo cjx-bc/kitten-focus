@@ -36,7 +36,9 @@ public final class FocusNotificationListener extends NotificationListenerService
     @Override public void onDestroy() { maintenance.removeCallbacks(renewLeases); if (listener == this) listener = null; super.onDestroy(); }
     @Override public void onNotificationPosted(StatusBarNotification sbn) { update(sbn, null, false); }
     @Override public void onNotificationRemoved(StatusBarNotification sbn, RankingMap ranking, int reason) {
-        update(null, sbn.getKey(), reason == REASON_SNOOZED);
+        try { new FocusControl(this).notificationRemoved(sbn.getKey(), reason == REASON_SNOOZED, reason == REASON_CLICK); }
+        catch (Exception error) { getSharedPreferences("catfocus-listener-health", MODE_PRIVATE).edit()
+            .putString("error", error.getClass().getSimpleName()).commit(); }
     }
     private void update(StatusBarNotification posted, String removed, boolean snoozed) {
         try {
