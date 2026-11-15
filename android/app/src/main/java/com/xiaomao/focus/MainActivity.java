@@ -27,4 +27,15 @@ public class MainActivity extends BridgeActivity {
             getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(
                 "window.dispatchEvent(new Event('lock-return-request'))", null));
     }
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus) return;
+        try {
+            // Transient Overview can leave this Activity resumed and omit a second
+            // accessibility state event. Actual window focus is independent OS evidence.
+            new FocusControl(this).navigationWindow(getPackageName(), getClass().getName());
+        } catch (Exception ignored) {
+            // A missing confirmation remains pending/failed; never infer a successful return.
+        }
+    }
 }

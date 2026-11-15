@@ -234,7 +234,10 @@ export const protectionDriver = {
   async status(): Promise<ProtectionStatus> {
     if (native) return plugin.protectionStatus()
     return { supported: false, authorized: false, connected: false, active: false,
-      preferenceEnabled: false, state: 'unsupported', reason: '应用限制仅支持 Android 本机版本', effectiveWhitelist: [], navigation: { supported: false, authorized: false, connected: false, active: false, preferenceEnabled: false, requested: false, state: 'unsupported', reason: 'Android only', lastReturnedAt: null, lastTarget: null } }
+      preferenceEnabled: false, state: 'unsupported', reason: '应用限制仅支持 Android 本机版本', effectiveWhitelist: [],
+      navigation: { supported: false, authorized: false, connected: false, active: false, preferenceEnabled: false,
+        requested: false, state: 'unsupported', reason: '桌面与最近任务限制仅支持 Android 本机无障碍服务',
+        lastReturnedAt: null, lastTarget: null } }
   },
   async apps(): Promise<ProtectionApp[]> {
     return native ? (await plugin.listProtectionApps()).apps : []
