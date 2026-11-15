@@ -51,7 +51,7 @@ function confirm() {
       <div class="app-choices">
         <label v-for="row in filtered" :key="row.packageName" class="app-choice">
           <img v-if="row.icon" :src="row.icon" alt="" width="36" height="36" /><span v-else class="app-icon"><Icon name="tasks" /></span>
-          <span class="app-label">{{ row.name }}<small>{{ row.fixed ? '固定允许' : !row.installed ? '未安装 · 保留选择' : row.system ? '系统应用' : row.packageName }}</small></span>
+          <span class="app-label">{{ row.name }}<small>{{ row.fixed ? `固定允许 · ${row.packageName}` : !row.installed ? `未安装 · 保留选择 · ${row.packageName}` : row.system ? `系统应用 · ${row.packageName}` : row.packageName }}</small></span>
           <input type="checkbox" :checked="row.fixed || selected.includes(row.packageName)" :disabled="row.fixed || saving" @change="select(row, $event)" />
         </label>
         <p v-if="!loading && !filtered.length" class="notice">没有匹配的应用。已选名单仍保留。</p>

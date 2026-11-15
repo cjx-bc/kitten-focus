@@ -52,7 +52,7 @@ array. Original Sheet, Icon, navigation and design tokens remain in use.
 - Host bridge coverage also checks restored inheritance reads the newest global on
   the next start, independent empty lists, a second legacy item, and free focus.
 - Backup coverage accepts legacy items without a list and preserves empty or
-  unavailable custom packages. All 31 host tests passed before the final merge.
+  unavailable custom packages. All 32 host tests passed after merging recovery and DND.
 - Official Android 16 / API 36, `emulator-5580`: coordinator observed the native
   custom-source regression fail (`expected custom, got global`), then pass using
   the public CatFocus bridge. Evidence: root `artifacts/focus-control/api36/t06-red`
@@ -61,8 +61,10 @@ array. Original Sheet, Icon, navigation and design tokens remain in use.
   current snapshot stability, restore-following, independent empty, a second item,
   and free focus. Its final merged execution is tracked by the coordinator.
 - A second native regression covers the public application picker retaining an
-  unavailable package saved only in a custom item. Its red/green results are tracked
-  by the coordinator.
+  unavailable package saved only in a custom item. The coordinator observed its
+  expected missing-row failure on API 36; evidence is
+  `artifacts/focus-control/api36/t06-red-apps`. The final union implementation reads
+  global and all nondeleted custom item package lists.
 - Browser QA used an isolated origin at port 4316 with real persisted data and the
   existing forms. Missing package labels, cancel list, cancel item after confirming
   an empty draft, save empty/reload, and restore following/reload were observed.
@@ -72,11 +74,15 @@ array. Original Sheet, Icon, navigation and design tokens remain in use.
 - TypeScript/Vite and QA Android APK/test APK builds passed. Vite retains the
   existing large statistics chunk warning.
 
-Final edit → start → real allowed/blocked application validation must use the
-coordinator's exclusive official API 36 device lease and matching freshly built
-WebView assets. This document does not count a policy snapshot alone as proof of
-foreground blocking. The target matrix is custom Chrome/global Settings, then
-restore following global and verify the opposite result on the next round.
+`scripts/item-whitelist-device-smoke.mjs` performs edit → save → start through real
+UI controls, then checks the real foreground Chrome/Settings allow/block outcome.
+It also changes global configuration and restores following through the item form,
+checks that the current snapshot stays fixed, checks the opposite outcome next
+round, starts a second legacy item, and saves/starts an empty independent list. It
+uses only the dedicated `.qa` application, the existing public CatFocus bridge and
+the shared explicit-device helper. Use the coordinator's exclusive official API 36
+device lease and matching freshly built WebView assets. Its final execution results
+are recorded by the coordinator; a policy snapshot alone is not proof of blocking.
 Older API versions and OEM/call/emergency cases remain whole-project device
 coverage; no result here claims those environments were exercised.
 
