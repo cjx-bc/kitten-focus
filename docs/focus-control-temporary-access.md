@@ -57,15 +57,28 @@ unchanged by this command.
 - Official API 36 emulator: the first native grant/pause/recreation/expiry test
   passed without skips, recorded by the coordinator under
   `artifacts/focus-control/api36/t07-green-first`.
-- Host suite after merging T08/T13: 29 tests passed; TypeScript/Vite build passed.
+- Host suite after merging T06/T08/T13 and the notification return fix: 33 tests
+  passed; TypeScript/Vite build passed.
   The pre-existing statistics chunk warning remains.
 - QA app and instrumentation APKs assembled with Java 21, SDK 36,
   `--no-daemon --max-workers=2 '-PtestApplicationIdSuffix=.qa'`.
-- The complete native suite additionally covers launch failure, revoked service,
+- The complete native suite covers launch failure, revoked service,
   confirmed replacement, concurrent cap enforcement, idempotent retries, strict
   denial, recovered protection, client-forged runtime and reboot interruption.
-  Its device result and the real external-app picker/open/automatic-reblock smoke
-  are recorded by the integration coordinator separately from compilation.
+  All four tests passed with zero skips on the official API 36 emulator; evidence
+  is under `artifacts/focus-control/api36/t07-complete-native-green`.
+- `scripts/temporary-access-device-smoke.mjs` exercised the actual native dialog:
+  1/3/5 minute choices were visible, Cancel kept the count at zero, and a one-minute
+  grant opened the original Android Settings application. Without another launch
+  or user action, the native block page returned 59,241 milliseconds after the
+  post-open observation (which had 58,997 milliseconds remaining). The count
+  stayed at one used / two remaining and the permanent whitelist was unchanged.
+  Four scenarios passed; PNG, XML and JSON evidence is under
+  `artifacts/focus-control/api36/t07-device`.
+- Visual inspection confirmed the compact timer summary and the native duration
+  dialog. Device cleanup ended the disposable focus/rest and restored the prior
+  accessibility service list and enabled state. The runner guarded `.qa` APKs and
+  explicitly used `emulator-5580`; the original application was not mutated.
 
 API 24/25, alternate launchers and OEM background restrictions remain separate
 device coverage. An authorized service can be disconnected or stopped by Android;
