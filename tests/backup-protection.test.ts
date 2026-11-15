@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest'
+import { reactive } from 'vue'
 import { makeBackup, readBackup } from '../src/domain/backup'
 import { defaultProtection, emptyData } from '../src/domain/model'
 
 describe('public business backup', () => {
+  it('restores the reactive parsed backup shown by the real confirmation sheet', () => {
+    const data = emptyData()
+    data.preferences.protection = {
+      ...defaultProtection(), globalWhitelist: ['org.example.reader'], enhancements: ['recentTasksHidden'],
+    }
+    data.lockConfigurations = [{ id: 'reading', name: '阅读', minutes: 5, whitelist: { source: 'custom', packages: [] } }]
+    const preview = reactive(readBackup(makeBackup(data)))
+    const restored = readBackup(makeBackup(preview.data)).data
+    expect(restored).toEqual(data)
+  })
   it('reads original schema one with safe protection defaults', () => {
     const result = readBackup(
       JSON.stringify({

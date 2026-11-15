@@ -39,7 +39,16 @@ public class LauncherControlTest {
         store = new LocalStore(context, database); recreate();
         control.replaceData(new JSONObject("{\"schemaVersion\":1,\"records\":[],\"deletedRecordIds\":[],\"preferences\":{\"sound\":false,\"vibration\":false}}"));
     }
-    void recreate() { control = new FocusControl(context, store, clock, launcher); }
+    void recreate() {
+        FocusProtection.AccessibilityState available = new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; }
+            public boolean connected() { return true; }
+        };
+        control = new FocusControl(context, store, clock, new FocusRecovery(context, store), available,
+            new AndroidDndSystem(context), new AndroidNotificationSystem(context), pkg -> () -> {},
+            FocusNavigation.android(context, available), new AndroidRecentTasksSystem(context),
+            new AndroidAntiCloseSystem(context, available), launcher);
+    }
     @After public void cleanup() {
         Reminders.cancelFocus(context); Reminders.cancelRest(context); store.close(); context.deleteDatabase(database);
         context.getSharedPreferences("catfocus-launcher-" + database, 0).edit().clear().commit();
@@ -100,7 +109,7 @@ public class LauncherControlTest {
     @Test public void processRecreationRetainsOriginalAndRebootRestoresBeforeNewRound() throws Exception {
         preference(true); launcher.state = 1; control.startFocus(session("stopwatch"));
         recreate(); control.reconcile(); assertEquals(2, launcher.state);
-        clock.time += 1000; control.focusAction("read"); clock.boot++; clock.time = 20;
+        clock.time += 6000; control.focusAction("read"); clock.boot++; clock.time = 20;
         recreate(); control.reconcile(); assertEquals(1, launcher.state); assertTrue(control.observeControl().isNull("owner"));
         assertEquals("interrupted", control.loadData().getJSONArray("records").getJSONObject(0).getString("status"));
     }

@@ -2,6 +2,8 @@
 
 实现日期：2026-11-15。状态：源码就绪；实际最近任务界面和最终原生运行待设备租约释放后验证。此状态不表示 A09 已通过，issue #16 应保持 OPEN。
 
+后续集成复验已完成本任务：七组原生用例在合并的 35 项运行中全部通过；该运行的两项失败属于 LauncherControlTest 的测试前提，未混作本模块通过。真实 `scripts/recent-tasks-device-smoke.mjs` 已通过默认可见、开启隐藏、暂停隐藏、故障恢复后可见、本轮不再隐藏、下一轮再次隐藏、结束及休息恢复。实际 overview PNG/XML 和系统 task dumps 在 `artifacts/focus-control/api36/recent-tasks`，隐藏/恢复截图已目视检查。最初的下一轮步骤被旧 Pinia 测试数据覆盖，已在原生替换数据后重新加载真实 app store，再完整复跑通过；没有放宽产品断言。QA 通知授权和业务数据已恢复。真实重启/OEM 组合仍由 T22/T23 单列。
+
 ## 行为与范围
 
 设置复用原有“提升强制性选项”，独立保存 `preferences.protection.enhancements` 中的 `recentTasksHidden`。开关不立即修改系统，本轮开始时冻结。专注、暂停专注和锁机按同一原生 `FocusControl` 所有权执行；结束、休息和重启中断恢复原状态。
