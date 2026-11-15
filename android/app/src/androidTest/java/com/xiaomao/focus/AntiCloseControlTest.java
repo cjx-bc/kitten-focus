@@ -1,6 +1,11 @@
 package com.xiaomao.focus;
 
 import android.content.Context;
+import android.util.Xml;
+import org.xmlpull.v1.XmlPullParser;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.json.JSONArray;
@@ -21,11 +26,12 @@ public class AntiCloseControlTest {
     }
     class Device implements AntiCloseSystem {
         boolean connected = true, authorized = true, fail, ambiguousLabel; int returns, scans;
+        String label = "小猫专注";
         AntiCloseWindow.Node root;
         public boolean authorized() { return authorized; }
         public boolean connected() { return connected; }
-        public boolean systemSurface(String pkg) { return "com.android.settings".equals(pkg) || "com.android.packageinstaller".equals(pkg); }
-        public String appLabel() { return ambiguousLabel ? "" : "小猫专注"; }
+        public boolean systemSurface(String pkg) { return "com.android.settings".equals(pkg) || "com.android.packageinstaller".equals(pkg) || "com.google.android.packageinstaller".equals(pkg); }
+        public String appLabel() { return ambiguousLabel ? "" : label; }
         public AntiCloseWindow.Node root(String pkg) { scans++; return root; }
         public void returnToFocus() { if (fail) throw new IllegalStateException("OS failure"); returns++; }
         public JSONObject identity() throws Exception { return new JSONObject().put("ordinaryAdmin", false).put("deviceOwner", false).put("profileOwner", false); }
@@ -48,6 +54,61 @@ public class AntiCloseControlTest {
     AntiCloseWindow.Node page(String identity, String action) {
         return new AntiCloseWindow.Node("com.android.settings", "", "", new AntiCloseWindow.Node("com.android.settings", "entity_header_title", identity),
             new AntiCloseWindow.Node("com.android.settings", "", action));
+    }
+    // Captured from the real inactive API36 Settings UI. This replaces only the OS metadata adapter.
+    AntiCloseWindow.Node captured(String name) throws Exception {
+        try (InputStream source = InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("anti-close-api36/" + name + ".xml")) {
+            XmlPullParser xml = Xml.newPullParser(); xml.setInput(source, "UTF-8");
+            while (xml.next() != XmlPullParser.END_DOCUMENT) if (xml.getEventType() == XmlPullParser.START_TAG && "node".equals(xml.getName())) return readNode(xml);
+        }
+        throw new IllegalStateException("Missing system root");
+    }
+    AntiCloseWindow.Node readNode(XmlPullParser xml) throws Exception {
+        String pkg = xml.getAttributeValue(null, "package"), id = xml.getAttributeValue(null, "resource-id"), text = xml.getAttributeValue(null, "text"), role = xml.getAttributeValue(null, "class");
+        if ("com.android.settings:id/collapsing_toolbar".equals(id) && (text == null || text.isEmpty()))
+            text = xml.getAttributeValue(null, "content-desc"); // Known system toolbar title metadata only.
+        List<AntiCloseWindow.Node> children = new ArrayList<>(); int depth = xml.getDepth();
+        while (xml.next() != XmlPullParser.END_DOCUMENT) {
+            if (xml.getEventType() == XmlPullParser.END_TAG && xml.getDepth() == depth) break;
+            if (xml.getEventType() == XmlPullParser.START_TAG && "node".equals(xml.getName())) children.add(readNode(xml));
+        }
+        return new AntiCloseWindow.Node(pkg, id, text, role, children.toArray(new AntiCloseWindow.Node[0]));
+    }
+    @Test public void api36OwnComposeAppInfoReturnsButOtherAppAndLabelCollisionStayAllowed() throws Exception {
+        start(); device.label = "Another app"; device.root = captured("own-app-info");
+        assertFalse(control.antiCloseWindow("com.android.settings", "com.android.settings.spa.SpaActivity"));
+        device.label = "小猫专注 QA"; device.ambiguousLabel = true;
+        assertFalse(control.antiCloseWindow("com.android.settings", "com.android.settings.spa.SpaActivity"));
+        device.ambiguousLabel = false;
+        assertTrue(control.antiCloseWindow("com.android.settings", "com.android.settings.spa.SpaActivity"));
+        assertEquals("own-app-info", control.observeControl().getJSONObject("antiClose").getString("lastTarget"));
+        assertFalse(control.observeControl().getJSONObject("antiClose").getBoolean("active"));
+        control.antiCloseWindow(context.getPackageName(), "com.xiaomao.focus.MainActivity");
+        assertTrue(control.observeControl().getJSONObject("antiClose").getBoolean("active"));
+    }
+    @Test public void api36OwnUninstallQuestionReturnsButOtherInstallerTargetStaysAllowed() throws Exception {
+        start(); device.label = "Another app"; device.root = captured("own-uninstall");
+        assertFalse(control.antiCloseWindow("com.google.android.packageinstaller", "com.android.packageinstaller.UninstallerActivity"));
+        device.label = "小猫专注 QA"; device.ambiguousLabel = true;
+        assertFalse(control.antiCloseWindow("com.google.android.packageinstaller", "com.android.packageinstaller.UninstallerActivity"));
+        device.ambiguousLabel = false;
+        assertTrue(control.antiCloseWindow("com.google.android.packageinstaller", "com.android.packageinstaller.UninstallerActivity"));
+        assertEquals("own-uninstall", control.observeControl().getJSONObject("antiClose").getString("lastTarget"));
+        assertFalse(control.observeControl().getJSONObject("antiClose").getBoolean("active"));
+        control.antiCloseWindow(context.getPackageName(), "com.xiaomao.focus.MainActivity");
+        assertTrue(control.observeControl().getJSONObject("antiClose").getBoolean("active"));
+    }
+    @Test public void api36OwnAccessibilityToolbarAndMainSwitchReturnWithinBoundedScan() throws Exception {
+        start(); device.root = captured("own-accessibility"); device.label = "Another service";
+        assertFalse(control.antiCloseWindow("com.android.settings", "com.android.settings.SubSettings"));
+        device.label = "小猫专注 QA"; device.ambiguousLabel = true;
+        assertFalse(control.antiCloseWindow("com.android.settings", "com.android.settings.SubSettings"));
+        device.ambiguousLabel = false;
+        assertTrue(control.antiCloseWindow("com.android.settings", "com.android.settings.SubSettings"));
+        assertEquals("own-accessibility", control.observeControl().getJSONObject("antiClose").getString("lastTarget"));
+        assertFalse(control.observeControl().getJSONObject("antiClose").getBoolean("active"));
+        control.antiCloseWindow(context.getPackageName(), "com.xiaomao.focus.MainActivity");
+        assertTrue(control.observeControl().getJSONObject("antiClose").getBoolean("active"));
     }
     @After public void cleanup() { if (store != null) { String name = store.getDatabaseName(); store.close(); context.deleteDatabase(name); } }
     @Test public void blocksOnlyOwnAppActionsAndDeduplicatesRealReturnEvidence() throws Exception {
