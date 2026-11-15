@@ -5,6 +5,10 @@ import android.app.WallpaperManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.os.Build;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -91,7 +95,68 @@ public final class ProbeEnvironment implements ProbeSession.Platform, ProbeSessi
         return new ProbeSession.Baseline(original, home, lock, note.toString());
     }
 
+    public boolean fixtureUserAllowed() {
+        return !context.getSystemService(android.os.UserManager.class).isSystemUser();
+    }
+
+    /** Explicit test fixture only; refuses to erase an unresolved experiment unless this is a later user choice. */
+    public void installStaticFixture(boolean lockOnly, boolean laterChoice) throws Exception {
+        if (!fixtureUserAllowed()) throw new IllegalStateException("Test fixture writes are blocked for Android system user 0.");
+        if (session().snapshot().unresolved && !laterChoice)
+            throw new IllegalStateException("Resolve the previous experiment first.");
+        int which = lockOnly ? WallpaperManager.FLAG_LOCK : WallpaperManager.FLAG_SYSTEM;
+        String fileName = lockOnly ? "fixture-lock.png" : laterChoice ? "fixture-later-home.png" : "fixture-home.png";
+        File source = new File(directory, fileName);
+        Bitmap image = Bitmap.createBitmap(540, 960, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(image);
+        canvas.drawColor(lockOnly ? Color.rgb(95, 51, 42) : laterChoice ? Color.rgb(38, 79, 112) : Color.rgb(34, 85, 67));
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.WHITE);
+        paint.setTextSize(30);
+        canvas.drawText(lockOnly ? "LATER LOCK FIXTURE" : laterChoice ? "LATER HOME FIXTURE" : "STATIC ORIGINAL FIXTURE", 30, 430, paint);
+        paint.setTextSize(20);
+        canvas.drawText("Known source saved before wallpaper write", 30, 475, paint);
+        try (FileOutputStream out = new FileOutputStream(source)) {
+            if (!image.compress(Bitmap.CompressFormat.PNG, 100, out)) throw new IllegalStateException("PNG save failed");
+            out.getFD().sync();
+        } finally { image.recycle(); }
+        int target = !lockOnly && !laterChoice ? WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK : which;
+        int written;
+        try (InputStream in = new FileInputStream(source)) { written = manager.setStream(in, null, false, target); }
+        ProbeSession.Identity observed = current();
+        int actual = lockOnly ? observed.lockId : observed.homeId;
+        if (written != actual) throw new IllegalStateException("Fixture identity changed: write=" + written + "; observed=" + actual + "; source receipt refused");
+        Properties receipt = new Properties();
+        receipt.setProperty("id", Integer.toString(written));
+        receipt.setProperty("file", fileName);
+        try (FileOutputStream out = new FileOutputStream(new File(directory, lockOnly ? "fixture-lock.properties" : "fixture-home.properties"))) {
+            receipt.store(out, "Known source created before explicit test fixture wallpaper write");
+            out.getFD().sync();
+        }
+        event("fixture_written", "which=" + which + "; id=" + written + "; source=" + fileName + "; laterChoice=" + laterChoice);
+    }
+
     private String copyWallpaper(int which, String name, StringBuilder note) {
+        // A source explicitly provided by this test fixture is not a read of arbitrary user wallpaper.
+        File receiptFile = new File(directory, which == WallpaperManager.FLAG_LOCK ? "fixture-lock.properties" : "fixture-home.properties");
+        if (receiptFile.isFile()) try (InputStream receiptIn = new FileInputStream(receiptFile)) {
+            Properties receipt = new Properties();
+            receipt.load(receiptIn);
+            String source = receipt.getProperty("file", "");
+            int observed = manager.getWallpaperId(which);
+            if (Integer.toString(observed).equals(receipt.getProperty("id"))
+                    && source.matches("fixture-(home|lock|later-home)\\.png") && new File(directory, source).isFile()) {
+                File destination = new File(directory, name);
+                try (InputStream in = new FileInputStream(new File(directory, source)); FileOutputStream out = new FileOutputStream(destination)) {
+                    byte[] bytes = new byte[65536]; int count;
+                    while ((count = in.read(bytes)) != -1) out.write(bytes, 0, count);
+                    out.getFD().sync();
+                }
+                note.append(name).append(" supplied by known test source with matching wallpaper ID receipt; not an arbitrary original-image read. ");
+                return name;
+            }
+        } catch (Exception e) { note.append("Test source receipt unavailable: ").append(e.getClass().getSimpleName()).append(". "); }
+
         if (Build.VERSION.SDK_INT >= 33) {
             // Android 13 can return a default image instead of the real wallpaper. Never mislabel it a backup.
             note.append(name).append(" not backed up: Android 13+ cannot reliably expose the real original to this ordinary app. ");
