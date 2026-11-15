@@ -66,7 +66,8 @@ public class RecentTasksControlTest {
     }
     JSONObject session(String mode) throws Exception {
         return new JSONObject().put("id", "recents-" + (++sequence)).put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
-            .put("title", "自由专注").put("mode", mode).put("targetMs", 60000).put("startedAt", clock.epoch())
+            .put("title", "自由专注").put("themeName", "自由专注").put("color", "#222222")
+            .put("mode", mode).put("targetMs", 60000).put("startedAt", clock.epoch())
             .put("timeZone", "UTC").put("segments", new JSONArray());
     }
     JSONObject status() throws Exception { return control.observeControl().getJSONObject("recentTasks"); }
