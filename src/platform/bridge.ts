@@ -110,6 +110,8 @@ export const focusDriver = {
   async start(session: ActiveFocus, strictModeConfirmed = false): Promise<FocusSnapshot> {
     if (native) return plugin.startFocus({ session, strictModeConfirmed })
     const db = await webReadFocus()
+    if ((await repository.load()).preferences.protection?.enhancements.includes('recentTasksHidden'))
+      throw new Error('最近任务卡隐藏仅支持 Android 本机版本，请关闭此选项后继续')
     if ((await repository.load()).preferences.protection?.study)
       throw new Error('应用限制仅支持 Android 本机版本，请关闭学霸模式后继续')
     if (browserSession) throw new Error('请先结束当前专注')
