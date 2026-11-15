@@ -80,7 +80,7 @@ async function authorize() {
   <Sheet :open="permissionHelp" title="无障碍权限用途" @close="permissionHelp = false">
     <div class="study-stack">
       <p>小猫只在你开始学霸模式后，读取前台应用的包名来判断是否允许使用，并显示本机阻挡页。</p>
-      <p>不读取窗口正文，不上传应用使用内容。授权不代表立即开始限制，返回后会重新检查服务连接。</p>
+      <p>不读取其他应用正文，不上传应用使用内容。若开启精确防关闭，仅在本轮短暂读取系统设置中本应用标题、包名与按钮，不保存这些内容。授权不代表立即开始限制，返回后会重新检查服务连接。</p>
       <p>在系统“无障碍”中启用“小猫专注”。你随时可在同一位置关闭；关闭后本轮会显示保护失效，计时仍继续。</p>
       <p class="notice">系统授权页只在从小猫打开后的短时间内允许访问。普通权限不能保证防止系统强停，来电与紧急功能需按设备验证。</p>
       <button class="primary wide" :disabled="busy || !status?.supported" @click="authorize">前往系统设置</button>

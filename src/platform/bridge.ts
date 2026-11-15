@@ -111,8 +111,8 @@ export const focusDriver = {
     if (native) return plugin.startFocus({ session, strictModeConfirmed })
     const db = await webReadFocus()
     const preferredProtection = (await repository.load()).preferences.protection
-    if (preferredProtection?.enhancements?.includes('navigationHomeRecents'))
-      throw new Error('桌面与最近任务限制仅支持 Android 本机版本，请关闭此增强后继续')
+    if (preferredProtection?.enhancements?.some(value => ['navigationHomeRecents', 'preciseAntiClose'].includes(value)))
+      throw new Error('所选增强保护仅支持 Android 本机版本，请关闭此增强后继续')
     if (preferredProtection?.study)
       throw new Error('应用限制仅支持 Android 本机版本，请关闭学霸模式后继续')
     if (browserSession) throw new Error('请先结束当前专注')
@@ -235,6 +235,9 @@ export const protectionDriver = {
     if (native) return plugin.protectionStatus()
     return { supported: false, authorized: false, connected: false, active: false,
       preferenceEnabled: false, state: 'unsupported', reason: '应用限制仅支持 Android 本机版本', effectiveWhitelist: [],
+      antiClose: { supported: false, authorized: false, connected: false, active: false, preferenceEnabled: false,
+        requested: false, state: 'unsupported', reason: '精确防关闭仅支持 Android 本机无障碍服务', lastReturnedAt: null,
+        lastTarget: null, identity: {}, systemUninstallBlocked: false, policyReason: '浏览器不具备设备管理身份', supportScope: 'Android 本机' },
       navigation: { supported: false, authorized: false, connected: false, active: false, preferenceEnabled: false,
         requested: false, state: 'unsupported', reason: '桌面与最近任务限制仅支持 Android 本机无障碍服务',
         lastReturnedAt: null, lastTarget: null } }
