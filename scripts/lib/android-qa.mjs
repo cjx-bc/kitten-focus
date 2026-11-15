@@ -16,19 +16,26 @@ export async function until(fn, label, timeout = 15000) {
 }
 
 /** Real QA WebView/native bridge. Explicit emulator and separate application required. */
-export async function connectQa({ port = 9237, output = 'artifacts/focus-control/qa' } = {}) {
+export async function connectQa({ port = 9237, output = 'artifacts/focus-control/qa', user } = {}) {
   const root = resolve(import.meta.dirname, '../..')
   const { adb, serial } = androidDevice(root)
   const appId = process.env.ANDROID_APP_ID || 'com.xiaomao.focus.qa'
   assert(serial && /^(?:emulator-\d+|127\.0\.0\.1:\d+)$/.test(serial), 'Select an emulator explicitly')
   assert(appId.endsWith('.qa'), 'Only the isolated QA application may be mutated')
+  assert(user === undefined || Number.isInteger(user) && user >= 0, 'Android user must be an explicit numeric ID')
   const command = (...args) => execFileSync(adb, ['-s', serial, ...args], {
     encoding: 'utf8', windowsHide: true, timeout: 30000,
   })
   command('shell', 'input', 'keyevent', 'WAKEUP')
   command('shell', 'wm', 'dismiss-keyguard')
-  command('shell', 'am', 'start', '-n', appId + '/com.xiaomao.focus.MainActivity')
-  const pid = await until(() => command('shell', 'pidof', appId).trim().split(' ')[0], 'QA process')
+  command('shell', 'am', 'start', ...(user === undefined ? [] : ['--user', String(user)]), '-n', appId + '/com.xiaomao.focus.MainActivity')
+  const pid = await until(() => {
+    if (user === undefined) return command('shell', 'pidof', appId).trim().split(' ')[0]
+    // More than one Android user can run the same isolated QA package. Never
+    // attach CDP to Owner while preparing a secondary-user wallpaper fixture.
+    return command('shell', 'ps', '-A', '-o', 'USER,PID,NAME').split(/\r?\n/).slice(1)
+      .map(row => row.trim().split(/\s+/)).find(row => row[0]?.startsWith('u' + user + '_') && row[2] === appId)?.[1]
+  }, 'QA process for selected Android user')
   await until(() => command('shell', 'cat', '/proc/net/unix').includes('webview_devtools_remote_' + pid), 'QA WebView')
   command('forward', 'tcp:' + port, 'localabstract:webview_devtools_remote_' + pid)
   const pages = await until(async () => {

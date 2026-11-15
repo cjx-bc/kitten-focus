@@ -24,7 +24,7 @@ assert.equal(raw('shell', 'am', 'get-current-user').toString().trim(), String(us
 process.env.ADB = adb; process.env.ANDROID_SERIAL = serial; process.env.ANDROID_APP_ID = 'com.xiaomao.focus.qa'
 const output = resolve(arg('--output', 'artifacts/focus-control/t17-product'))
 mkdirSync(output, { recursive: true })
-const qa = await connectQa({ port: 9274, output })
+const qa = await connectQa({ port: 9274, output, user })
 const native = qa.native, command = qa.command
 const main = () => command('shell', 'am', 'start', '--user', String(user), '-n', qa.appId + '/com.xiaomao.focus.MainActivity')
 const dump = () => {
