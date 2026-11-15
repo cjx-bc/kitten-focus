@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { RecoverySnapshot } from '../domain/model'
 import { protectionDriver, recoveryDriver } from '../platform/bridge'
 import Sheet from './Sheet.vue'
@@ -8,6 +8,13 @@ const emit = defineEmits<{ close: [] }>()
 const snapshot = ref<RecoverySnapshot | null>(null), busy = ref(false), error = ref(''), confirmed = ref(false)
 const manualWallpaperChecked = ref(false)
 const labels = { active: '待撤销', restored: '已恢复', failed: '恢复失败', limited: '系统受限' }
+async function returnedFromSystem() {
+  if (!props.open || document.hidden || busy.value) return
+  try { snapshot.value = await recoveryDriver.preview() }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+}
+onMounted(() => { window.addEventListener('focus', returnedFromSystem); document.addEventListener('visibilitychange', returnedFromSystem) })
+onBeforeUnmount(() => { window.removeEventListener('focus', returnedFromSystem); document.removeEventListener('visibilitychange', returnedFromSystem) })
 watch(() => props.open, async open => {
   if (!open) return
   snapshot.value = null; error.value = ''; confirmed.value = false; busy.value = true
