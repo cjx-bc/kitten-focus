@@ -51,6 +51,7 @@ export const defaultProtection = (): ProtectionPreferences => ({
   globalWhitelist: [], enhancements: [],
 })
 export interface ProtectionSnapshot {
+  applicationsWithdrawn?: boolean
   study: boolean
   source: 'global'
   whitelist: string[]
@@ -87,6 +88,27 @@ export interface ProtectionApp {
   installed: boolean
   fixed: boolean
 }
+export interface TemporaryAccessState {
+  used: number
+  remainingUses: number
+  targetPackage: string | null
+  targetLabel: string | null
+  remainingMs: number
+  expiresAt: number | null
+}
+export interface TemporaryAccessRequest {
+  sessionId: string
+  targetPackage: string
+  durationMinutes: 1 | 3 | 5
+  requestId: string
+  replaceConfirmed?: boolean
+}
+export interface TemporaryAccessResult {
+  status: 'granted' | 'denied' | 'confirmation-required' | 'failed'
+  reason: string
+  replayed: boolean
+  state: TemporaryAccessState
+}
 export interface ActiveFocus {
   id: string
   itemId: string | null
@@ -99,6 +121,7 @@ export interface ActiveFocus {
   startedAt: number
   timeZone: string
   protection?: ProtectionSnapshot
+  temporaryAccess?: TemporaryAccessState
   strictMode?: boolean
   state: 'running' | 'paused'
   elapsedMs: number

@@ -34,6 +34,7 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void focusAction(PluginCall call){resolve(call,()->control.focusAction(call.getString("action","read")));}
     @PluginMethod public void startRest(PluginCall call){resolve(call,()->control.startRest(call.getString("recordId","")));}
     @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}
+    @PluginMethod public void grantTemporaryAccess(PluginCall call){resolve(call,()->control.grantTemporaryAccess(call.getData()));}
     @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
     @PluginMethod public void consumeFocusReturn(PluginCall call){resolve(call,()->{
         Intent intent=getActivity()==null?null:getActivity().getIntent();
