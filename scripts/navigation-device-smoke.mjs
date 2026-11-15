@@ -45,8 +45,7 @@ async function start(mode='countdown') {
   const now = Date.now()
   await native('startFocus',{session:{id:'t14-device-'+now,itemId:null,themeId:null,title:'T14 导航限制验证',themeName:'设备验证',color:'#222222',mode,targetMs:120000,startedAt:now,timeZone:'UTC',state:'running',elapsedMs:0,pausedMs:0,segments:[]}})
   await evaluate("location.hash='#/focus'")
-  await qa.send('Page.reload')
-  await until(()=>evaluate("document.body.innerText.includes('导航限制验证')"),'native timer UI')
+  await until(()=>evaluate("document.body?.innerText.includes('导航限制验证') && !!document.querySelector('.focus-clock')"),'native timer UI')
   assert.equal((await observe()).navigation.state,'armed')
 }
 async function returns(label,args) {
