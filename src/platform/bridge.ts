@@ -14,7 +14,7 @@ import type {
   TemporaryAccessRequest,
   TemporaryAccessResult,
 } from '../domain/model'
-import { emptyData } from '../domain/model'
+import { emptyData, effectiveWhitelist } from '../domain/model'
 import { elapsed, settle } from '../domain/focus'
 import { makeRest, readRest, REST_DURATION_MS } from '../domain/rest'
 
@@ -103,7 +103,7 @@ export const focusDriver = {
     const strictMode = data.preferences.protection?.strict === true && session.mode === 'countdown'
     if (strictMode && !strictModeConfirmed)
       throw new Error('请先确认严格倒计时：开始后不能暂停、取消或提前结束')
-    browserSession = { ...session, strictMode, anchorMono: Date.now(), bootId: 0 }
+    browserSession = { ...session, strictMode, protection: { study: false, ...effectiveWhitelist(data, session.itemId) }, anchorMono: Date.now(), bootId: 0 }
     await db.put('kv', browserSession, 'active')
     return { session: browserSession, elapsedMs: 0 }
   },

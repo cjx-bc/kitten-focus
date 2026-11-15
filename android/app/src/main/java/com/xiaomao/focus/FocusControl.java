@@ -86,7 +86,7 @@ final class FocusControl {
             started.put("temporaryAccessRuntime", new JSONObject().put("used", 0).put("requests", new JSONArray()));
             started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
                 .put("segments", new JSONArray());
-            started.put("protection", accessibility == null ? FocusProtection.capture(context, store) : FocusProtection.capture(context, store, accessibility));
+            started.put("protection", accessibility == null ? FocusProtection.capture(context, store, session) : FocusProtection.capture(context, store, session, accessibility));
             started.put("dndRequested", protection != null && Boolean.TRUE.equals(protection.opt("dnd")));
             dnd.checkStart(started);
             recovery.prepare(started);
