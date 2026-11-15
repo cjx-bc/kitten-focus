@@ -1,7 +1,7 @@
 // Isolated QA app: real configuration UI, public CatFocus bridge and Android effects.
 import assert from 'node:assert/strict'
 import { emptyData, defaultProtection } from '../src/domain/model.ts'
-import { connectQa, until } from './lib/android-qa.mjs'
+import { connectQa, until, delay } from './lib/android-qa.mjs'
 
 const qa = await connectQa({ port: 9252, output: 'artifacts/focus-control/api36/strict-lock' })
 const { native, evaluate, command } = qa
@@ -101,18 +101,24 @@ try {
       await click('完成'); await chrome(false); await page()
     }
   }
-  // Tap the actual control notification, using its unchanged original package identity.
+  await qa.screenshot('strict-lock-recovered-running')
+  await evaluate("location.hash = '#/settings'")
+  await until(() => evaluate("location.hash === '#/settings'"), 'business route before notification return')
+  assert.equal(await evaluate("document.querySelectorAll('.tabbar a').length"), 5)
+  // A live notification chronometer prevents UiAutomator's idle wait on this
+  // 540x960 QA AVD. Keep the actual shade pixels and the inspected title point,
+  // then require the real notification to navigate from settings to this lock.
+  assert(command('shell', 'wm', 'size').includes('540x960'), 'Reinspect notification coordinates for a different display')
+  await until(() => command('shell', 'cmd', 'notification', 'list').includes(qa.appId + '|40|'), 'ongoing lock notification')
   command('shell', 'cmd', 'statusbar', 'expand-notifications')
-  command('shell', 'uiautomator', 'dump', '/data/local/tmp/qa-strict-lock-notification.xml')
-  const shade = command('shell', 'cat', '/data/local/tmp/qa-strict-lock-notification.xml')
-  const title = [...shade.matchAll(/<node\b[^>]*>/g)].map(match => match[0]).find(node => /text="Strict reading"/.test(node))
-  assert(title, 'Strict lock control notification is visible')
-  const bounds = /bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(title)
-  command('shell', 'input', 'tap', String(Math.round((Number(bounds[1]) + Number(bounds[3])) / 2)), String(Math.round((Number(bounds[2]) + Number(bounds[4])) / 2)))
+  await delay(2200)
+  command('shell', 'screencap', '-p', '/data/local/tmp/qa-strict-lock-shade.png')
+  command('pull', '/data/local/tmp/qa-strict-lock-shade.png', 'artifacts/focus-control/api36/strict-lock/strict-lock-notification-shade.png')
+  command('shell', 'input', 'tap', '200', '490')
   await until(() => evaluate("location.hash === '#/lock'"), 'actual notification return')
   assert.equal((await observe()).lock.session.id, id)
   await qa.send('Page.reload'); await until(() => text().then(t => t.includes('严格锁机进行中')), 'WebView recreation keeps strict lock')
-  await qa.screenshot('strict-lock-recovered-running')
+  await qa.screenshot('strict-lock-notification-return')
   console.log('Waiting for the original one-minute strict deadline')
   await until(async () => (await observe()).owner === null, 'automatic strict lock expiry', 75000)
   await until(() => text().then(t => t.includes('本轮锁机已到期')), 'independent strict result')
