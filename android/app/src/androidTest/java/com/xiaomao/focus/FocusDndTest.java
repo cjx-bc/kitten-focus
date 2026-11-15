@@ -61,6 +61,57 @@ public class FocusDndTest {
             .put("elapsedMs", 0).put("pausedMs", 0).put("segments", new JSONArray());
     }
 
+    private FocusControl lockControl() {
+        return new FocusControl(context, store, clock, new FocusRecovery(context, store), new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; }
+            public boolean connected() { return true; }
+        }, system);
+    }
+    @Test public void ordinaryAndStrictLocksFreezeSoundChoiceReleaseRulesAndRejectConflictingDuty() throws Exception {
+        for (boolean strict : new boolean[]{false, true}) {
+            JSONObject data = control.loadData();
+            data.getJSONObject("preferences").getJSONObject("protection")
+                .put("study", false).put("strict", true).put("interceptNotifications", false).put("dnd", true);
+            data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "sound-lock")
+                .put("name", "锁机声音保护").put("minutes", 1).put("strict", strict)
+                .put("whitelist", new JSONObject().put("source", "global"))));
+            store.saveData(data, false); control = lockControl();
+            control.startLock("sound-lock", strict);
+            assertEquals("Shared sound protection applies at ordinary and strict lock start", "active", control.getDndStatus().getString("phase"));
+            assertTrue(control.getDndStatus().getBoolean("requested"));
+            assertEquals(1, system.rules.size());
+            data.getJSONObject("preferences").getJSONObject("protection").put("dnd", false);
+            store.saveData(data, false); control = lockControl(); control.lockAction("read", false);
+            assertTrue("Preference edits affect the next round", control.getDndStatus().getBoolean("requested"));
+            assertEquals("active", control.getDndStatus().getString("phase"));
+            if (strict) {
+                try { control.lockAction("finish", true); fail("Strict timing remains independent of sound"); }
+                catch (IllegalStateException expected) { }
+                now += 60000; control.reconcile();
+            } else control.lockAction("finish", true);
+            assertTrue(system.rules.isEmpty());
+            assertTrue(control.observeControl().isNull("owner"));
+            assertEquals(0, control.loadData().getJSONArray("records").length());
+            assertTrue(control.observeControl().getJSONObject("rest").isNull("session"));
+        }
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").getJSONObject("protection").put("strict", false).put("dnd", true);
+        store.saveData(data, false); control = lockControl(); control.startFocus(session());
+        system.permission = false; control.focusAction("finish");
+        assertTrue(control.getDndStatus().getBoolean("recoveryPending"));
+        try { control.startLock("sound-lock", true); fail("Old sound duty must block ownership of a conflicting requested lock"); }
+        catch (IllegalStateException expected) { }
+        assertTrue(control.observeControl().isNull("owner"));
+        assertEquals("sound-focus", control.getDndStatus().getString("sessionId"));
+        data = control.loadData(); data.getJSONObject("preferences").getJSONObject("protection").put("dnd", false);
+        store.saveData(data, false); control.startLock("sound-lock", true);
+        assertFalse("A lock without sound remains available", control.getDndStatus().getBoolean("requested"));
+        assertTrue(control.getDndStatus().getBoolean("recoveryPending"));
+        system.permission = true; control.restoreDnd();
+        now += 60000; control.reconcile();
+        assertTrue(system.rules.isEmpty());
+        assertFalse(control.getDndStatus().getBoolean("recoveryPending"));
+    }
     @Test public void soundProtectionIsIndependentAndPauseKeepsItUntilFocusEnds() throws Exception {
         control.startFocus(session());
         assertEquals("active", control.observeControl().getJSONObject("dnd").getString("phase"));
@@ -188,7 +239,7 @@ public class FocusDndTest {
     }
 
     private void shell(String command) throws Exception {
-        try (ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command);
+        try (ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation().getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES).executeShellCommand(command);
              java.io.InputStream stream = new ParcelFileDescriptor.AutoCloseInputStream(descriptor)) {
             byte[] bytes = new byte[1024];
             while (stream.read(bytes) != -1) { }

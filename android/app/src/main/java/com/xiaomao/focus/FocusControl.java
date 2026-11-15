@@ -253,13 +253,16 @@ final class FocusControl {
             session.put("protection", accessibility == null
                 ? FocusProtection.captureLock(context, store, configuration)
                 : FocusProtection.captureLock(context, store, configuration, accessibility));
+            navigation.checkStart(session);
             antiClose.checkStart(session);
             JSONArray selected = new JSONArray(session.getJSONObject("protection").getJSONArray("enhancements").toString());
             JSONArray preferred = FocusProtection.preferences(store).optJSONArray("enhancements");
             if (preferred != null) for (int i = 0; i < preferred.length(); i++)
                 if (FocusRecovery.MAIN_ENTRY.equals(preferred.optString(i))) { selected.put(FocusRecovery.MAIN_ENTRY); break; }
             session.put("originalEnhancedProtectionSettings", selected);
+            session.put("dndRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("dnd")));
             session.put("notificationsRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("interceptNotifications")));
+            dnd.checkStart(session);
             notifications.checkStart(session);
             recentTasks.checkStart(session);
             launcher.checkStart(session);
@@ -268,6 +271,7 @@ final class FocusControl {
             rest.exit();
             JSONObject result = lock.start(session);
             FocusProtection.executionSucceeded();
+            dnd.synchronize(store.read("active"));
             notifications.synchronize(store.read("active"));
             recentTasks.synchronize(store.read("active"));
             launcher.synchronize(store.read("active"));
@@ -280,7 +284,7 @@ final class FocusControl {
             JSONObject result = lock.action(action, confirmed);
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
-            if (active == null) antiClose.release();
+            if (active == null) { navigation.release(); antiClose.release(); }
             dnd.synchronize(active);
             notifications.synchronize(active);
             recentTasks.synchronize(active);
