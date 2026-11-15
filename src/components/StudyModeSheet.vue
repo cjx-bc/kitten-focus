@@ -6,6 +6,7 @@ import type { ProtectionApp, ProtectionStatus } from '../domain/model'
 import { protectionDriver } from '../platform/bridge'
 import Sheet from './Sheet.vue'
 import Icon from './Icon.vue'
+import StrictModeSetting from './StrictModeSetting.vue'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const app = useApp()
@@ -71,6 +72,7 @@ async function authorize() {
     <div class="study-stack">
       <p class="notice">开始专注后，仅允许本轮白名单中的应用。普通暂停仍限制应用，结束专注或进入休息后解除。</p>
       <label class="switch"><span>学霸模式<small>限制其他应用使用</small></span><input type="checkbox" :checked="prefs.study" :disabled="busy" @change="toggleStudy" /></label>
+      <StrictModeSetting />
       <div class="protection-state" role="status">
         <strong>{{ status ? stateLabels[status.state] : '正在检查能力' }}</strong>
         <p>{{ status?.reason }}</p>
