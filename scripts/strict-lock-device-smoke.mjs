@@ -103,8 +103,7 @@ try {
   }
   await qa.screenshot('strict-lock-recovered-running')
   await evaluate("location.hash = '#/settings'")
-  await until(() => evaluate("location.hash === '#/settings'"), 'business route before notification return')
-  assert.equal(await evaluate("document.querySelectorAll('.tabbar a').length"), 5)
+  await until(() => evaluate("location.hash === '#/settings' && document.querySelectorAll('.tabbar a').length === 5"), 'rendered business route before notification return')
   // A live notification chronometer prevents UiAutomator's idle wait on this
   // 540x960 QA AVD. Keep the actual shade pixels and the inspected title point,
   // then require the real notification to navigate from settings to this lock.
