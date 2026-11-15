@@ -1,8 +1,6 @@
 package com.xiaomao.focus;
 
 import android.content.Context;
-import android.os.SystemClock;
-import android.provider.Settings;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -10,22 +8,24 @@ final class RestEngine {
     static final long DURATION_MS = 5 * 60 * 1000L;
     private final Context context;
     private final LocalStore store;
+    private final SessionClock clock;
 
     RestEngine(Context context) {
+        this(context, LocalStore.get(context), SessionClock.system(context));
+    }
+
+    RestEngine(Context context, LocalStore store, SessionClock clock) {
         this.context = context.getApplicationContext();
-        this.store = LocalStore.get(context);
+        this.store = store;
+        this.clock = clock;
     }
 
-    private static int boot(Context context) {
-        return Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, 0);
-    }
-
-    static JSONObject create(Context context, JSONObject record, long epoch, long mono) throws JSONException {
+    static JSONObject create(JSONObject record, long epoch, long mono, int boot) throws JSONException {
         if (record.optLong("durationMs") <= 0 || record.optString("status").equals("interrupted"))
             throw new IllegalArgumentException("本次专注不能开始休息");
         return new JSONObject().put("record", new JSONObject(record.toString()))
             .put("startedAt", epoch).put("endsAt", epoch + DURATION_MS)
-            .put("endMono", mono + DURATION_MS).put("bootId", boot(context)).put("state", "running");
+            .put("endMono", mono + DURATION_MS).put("bootId", boot).put("state", "running");
     }
 
     JSONObject start(String recordId) throws JSONException {
@@ -39,7 +39,7 @@ final class RestEngine {
                 return read();
             if (current != null && current.optString("state").equals("running"))
                 throw new IllegalStateException("已有一段休息正在进行");
-            store.write("rest", create(context, source, System.currentTimeMillis(), SystemClock.elapsedRealtime()));
+            store.write("rest", create(source, clock.epoch(), clock.mono(), clock.boot()));
             sync();
             return read();
         }
@@ -50,11 +50,11 @@ final class RestEngine {
             JSONObject session = store.read("rest");
             if (session == null) return snapshot(null, 0);
             if (session.optString("state").equals("completed")) return snapshot(session, 0);
-            long now = SystemClock.elapsedRealtime();
-            boolean restarted = session.optInt("bootId") != boot(context);
+            long now = clock.mono();
+            boolean restarted = session.optInt("bootId") != clock.boot();
             if (restarted) {
-                long remaining = Math.max(0, Math.min(DURATION_MS, session.optLong("endsAt") - System.currentTimeMillis()));
-                session.put("endMono", now + remaining).put("bootId", boot(context));
+                long remaining = Math.max(0, Math.min(DURATION_MS, session.optLong("endsAt") - clock.epoch()));
+                session.put("endMono", now + remaining).put("bootId", clock.boot());
                 store.write("rest", session);
                 if (remaining > 0) Reminders.scheduleRest(context, session.optLong("endMono"));
             }
@@ -66,6 +66,16 @@ final class RestEngine {
                 Reminders.showRestFinished(context);
             }
             return snapshot(session, remaining);
+        }
+    }
+
+    JSONObject observe() throws JSONException {
+        synchronized (store) {
+            JSONObject session = store.read("rest");
+            if (session == null || session.optString("state").equals("completed")) return snapshot(session, 0);
+            long remaining = session.optInt("bootId") == clock.boot()
+                ? session.optLong("endMono") - clock.mono() : session.optLong("endsAt") - clock.epoch();
+            return snapshot(session, Math.max(0, Math.min(DURATION_MS, remaining)));
         }
     }
 

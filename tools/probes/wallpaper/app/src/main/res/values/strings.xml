@@ -1,0 +1,3 @@
+<resources>
+    <string name="wallpaper_description">Isolated lifecycle experiment. Open the probe to stop and restore. Not a keep-alive guarantee.</string>
+</resources>

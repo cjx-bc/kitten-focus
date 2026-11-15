@@ -111,7 +111,7 @@ final class AppUpdateManager {
     }
 
     private void requireNoFocus() throws Exception {
-        new FocusEngine(context).action("read");
+        new FocusControl(context).focusAction("read");
         if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注，再下载或安装更新");
     }
 
