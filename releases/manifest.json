@@ -1,8 +1,8 @@
 {
   "version": "0.2.0",
   "versionCode": 6,
-  "type": "debug internal testing candidate",
-  "status": "draft; stable update channel unchanged",
+  "type": "debug internal testing build",
+  "status": "published with user approval; stable update channel 0.2.0",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
@@ -12,8 +12,8 @@
     },
     {
       "name": "xiaomao-focus-0.2.0-source.zip",
-      "size": 9351948,
-      "sha256": "e8450ddfb19f9731db9a2725dfcd47840ea6e0b873a5367884b282826b16d5be"
+      "size": 9352329,
+      "sha256": "cce4309c44c722ef893d6e580f8d53b9b3811beed01c443b9431fdaada5859e7"
     }
   ],
   "sourceFileCount": 147,
@@ -25,5 +25,6 @@
     "serverHTTPS": "passed",
     "physicalDeviceTested": false
   },
-  "repository": "cjx-bc/kitten-focus"
+  "repository": "cjx-bc/kitten-focus",
+  "publishedAtUTC": "2026-11-15T04:43:06.994236+00:00"
 }

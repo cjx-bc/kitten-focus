@@ -1,6 +1,6 @@
 {
   "version": "0.2.0",
-  "status": "candidate, awaiting release approval",
+  "status": "published with user approval",
   "environment": "isolated Android 15 MuMu emulator",
   "domainTests": 14,
   "androidTests": 18,
@@ -54,5 +54,14 @@
     "Cellular consent not exercised on emulator Wi-Fi",
     "Network failure verified by native IOException injection",
     "Android 7–14 not exercised"
-  ]
+  ],
+  "publication": {
+    "verifiedAtUTC": "2026-11-15T04:43:06.994236+00:00",
+    "version": "0.2.0",
+    "versionCode": 6,
+    "stableManifest": "https://47.251.9.162/updates/stable.json",
+    "apkUrl": "https://47.251.9.162/releases/xiaomao-focus-0.2.0.apk",
+    "sha256": "05cee0bdb7c946e6082de73128289b5d41a0900c972746ac38ba8d2aa46b9bdf",
+    "publicFileVerified": true
+  }
 }
