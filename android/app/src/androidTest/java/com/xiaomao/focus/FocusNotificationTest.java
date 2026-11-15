@@ -111,17 +111,38 @@ public class FocusNotificationTest {
         assertEquals(1, control.getNotificationStatus().getInt("absentCount"));
         assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
     }
-    @Test public void ordinaryPauseAndStopwatchAreExplicitlyPendingNextLifecycleSlice() throws Exception {
+    @Test public void ordinaryPauseKeepsHoldingAndEarlyFinishRequestsOriginalRelease() throws Exception {
         JSONObject data = control.loadData(); data.getJSONObject("preferences").getJSONObject("protection").put("strict", false);
         store.saveData(data, false);
         control.startFocus(session());
         control.notificationPosted(notice("ordinary", "other.app", false));
-        assertEquals("lifecycle_pending", control.getNotificationStatus().getString("phase"));
-        assertTrue(system.snoozed.isEmpty());
-        control.focusAction("pause"); control.focusAction("finish");
-        control.startFocus(session().put("id", "open-ended").put("mode", "stopwatch"));
-        assertEquals("lifecycle_pending", control.getNotificationStatus().getString("phase"));
-        assertTrue(system.snoozed.isEmpty());
+        assertEquals("holding", control.getNotificationStatus().getString("phase"));
+        control.focusAction("pause");
+        now += 45000; control.synchronizeNotifications();
+        assertEquals("holding", control.getNotificationStatus().getString("phase"));
+        control.focusAction("finish");
+        assertEquals("Original key must be rescheduled rather than abandoned", Long.valueOf(1), system.requests.get("ordinary"));
+        assertTrue(control.getNotificationStatus().getBoolean("recoveryPending"));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        system.active.addAll(system.snoozed); system.snoozed.clear();
+        control.synchronizeNotifications();
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+    }
+    @Test public void stopwatchUsesBoundedRenewableLeaseBeyondItsOriginalTargetAndPause() throws Exception {
+        control.startFocus(session().put("mode", "stopwatch").put("targetMs", 300000));
+        control.notificationPosted(notice("open-ended", "other.app", false));
+        assertEquals("A dead listener must not leave an indefinite original hold", Long.valueOf(60000), system.requests.get("open-ended"));
+        now += 45000; control.synchronizeNotifications();
+        assertEquals(Long.valueOf(60000), system.requests.get("open-ended"));
+        now += 300000; control.focusAction("pause");
+        control.notificationPosted(notice("paused-new", "other.app", false));
+        assertEquals(Long.valueOf(60000), system.requests.get("paused-new"));
+        assertEquals("holding", control.getNotificationStatus().getString("phase"));
+        control.focusAction("finish");
+        assertEquals(Long.valueOf(1), system.requests.get("open-ended"));
+        assertEquals(Long.valueOf(1), system.requests.get("paused-new"));
+        assertEquals("rest", control.observeControl().getString("owner"));
     }
     @Test public void postedUpdateWhileSnoozedIsNotReportedAsRestoredAndEarlySurfaceIsHeldToOriginalDeadline() throws Exception {
         control.startFocus(session(), true);

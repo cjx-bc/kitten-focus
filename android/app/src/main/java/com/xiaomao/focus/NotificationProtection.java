@@ -45,19 +45,17 @@ final class NotificationProtection {
         return notice.packageName + ":" + notice.uid + ":" + notice.group;
     }
     private static boolean fixedDeadlineSupported(JSONObject active) {
-        return active != null && !LockEngine.owns(active)
-            && active.optBoolean("strictMode") && active.optString("mode").equals("countdown");
+        return active != null;
     }
     private boolean controlling(JSONObject journal, JSONObject active) {
         return active != null && active.optBoolean("notificationsRequested")
             && fixedDeadlineSupported(active)
             && journal.optString("sessionId").equals(active.optString("id"))
-            && !journal.optBoolean("withdrawn") && journal.optInt("bootId") == clock.boot()
+            && !journal.optBoolean("withdrawn") && !journal.optBoolean("ended") && journal.optInt("bootId") == clock.boot()
             && clock.mono() < journal.optLong("deadlineMono");
     }
     void synchronize(JSONObject active) throws JSONException {
         JSONObject journal = read();
-        verify(journal);
         boolean requested = active != null && active.optBoolean("notificationsRequested");
         if (requested && !journal.optString("sessionId").equals(active.optString("id"))) {
             if (pendingCount(journal) > 0) { save(journal); return; }
@@ -68,8 +66,10 @@ final class NotificationProtection {
             save(journal);
         }
         if (!requested || !journal.optString("sessionId").equals(active.optString("id"))) journal.put("ended", true);
+        verify(journal);
         save(journal);
-        if (!controlling(journal, active) || !ready()) return;
+        if (!controlling(journal, active)) { release(journal); return; }
+        if (!ready()) return;
         try {
             List<NotificationSystem.Notice> notices = system.active();
             Set<String> necessaryGroups = new HashSet<>();
@@ -143,7 +143,7 @@ final class NotificationProtection {
                 String key = saved.optString("key");
                 if (held.contains(key)) saved.put("phase", "snoozed");
                 else if (active.contains(key) && saved.optString("phase").equals("snoozed")) {
-                    if (!journal.optBoolean("withdrawn") && journal.optInt("bootId") == clock.boot()
+                    if (!journal.optBoolean("withdrawn") && !journal.optBoolean("ended") && journal.optInt("bootId") == clock.boot()
                         && clock.mono() < journal.optLong("deadlineMono")) {
                         // Some systems surface an updated original before its cutoff. Keep the same key held.
                         saved.put("phase", "requested"); save(journal);
@@ -160,12 +160,28 @@ final class NotificationProtection {
             journal.remove("error");
         } catch (RuntimeException error) { journal.put("error", error.getClass().getSimpleName()); }
     }
+    private void release(JSONObject journal) throws JSONException {
+        if (!ready()) return;
+        JSONArray entries = journal.getJSONArray("entries");
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject saved = entries.getJSONObject(i);
+            if (!pending(saved) || saved.optBoolean("releaseRequested")) continue;
+            // A returned request is not verified restoration. Keep the original responsibility.
+            saved.put("releaseRequested", true).put("releaseRequestMono", clock.mono()); save(journal);
+            try { system.snooze(saved.optString("key"), 1L); }
+            catch (RuntimeException error) {
+                saved.put("releaseRequested", false).put("phase", "failed");
+                journal.put("error", error.getClass().getSimpleName());
+            }
+            save(journal);
+        }
+    }
     JSONObject restore(JSONObject active) throws JSONException {
         JSONObject journal = read();
         if (active != null && active.optBoolean("notificationsRequested") && journal.optString("sessionId").isEmpty())
             journal.put("sessionId", active.optString("id"));
         save(journal.put("withdrawn", true));
-        verify(journal); save(journal);
+        verify(journal); save(journal); release(journal);
         return observe(active);
     }
     JSONObject recoveryStep(JSONObject active) throws JSONException {
@@ -196,7 +212,6 @@ final class NotificationProtection {
         boolean supported = system.supported(), authorized = system.authorized(), connected = system.connected();
         String error = journal.optString("error", system.failure());
         String phase = !supported ? "unsupported" : journal.optBoolean("withdrawn") ? "withdrawn"
-            : requested && !fixedDeadlineSupported(active) ? "lifecycle_pending"
             : requested && !authorized ? "permission_required" : requested && !connected ? "disconnected"
             : !error.isEmpty() ? "failed" : controlling ? snoozed > 0 ? "holding" : pending > 0 ? "requested" : "ready"
             : pending > 0 ? "release_pending" : entries.length() > 0 ? "released" : "off";
