@@ -39,7 +39,7 @@ final class NotificationProtection {
     private boolean canHold(JSONObject journal, NotificationSystem.Notice notice) throws JSONException {
         JSONObject previous = entry(journal, notice.key);
         if (previous == null) return true;
-        if (!previous.optString("phase").equals("absent") || notice.postTime == 0
+        if ((!previous.optString("phase").equals("absent") && !previous.optBoolean("observedAbsent")) || notice.postTime == 0
             || notice.postTime == previous.optLong("postTime")) return false;
         // Absence belongs to the preceding original. Accept a different currently posted
         // original, even after wall-clock rollback; a delayed callback alone is not proof.
@@ -171,8 +171,14 @@ final class NotificationProtection {
             journal.remove("error");
             JSONArray entries = journal.getJSONArray("entries");
             for (int i = 0; i < entries.length(); i++) {
-                JSONObject saved = entries.getJSONObject(i); if (!pending(saved)) continue;
+                JSONObject saved = entries.getJSONObject(i);
                 String key = saved.optString("key");
+                if (!pending(saved)) {
+                    // Preserve verified restoration history, while recording a later disappearance
+                    // as the boundary for another sender posting under the same Android key.
+                    if (!active.containsKey(key) && !held.containsKey(key)) saved.put("observedAbsent", true);
+                    continue;
+                }
                 NotificationSystem.Notice observed = active.containsKey(key) ? active.get(key) : held.get(key);
                 if (observed != null && observed.postTime != 0) saved.put("postTime", observed.postTime);
                 NotificationSystem.Notice current = posted != null && posted.key.equals(key) ? posted

@@ -41,6 +41,31 @@ public class FocusNotificationTest {
     NotificationSystem.Notice notice(String key, String pkg, boolean necessary) {
         return new NotificationSystem.Notice(key, pkg, 10001, "", necessary);
     }
+    @Test public void newPostingAfterNecessaryOriginalWithdrawalPreservesVerifiedRestorationHistory() throws Exception {
+        control.startFocus(session(), true);
+        NotificationSystem.Notice first = new NotificationSystem.Notice("released-reuse", "other.app", 10001, "", false, 1001);
+        system.active.add(first); control.notificationPosted(first);
+        system.snoozed.clear();
+        NotificationSystem.Notice necessary = new NotificationSystem.Notice("released-reuse", "other.app", 10001, "", true, 1002);
+        system.active.add(necessary); control.notificationPosted(necessary);
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        // Updating the still-visible restored original cannot trigger an endless hold/release cycle.
+        system.active.clear();
+        NotificationSystem.Notice update = new NotificationSystem.Notice("released-reuse", "other.app", 10001, "", false, 1003);
+        system.active.add(update); control.notificationPosted(update);
+        assertTrue(system.snoozed.isEmpty());
+        system.active.clear(); control.notificationRemoved("released-reuse", false); control.synchronizeNotifications();
+        assertEquals("Verified history stays restored after later sender withdrawal", 1, control.getNotificationStatus().getInt("restoredCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("absentCount"));
+        control.notificationPosted(update); // Delayed callback without a current original must stay terminal.
+        assertTrue(system.snoozed.isEmpty());
+        NotificationSystem.Notice next = new NotificationSystem.Notice("released-reuse", "other.app", 10001, "", false, 502);
+        system.active.add(next); control.notificationPosted(next);
+        assertEquals("A different current posting after observed withdrawal is intercepted", 1, system.snoozed.size());
+        assertEquals(1, control.getNotificationStatus().getInt("pendingCount"));
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("absentCount"));
+    }
     @Test public void newPostingReusesAbsentKeyWithoutRewritingWithdrawnOriginalHistory() throws Exception {
         control.startFocus(session().put("targetMs", 300000), true);
         NotificationSystem.Notice first = new NotificationSystem.Notice("reused", "other.app", 10001, "", false, 1001);
