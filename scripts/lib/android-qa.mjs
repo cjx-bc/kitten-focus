@@ -16,7 +16,7 @@ export async function until(fn, label, timeout = 15000) {
 }
 
 /** Real QA WebView/native bridge. Explicit emulator and separate application required. */
-export async function connectQa({ port = 9237, output = 'artifacts/focus-control/qa' } = {}) {
+export async function connectQa({ port = 9237, output = 'artifacts/focus-control/qa', launch = true } = {}) {
   const root = resolve(import.meta.dirname, '../..')
   const { adb, serial } = androidDevice(root)
   const appId = process.env.ANDROID_APP_ID || 'com.xiaomao.focus.qa'
@@ -27,7 +27,7 @@ export async function connectQa({ port = 9237, output = 'artifacts/focus-control
   })
   command('shell', 'input', 'keyevent', 'WAKEUP')
   command('shell', 'wm', 'dismiss-keyguard')
-  command('shell', 'am', 'start', '-n', appId + '/com.xiaomao.focus.MainActivity')
+  if (launch) command('shell', 'am', 'start', '-n', appId + '/com.xiaomao.focus.MainActivity')
   const pid = await until(() => command('shell', 'pidof', appId).trim().split(' ')[0], 'QA process')
   await until(() => command('shell', 'cat', '/proc/net/unix').includes('webview_devtools_remote_' + pid), 'QA WebView')
   command('forward', 'tcp:' + port, 'localabstract:webview_devtools_remote_' + pid)
@@ -86,5 +86,6 @@ export async function connectQa({ port = 9237, output = 'artifacts/focus-control
   const save = (name, value) => writeFileSync(resolve(evidence, name), JSON.stringify(value, null, 2))
   await until(() => evaluate('!!window.Capacitor?.nativePromise'), 'Capacitor')
   return { appId, serial, command, send, evaluate, native, screenshot, save,
+    get closed() { return socket.readyState >= 2 },
     close() { socket.close(); command('forward', '--remove', 'tcp:' + port) } }
 }
