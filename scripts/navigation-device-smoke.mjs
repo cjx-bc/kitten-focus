@@ -79,6 +79,7 @@ try {
   assert.equal(await evaluate('document.querySelector(".enhancements input").checked'), false)
   await evaluate('document.querySelector(".enhancements input").click()')
   await until(async () => (await native('loadData')).data.preferences.protection.enhancements.includes('navigationHomeRecents'), 'persisted independent navigation choice')
+  await until(() => evaluate('document.querySelector(".navigation-status strong")?.textContent === "已就绪"'), 'current preference capability result')
   assert.equal((await native('loadData')).data.preferences.protection.study, false)
   await evaluate('document.querySelector(".enhancements").scrollIntoView({block:"start"})')
   await qa.screenshot('00-original-sheet-enhancement')

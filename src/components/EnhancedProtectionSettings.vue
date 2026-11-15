@@ -8,14 +8,22 @@ const app = useApp()
 const option = 'navigationHomeRecents'
 const selected = computed(() => app.data.preferences.protection?.enhancements.includes(option) ?? false)
 const status = ref<NavigationProtectionStatus>(), busy = ref(false), error = ref(''), showPermission = ref(false)
+let refreshTimer: ReturnType<typeof setInterval> | undefined
 const labels = { off: '未开启', authorization: '待授权', ready: '已就绪', armed: '待验证实际导航', protecting: '已观察到返回', failed: '保护失效', unsupported: '本机不支持', recovered: '本轮已撤销' }
 async function refresh() {
   try { status.value = (await protectionDriver.status()).navigation }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
 }
 function visibility() { if (!document.hidden) void refresh() }
-onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh); window.addEventListener('protection-recovered', refresh) })
-onBeforeUnmount(() => { document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh); window.removeEventListener('protection-recovered', refresh) })
+onMounted(() => {
+  void refresh()
+  refreshTimer = setInterval(() => { if (!document.hidden) void refresh() }, 2000)
+  document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh); window.addEventListener('protection-recovered', refresh)
+})
+onBeforeUnmount(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+  document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh); window.removeEventListener('protection-recovered', refresh)
+})
 async function toggle(event: Event) {
   busy.value = true; error.value = ''
   try {
