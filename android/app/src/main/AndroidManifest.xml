@@ -25,6 +25,12 @@
 
         </activity>
 
+        <activity android:name=".DndRuleActivity" android:exported="true" android:label="声音辅助">
+            <intent-filter>
+                <action android:name="android.app.action.AUTOMATIC_ZEN_RULE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
         <activity android:name=".FocusBlockActivity" android:exported="false"
             android:excludeFromRecents="true" android:launchMode="singleTop"
             android:theme="@style/AppTheme.NoActionBar" />
@@ -68,4 +74,5 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 </manifest>

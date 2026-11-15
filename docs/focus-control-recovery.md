@@ -48,7 +48,25 @@ send a timer finish intent. Android Back closes the topmost Sheet first.
 - Orca browser visual inspection at 390 × 844: the original-style help/recovery Sheet,
   explicit browser limitation and cancel action render without horizontal document overflow.
 
-Notification/DND/task/icon/wallpaper operations must use this coordinator's responsibility and
-result flow when their actual OS adapters land. OS-specific original-state metadata stays in
-the adapter, never in business backups. T13 exposes `getDndStatus`/`restoreDnd` for this integration;
-until combined, this branch's recovery Sheet claims only its real application-restriction duty.
+## T08/T13 integration
+
+The coordinator now registers T13's real DND operation through `RecoveryOperation`.
+The shared preview includes its private journal's duty alongside application restriction;
+confirmation withdraws both and reports each result independently. The revision includes
+the adapter duty, so a changed sound recovery requires a fresh preview and confirmation.
+Successful withdrawal suppresses both effects for the rest of this round without changing
+strict timing, records, preferences or the captured whitelist. An older pending sound rule
+blocks a conflicting sound-protected start before a new active session is stored.
+`observeControl`, `getDndStatus` and recovery preview remain read-only; focus lifecycle and
+explicit reconciliation retain both adapters' cleanup. Sound settings remain reachable from
+Settings and are also embedded independently beside strict mode in the study settings Sheet.
+
+The merged host suite passes all 28 tests and the TypeScript/Vite build passes. Two additional
+public native boundary tests in `RecoveryControlTest` cover combined restoration, reconstruction,
+strict preservation, changed confirmation, independent failures, blocked new protection and retry.
+These new integration cases and the merged native build still require the coordinator's device
+run; the earlier two-test T08 and six-test T13 evidence is not a run of this merged code.
+
+Notification/task/icon/wallpaper operations must use this coordinator's responsibility and result
+flow when their actual OS adapters land. OS-specific original-state metadata stays in the adapter,
+never in business backups. No placeholder restoration steps are registered.

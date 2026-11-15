@@ -16,6 +16,7 @@ final class FocusControl {
     private final RestEngine rest;
     private final FocusRecovery recovery;
     private final FocusProtection.AccessibilityState accessibility;
+    private final DndProtection dnd;
 
     FocusControl(Context context) {
         this(context, LocalStore.get(context), SessionClock.system(context));
@@ -28,15 +29,31 @@ final class FocusControl {
         this(context, store, clock, recovery, null);
     }
     FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery, FocusProtection.AccessibilityState accessibility) {
-        this(context, store, clock, recovery, accessibility, packageName -> {
-            android.content.Intent intent = context.getPackageManager().getLaunchIntentForPackage(packageName);
-            if (intent == null) throw new IllegalStateException("此应用已卸载或没有可打开的入口");
-            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-            return () -> context.startActivity(intent);
-        });
+        this(context, store, clock, recovery, accessibility, new AndroidDndSystem(context));
+    }
+
+    FocusControl(Context context, LocalStore store, SessionClock clock, DndSystem system) {
+        this(context, store, clock, new FocusRecovery(context, store), null, system);
+    }
+
+    FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
+                 FocusProtection.AccessibilityState accessibility, DndSystem system) {
+        this(context, store, clock, recovery, accessibility, system, launchTarget(context));
     }
     FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
                  FocusProtection.AccessibilityState accessibility, TargetLaunch targetLaunch) {
+        this(context, store, clock, recovery, accessibility, new AndroidDndSystem(context), targetLaunch);
+    }
+    private static TargetLaunch launchTarget(Context context) {
+        return packageName -> {
+            android.content.Intent intent = context.getPackageManager().getLaunchIntentForPackage(packageName);
+            if (intent == null) throw new IllegalStateException("No launchable activity");
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            return () -> context.startActivity(intent);
+        };
+    }
+    FocusControl(Context context, LocalStore store, SessionClock clock, FocusRecovery recovery,
+                 FocusProtection.AccessibilityState accessibility, DndSystem system, TargetLaunch targetLaunch) {
         this.targetLaunch = targetLaunch;
         this.context = context.getApplicationContext();
         this.store = store;
@@ -45,6 +62,11 @@ final class FocusControl {
         rest = new RestEngine(context, store, clock);
         this.recovery = recovery;
         this.accessibility = accessibility;
+        dnd = new DndProtection(context, store.getDatabaseName(), system);
+        recovery.register(new FocusRecovery.RecoveryOperation() {
+            public JSONObject preview() throws JSONException { return dnd.recoveryStep(); }
+            public void restore() throws JSONException { dnd.restore(store.read("active")); }
+        });
     }
 
     JSONObject startFocus(JSONObject session) throws JSONException { return startFocus(session, false); }
@@ -65,9 +87,12 @@ final class FocusControl {
             started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
                 .put("segments", new JSONArray());
             started.put("protection", accessibility == null ? FocusProtection.capture(context, store) : FocusProtection.capture(context, store, accessibility));
+            started.put("dndRequested", protection != null && Boolean.TRUE.equals(protection.opt("dnd")));
+            dnd.checkStart(started);
             recovery.prepare(started);
             JSONObject result = focus.start(started);
             FocusProtection.executionSucceeded();
+            dnd.synchronize(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -81,10 +106,17 @@ final class FocusControl {
             JSONObject result = focus.action(action);
             JSONObject remaining = result.optJSONObject("session");
             recovery.releaseFinished(remaining == null ? null : remaining.optString("id"));
+            dnd.synchronize(store.read("active"));
             return projectTemporary(result);
         }
     }
-    JSONObject startRest(String recordId) throws JSONException { return rest.start(recordId); }
+    JSONObject startRest(String recordId) throws JSONException {
+        synchronized (store) {
+            JSONObject result = rest.start(recordId);
+            dnd.synchronize(store.read("active"));
+            return result;
+        }
+    }
     JSONObject restAction(String action) throws JSONException {
         synchronized (store) {
             if (action.equals("exit")) rest.exit();
@@ -99,6 +131,7 @@ final class FocusControl {
             rest.sync();
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
+            dnd.synchronize(store.read("active"));
             return observeControl();
         }
     }
@@ -122,6 +155,7 @@ final class FocusControl {
             return new JSONObject()
                 .put("owner", active != null ? "focus" : runningRest ? "rest" : JSONObject.NULL)
                 .put("focus", projectTemporary(focusSnapshot)).put("rest", restSnapshot)
+                .put("dnd", dnd.observe(active))
                 .put("needsReconcile", needsReconcile);
         }
     }
@@ -223,9 +257,19 @@ final class FocusControl {
     JSONObject previewRecovery() throws JSONException { synchronized (store) { return recovery.preview(); } }
     JSONObject confirmRecovery(String revision) throws JSONException { synchronized (store) { return recovery.confirm(revision); } }
 
+    JSONObject getDndStatus() throws JSONException {
+        synchronized (store) { return dnd.observe(store.read("active")); }
+    }
+
+    JSONObject restoreDnd() throws JSONException {
+        synchronized (store) { return dnd.restore(store.read("active")); }
+    }
+
     void replaceData(JSONObject data) throws JSONException {
         synchronized (store) {
             if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注");
+            if (dnd.restore(null).optBoolean("recoveryPending"))
+                throw new IllegalStateException("请先在声音辅助中撤销小猫规则，再替换备份");
             store.saveData(data, true);
             Reminders.cancelFocus(context);
             Reminders.cancelRest(context);
