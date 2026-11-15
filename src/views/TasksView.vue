@@ -8,11 +8,13 @@ import { dateKey, duration, readableDate, weekdayName } from '../domain/dates'
 import { statistics, itemToday } from '../domain/statistics'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
+import StudyModeSheet from '../components/StudyModeSheet.vue'
 const app = useApp(),
   router = useRouter(),
   sheet = ref<'theme' | 'item' | 'free' | 'removeTheme' | null>(null),
   formError = ref(''),
-  busy = ref(false)
+  busy = ref(false),
+  studyOpen = ref(false)
 const today = dateKey(),
   todayStats = computed(() => statistics(app.data.records, today, today)),
   itemStats = computed(
@@ -123,6 +125,8 @@ function toggleTheme(theme: Theme) {
         </button>
       </div>
     </header>
+    <button class="study-entry secondary wide" @click="studyOpen = true"><span>学霸模式</span><span>{{ app.focus.session?.protection?.study ? '本轮已开启' : app.data.preferences.protection?.study ? '已开启偏好' : '未开启' }}</span></button>
+    <StudyModeSheet v-if="studyOpen" :open="studyOpen" @close="studyOpen = false" />
     <div class="daily-line">
       <span>{{ readableDate(today) }} {{ weekdayName(today) }}</span
       ><span
@@ -463,6 +467,7 @@ function toggleTheme(theme: Theme) {
   </div>
 </template>
 <style scoped>
+.study-entry { display:flex; justify-content:space-between; margin-bottom:20px; font-size:13px; }
 .daily-line {
   display: flex;
   justify-content: space-between;
