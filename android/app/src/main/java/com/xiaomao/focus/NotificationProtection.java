@@ -138,6 +138,8 @@ final class NotificationProtection {
                 String key = saved.optString("key");
                 if (held.contains(key)) saved.put("phase", "snoozed");
                 else if (active.contains(key) && saved.optString("phase").equals("snoozed")) saved.put("phase", "restored").put("observedMono", clock.mono());
+                else if (active.contains(key) && (journal.optBoolean("withdrawn") || clock.mono() >= journal.optLong("deadlineMono")))
+                    saved.put("phase", "present"); // Active, but no observed hold: never label this verified restoration.
                 else if (!active.contains(key) && (!saved.optString("phase").equals("requested") || clock.mono() >= journal.optLong("deadlineMono") || journal.optInt("bootId") != clock.boot()))
                     saved.put("phase", "absent");
             }
@@ -164,12 +166,14 @@ final class NotificationProtection {
     /** No preferences, journal, timer or system writes. */
     JSONObject observe(JSONObject active) throws JSONException {
         JSONObject journal = read(); boolean requested = active != null && active.optBoolean("notificationsRequested");
-        int pending = pendingCount(journal), restored = 0, absent = 0;
+        int pending = pendingCount(journal), restored = 0, absent = 0, present = 0, snoozed = 0;
         JSONArray entries = journal.getJSONArray("entries");
         for (int i = 0; i < entries.length(); i++) {
             String phase = entries.getJSONObject(i).optString("phase");
             if (phase.equals("restored")) restored++;
             if (phase.equals("absent") || phase.equals("removed")) absent++;
+            if (phase.equals("present")) present++;
+            if (phase.equals("snoozed")) snoozed++;
         }
         boolean controlling = controlling(journal, active);
         boolean supported = system.supported(), authorized = system.authorized(), connected = system.connected();
@@ -177,12 +181,13 @@ final class NotificationProtection {
         String phase = !supported ? "unsupported" : journal.optBoolean("withdrawn") ? "withdrawn"
             : requested && !(active.optBoolean("strictMode") && active.optString("mode").equals("countdown")) ? "lifecycle_pending"
             : requested && !authorized ? "permission_required" : requested && !connected ? "disconnected"
-            : !error.isEmpty() ? "failed" : controlling ? pending > 0 ? "holding" : "ready"
+            : !error.isEmpty() ? "failed" : controlling ? snoozed > 0 ? "holding" : pending > 0 ? "requested" : "ready"
             : pending > 0 ? "release_pending" : entries.length() > 0 ? "released" : "off";
         return new JSONObject().put("supported", supported).put("authorized", authorized).put("connected", connected)
             .put("requested", requested).put("phase", phase).put("active", controlling && authorized && connected && error.isEmpty())
             .put("sessionId", journal.optString("sessionId")).put("deadlineEpoch", journal.optLong("deadlineEpoch"))
-            .put("pendingCount", pending).put("restoredCount", restored).put("absentCount", absent)
+            .put("pendingCount", pending).put("restoredCount", restored).put("absentCount", absent).put("presentCount", present)
+            .put("snoozedCount", snoozed)
             .put("recoveryPending", pending > 0).put("error", error)
             .put("reason", "固定截止原通知由 Android 暂缓和恢复；请求返回不等于实际恢复。普通可暂停倒计时、正计时与提前立即释放仍待后续实现。");
     }

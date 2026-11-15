@@ -13,7 +13,7 @@ let interval: ReturnType<typeof setInterval> | undefined
 const enabled = computed(() => app.data.preferences.protection?.interceptNotifications === true)
 const phaseText = computed(() => ({
   unsupported: '本机不支持通知暂缓', off: '本轮未开启', ready: '正在监听，尚无受控通知',
-  holding: '已请求暂缓，按系统状态核实', permission_required: '通知访问未授权', disconnected: '监听未连接，保护失效',
+  holding: '系统已核实暂缓原通知', requested: '已请求暂缓，尚待系统核实', permission_required: '通知访问未授权', disconnected: '监听未连接，保护失效',
   lifecycle_pending: '本轮计时方式的通知处理尚待实现', failed: '通知处理失败，请检查并重试',
   release_pending: '等待系统释放并核实原通知', released: '本轮已无待释放通知', withdrawn: '本轮已停止新拦截',
 } as Record<string, string>)[status.value?.phase || ''] || '正在检查')
@@ -65,6 +65,8 @@ onBeforeUnmount(() => {
       <strong>通知拦截：{{ phaseText }}</strong>
       <p v-if="status?.supported" class="field-help">通知访问：{{ status.authorized ? '已授权' : '未授权' }}；监听：{{ status.connected ? '已连接' : '未连接' }}；实际处理：{{ status.active ? '本轮监听中' : '未执行新拦截' }}。</p>
       <p v-if="status && (status.pendingCount || status.restoredCount || status.absentCount)" class="field-help">待核实 {{ status.pendingCount }} 条 · 已观察原通知恢复 {{ status.restoredCount }} 条 · 已撤回或当前不存在 {{ status.absentCount }} 条。不存在不等于已恢复。</p>
+      <p v-if="status?.snoozedCount" class="field-help">系统最近已核实暂缓 {{ status.snoozedCount }} 条；断连期间状态等待重连核实。</p>
+      <p v-if="status?.presentCount" class="field-help">另有 {{ status.presentCount }} 条原通知当前仍在正常显示；未观察到暂缓，不计为已验证恢复。</p>
       <p v-if="status?.recoveryPending" class="field-help">受控通知仍由 Android 持有。停止新拦截后仍需等待原截止并核实；可进入故障恢复查看责任与重试。</p>
       <p v-if="error || status?.error" class="field-help notification-error">{{ error || status?.error }}</p>
     </div>
