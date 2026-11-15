@@ -2,7 +2,7 @@
 import { onMounted, computed, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App as CapacitorApp } from '@capacitor/app'
-import { consumeFocusReturn, consumeLockReturn, consumeRecoveryReturn, native } from './platform/bridge'
+import { consumeFocusReturn, consumeLockReturn, consumeRecoveryReturn, resolveMainEntry, native } from './platform/bridge'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
 import StrictStartConfirmation from './components/StrictStartConfirmation.vue'
@@ -14,8 +14,12 @@ const app = useApp(),
   updates = useUpdates(),
   route = useRoute(),
   router = useRouter(),
-  full = computed(() => route.path === '/focus' || route.path === '/rest' || route.path === '/lock')
-watch(() => app.lock.session?.id, id => { if (id) void router.replace('/lock') })
+  full = computed(() => ['/focus', '/rest', '/lock', '/permissions', '/help', '/emergency', '/recovery'].includes(route.path))
+watch(() => app.lock.session?.id, async id => {
+  if (!id) return
+  const destination = await resolveMainEntry(route.path)
+  if (destination !== route.path) await router.replace(destination)
+})
 watch([() => app.ready, () => app.rest.session?.record.id], ([ready, id]) => {
   if (ready && id && route.path !== '/rest') void router.replace('/rest')
 })

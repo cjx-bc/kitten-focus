@@ -15,6 +15,7 @@ final class FocusRecovery {
     static final String APPLICATIONS = "applicationRestriction";
     static final String NAVIGATION = "navigationRestriction";
     static final String ANTI_CLOSE = "preciseAntiClose";
+    static final String MAIN_ENTRY = "lockMainInterfaceRestricted";
     static final String DISMISS_BLOCK = "com.xiaomao.focus.DISMISS_RECOVERED_BLOCK";
     interface DeviceEffects { void releaseApplicationRestriction() throws Exception; }
     /** Adapters keep their own original-state journal; preview must be read-only. */
@@ -47,13 +48,16 @@ final class FocusRecovery {
     }
     void prepare(JSONObject session) throws JSONException {
         JSONObject protection = session.optJSONObject("protection");
-        if (protection == null || (!protection.optBoolean("study") && !FocusProtection.navigationRequested(protection) && !FocusAntiClose.requested(protection))) return;
+        boolean mainEntry = mainEntryRequested(session);
+        if (protection == null || (!protection.optBoolean("study") && !FocusProtection.navigationRequested(protection)
+            && !FocusAntiClose.requested(protection) && !mainEntry)) return;
         JSONObject value = read(); JSONArray steps = value.getJSONArray("steps");
         for (int i = 0; i < steps.length(); i++) {
             JSONObject step = steps.getJSONObject(i);
             boolean required = step.optString("capability").equals(APPLICATIONS) && protection.optBoolean("study")
                 || step.optString("capability").equals(NAVIGATION) && FocusProtection.navigationRequested(protection)
-                || step.optString("capability").equals(ANTI_CLOSE) && FocusAntiClose.requested(protection);
+                || step.optString("capability").equals(ANTI_CLOSE) && FocusAntiClose.requested(protection)
+                || step.optString("capability").equals(MAIN_ENTRY) && mainEntry;
             if (required && !step.optString("status").equals("restored"))
                 throw new IllegalStateException("上一轮保护仍有待恢复项目，请先进入故障恢复重试");
         }
@@ -70,7 +74,17 @@ final class FocusRecovery {
         if (FocusAntiClose.requested(protection)) retained.put(new JSONObject().put("sessionId", session.getString("id")).put("capability", ANTI_CLOSE)
             .put("title", "精确防关闭").put("status", "active").put("withdrawn", false)
             .put("reason", "撤销本轮对本应用强退、撤权和卸载入口的返回；计时与增强偏好保留"));
+        if (mainEntry) retained.put(new JSONObject().put("sessionId", session.getString("id")).put("capability", MAIN_ENTRY)
+            .put("title", "锁机主界面入口限制").put("status", "active").put("withdrawn", false)
+            .put("reason", "恢复普通业务入口；本轮锁机、严格计时和增强偏好继续保留"));
         write(value.put("steps", retained));
+    }
+    static boolean mainEntryRequested(JSONObject session) {
+        if (!LockEngine.owns(session)) return false;
+        JSONArray selected = session.optJSONArray("originalEnhancedProtectionSettings");
+        if (selected != null) for (int i = 0; i < selected.length(); i++)
+            if (MAIN_ENTRY.equals(selected.optString(i))) return true;
+        return false;
     }
     boolean withdrawn(String sessionId, String capability) throws JSONException {
         JSONArray steps = read().getJSONArray("steps");
@@ -123,7 +137,7 @@ final class FocusRecovery {
             try {
                 if (capabilityEffects.containsKey(step.optString("capability"))) capabilityEffects.get(step.optString("capability")).releaseApplicationRestriction();
                 else if (step.optString("capability").equals(APPLICATIONS) || step.optString("capability").equals(NAVIGATION)) effects.releaseApplicationRestriction();
-                else throw new UnsupportedOperationException("此版本无法恢复该项目，请更新后重试");
+                else if (!step.optString("capability").equals(MAIN_ENTRY)) throw new UnsupportedOperationException("此版本无法恢复该项目，请更新后重试");
                 step.put("status", "restored").put("reason", "已撤销本轮保护；计时和偏好保留");
             } catch (UnsupportedOperationException limited) {
                 step.put("status", "limited").put("reason", limited.getMessage());
