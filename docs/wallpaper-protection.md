@@ -54,6 +54,14 @@ are separate and never settle timing. A bounded 48-event private lifecycle ring
 records PID, process token, boot count and the reconciled native session ID;
 there is no periodic wallpaper keep-alive loop.
 
+Each Android picker launch has a durable random receipt. The internal result
+Activity carries it through recreation; callbacks with a stale receipt cannot
+close or replace a later round's picker. A still-open picker retains its duty
+even if an already-observed late selection has been restored, because that
+picker can still create another effect. New conflicting preparation and manual
+acknowledgement are blocked until the matching system result returns. An
+unrelated unprotected timer can continue throughout this recovery work.
+
 The two supplied original files are copied through `ACTION_OPEN_DOCUMENT` into
 private `no_backup/wallpaper-originals`, with a 20 MB / 64 megapixel limit per
 file. Only home and lock slots exist. Old receipts are invalidated durably before
@@ -106,7 +114,11 @@ disposable user's process.
 | First native observation tracer | Official API36 runtime RED (missing wallpaper JSON), then GREEN 1/1; `artifacts/focus-control/api36/t17-first-{red,green}`. |
 | Live-original round | Missing public commands/constructor compilation RED, then official API36 native GREEN 2/2, 3.135 seconds, no skips; `t17-round-green`. OS wallpaper effects substituted only at the approved boundary. |
 | Supplied-static original and selected-engine existing-round reconciliation | Direct javac missing-command RED, then official API36 native GREEN 3/3, 5.696 seconds, no skips; `t17-static-green`. This is deterministic integration evidence, not an actual wallpaper selection/rebind verdict. |
-| Diagnostics | Existing public CatFocus aggregation RED → GREEN 6/6; host suite 54/54. Reports actual native support, requested/selected distinction and pending restoration. |
+| Later static choice | Native runtime RED mislabeled a preserved later static image as restored; GREEN 4/4, 7.161 seconds, no skips. It now reports `user_choice_preserved` without a write; `t17-later-static-{red,green}`. |
+| Late picker, strict failure, manual acknowledgement and reboot | Actual native lifecycle RED at orphaned late selection, then GREEN 5/5, 14.592 seconds, no skips. The same round survives pause/reconstruction; strict timing remains enforced; later unprotected timer is not replaced; `t17-late-picker-red`, `t17-coherent-green`. |
+| Picker receipt | Direct javac RED at the token-aware callback, then official API36 native GREEN 5/5, 5.186 seconds, no skips. A stale old callback leaves the new picker open; `t17-token-green`. |
+| Interrupted lock-first restore | Actual native RED at a lock write interrupted before Home; `t17-partial-lock-red`, 4.25 seconds. Minimal fix retains uncertainty whenever either owned identity changed. Final GREEN pending. |
+| Diagnostics | Existing public CatFocus aggregation RED → GREEN 7/7; latest host suite 56/56 after integration merge. Reports actual native support, preview/selection distinction, pending restoration as actionable, and withdrawn/later choice as off. |
 | UI | Vue type check/build passed. Actual browser screenshots at 375 px phone and 812 px landscape with enlarged text; no horizontal overflow. Browser support remains unavailable truthfully. |
 | Production device matrix | Pending actual picker/SAF/restore/process-rebind acceptance. T03 probe evidence does not fill this row. |
 
