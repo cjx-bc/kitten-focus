@@ -47,12 +47,28 @@ export async function connectQa({ port = 9237, output = 'artifacts/focus-control
     if (message.error) request.reject(new Error(message.error.message))
     else request.resolve(message.result)
   }
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
+  const rawSend = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++next
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('CDP timeout: ' + method)) }, 15000)
     pending.set(id, { resolve, reject, timer })
     socket.send(JSON.stringify({ id, method, params }))
   })
+  const send = async (method, params = {}) => {
+    if (method !== 'Page.reload') return rawSend(method, params)
+    const marker = 'qa-reload-' + Date.now() + '-' + next
+    await rawSend('Runtime.evaluate', {
+      expression: `window.__qaReloadDocument = ${JSON.stringify(marker)}`,
+    })
+    const result = await rawSend(method, params)
+    await until(async () => {
+      const state = await rawSend('Runtime.evaluate', {
+        expression: `window.__qaReloadDocument !== ${JSON.stringify(marker)} && document.readyState === 'complete' && !!document.querySelector('.app-shell') && !document.querySelector('.boot') && !!window.Capacitor?.nativePromise`,
+        returnByValue: true,
+      })
+      return !state.exceptionDetails && state.result?.value === true
+    }, 'new QA document and app initialization after reload', 30000)
+    return result
+  }
   const evaluate = async expression => {
     const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text)

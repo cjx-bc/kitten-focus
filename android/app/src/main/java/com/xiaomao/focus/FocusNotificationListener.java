@@ -60,7 +60,7 @@ public final class FocusNotificationListener extends NotificationListenerService
             || Notification.CATEGORY_SYSTEM.equals(n.category) || Notification.CATEGORY_ERROR.equals(n.category)
             || "android".equals(sbn.getPackageName()) || "com.android.systemui".equals(sbn.getPackageName())
             || "com.android.phone".equals(sbn.getPackageName()) || "com.android.server.telecom".equals(sbn.getPackageName());
-        return new NotificationSystem.Notice(sbn.getKey(), sbn.getPackageName(), sbn.getUid(), sbn.getGroupKey(), necessary);
+        return new NotificationSystem.Notice(sbn.getKey(), sbn.getPackageName(), sbn.getUid(), sbn.getGroupKey(), necessary, sbn.getPostTime());
     }
     static List<NotificationSystem.Notice> metadata(StatusBarNotification[] notifications) {
         List<NotificationSystem.Notice> result = new ArrayList<>();

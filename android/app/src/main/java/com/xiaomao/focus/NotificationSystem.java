@@ -8,7 +8,12 @@ interface NotificationSystem {
         final String key, packageName, group;
         final int uid;
         final boolean necessary;
+        final long postTime;
         Notice(String key, String packageName, int uid, String group, boolean necessary) {
+            this(key, packageName, uid, group, necessary, 0);
+        }
+        Notice(String key, String packageName, int uid, String group, boolean necessary, long postTime) {
+            this.postTime = postTime;
             this.key = key; this.packageName = packageName; this.uid = uid;
             this.group = group == null ? "" : group; this.necessary = necessary;
         }

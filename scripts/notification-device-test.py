@@ -21,7 +21,7 @@ def main():
     parser.add_argument('--classes', default='com.xiaomao.focus.FocusNotificationTest,com.xiaomao.focus.FocusNotificationDeviceTest')
     parser.add_argument('--lifecycle', action='store_true', help='Enable isolated QA accessibility and opt into lifecycle original-notification fixture')
     parser.add_argument('--timeout', type=int, default=180)
-    parser.add_argument('--expected-tests', type=int, default=17,
+    parser.add_argument('--expected-tests', type=int, default=23,
                         help='Exact seam plus opt-in device case count for this checkout')
     parser.add_argument('--observed-tap', choices=['200,420'], help='Only after visually inspecting the synthetic original card on this 540x960 fixture')
     args = parser.parse_args()
@@ -199,7 +199,7 @@ def main():
             if baseline_listeners == 'null' and not current:
                 shell('settings', 'delete', 'secure', 'enabled_notification_listeners')
             cutoff = datetime.fromisoformat(metadata['startedAtUtc']).strftime('%m-%d %H:%M:%S')
-            logs = shell('logcat', '-d', '-s', 'FocusNotificationLifecycleDeviceTest:I', 'FocusNotificationRebootDeviceTest:I', '*:S')
+            logs = shell('logcat', '-d', '-s', 'FocusNotificationDeviceTest:I', 'FocusNotificationLifecycleDeviceTest:I', 'FocusNotificationRebootDeviceTest:I', '*:S')
             metadata['fixtureMetadata'] = '\n'.join(line for line in logs.splitlines() if line[:14] >= cutoff)
             metadata['listenerAfterCleanup'] = shell('settings', 'get', 'secure', 'enabled_notification_listeners').strip()
             metadata['accessibilityAfterCleanup'] = shell('settings', 'get', 'secure', 'enabled_accessibility_services').strip()
