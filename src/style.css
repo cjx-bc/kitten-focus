@@ -381,17 +381,25 @@ main {
   font-size: 13px;
   color: var(--muted);
 }
+html.sheet-open {
+  overflow: hidden;
+}
 .sheet {
+  position: fixed;
+  inset: 20px 0 auto;
+  margin: 0 auto;
   border: 0;
   padding: 0;
   width: calc(100% - 24px);
   max-width: 496px;
-  max-height: 90dvh;
+  max-height: min(90dvh, calc(100dvh - 40px));
   border-radius: 26px;
   background: var(--white);
   color: var(--ink);
   box-shadow: 0 20px 80px #0002;
   overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 88px 20px;
 }
 .sheet::backdrop {
   background: #0005;
@@ -400,6 +408,10 @@ main {
   padding: 20px 22px 26px;
 }
 .sheet-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--white);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -407,6 +419,12 @@ main {
 }
 .sheet-header h2 {
   font-size: 20px;
+}
+@media (max-height: 300px) {
+  .sheet textarea {
+    min-height: 48px;
+    height: 48px;
+  }
 }
 .segmented {
   display: flex;

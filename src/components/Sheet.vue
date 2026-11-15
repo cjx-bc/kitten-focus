@@ -3,8 +3,15 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 defineProps<{ title: string }>()
 const emit = defineEmits<{ close: [] }>(),
   dialog = ref<HTMLDialogElement>()
-onMounted(() => dialog.value?.showModal())
-onBeforeUnmount(() => dialog.value?.close())
+onMounted(() => {
+  document.documentElement.classList.add('sheet-open')
+  dialog.value?.showModal()
+})
+onBeforeUnmount(() => {
+  dialog.value?.close()
+  if (!document.querySelector('dialog[open]'))
+    document.documentElement.classList.remove('sheet-open')
+})
 </script>
 <template>
   <dialog

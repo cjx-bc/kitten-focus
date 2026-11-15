@@ -1,0 +1,311 @@
+{
+  "version": "0.2.2",
+  "verifiedAtUTC": "2026-11-15T06:48:27.277978+00:00",
+  "environment": {
+    "android": "15 emulator",
+    "keyboard": "OpenBoard 1.4.5 official GitHub release; test emulator only",
+    "portraitCssWidth": 375
+  },
+  "cause": "Native dialog vertical auto margins re-center the dialog when the keyboard resizes the WebView viewport.",
+  "before": {
+    "before": {
+      "top": 41,
+      "bottom": 779,
+      "height": 738,
+      "headerTop": 61,
+      "innerHeight": 820,
+      "visualHeight": 820,
+      "visualTop": 0,
+      "scrollY": 0,
+      "dialogScroll": 0,
+      "active": "BODY"
+    },
+    "keyboard": {
+      "top": 27.453125,
+      "bottom": 521.546875,
+      "height": 494.09375,
+      "headerTop": 47.453125,
+      "innerHeight": 549,
+      "visualHeight": 549,
+      "visualTop": 0,
+      "scrollY": 0,
+      "dialogScroll": 0,
+      "active": "INPUT"
+    },
+    "after": {
+      "top": 41,
+      "bottom": 779,
+      "height": 738,
+      "headerTop": 61,
+      "innerHeight": 820,
+      "visualHeight": 820,
+      "visualTop": 0,
+      "scrollY": 0,
+      "dialogScroll": 0,
+      "active": "INPUT"
+    },
+    "movement": 13.546875,
+    "errors": []
+  },
+  "after": {
+    "portrait": {
+      "before": {
+        "top": 20,
+        "bottom": 758,
+        "height": 738,
+        "headerTop": 40,
+        "innerHeight": 820,
+        "visualHeight": 820,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 0,
+        "active": "BODY"
+      },
+      "keyboard": {
+        "top": 20,
+        "bottom": 514.09375,
+        "height": 494.09375,
+        "headerTop": 40,
+        "innerHeight": 549,
+        "visualHeight": 549,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 0,
+        "active": "INPUT"
+      },
+      "after": {
+        "top": 20,
+        "bottom": 758,
+        "height": 738,
+        "headerTop": 40,
+        "innerHeight": 820,
+        "visualHeight": 820,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 0,
+        "active": "INPUT"
+      },
+      "movement": 0,
+      "errors": [],
+      "fields": [
+        {
+          "selector": "dialog[open] input[type=number]",
+          "state": {
+            "top": 20,
+            "bottom": 550.09375,
+            "height": 530.09375,
+            "headerTop": 40,
+            "innerHeight": 589,
+            "visualHeight": 589,
+            "visualTop": 0,
+            "scrollY": 0,
+            "dialogScroll": 0,
+            "active": "INPUT"
+          },
+          "input": {
+            "top": 428,
+            "bottom": 476,
+            "headerBottom": 88
+          }
+        },
+        {
+          "selector": "dialog[open] textarea",
+          "state": {
+            "top": 20,
+            "bottom": 514.09375,
+            "height": 494.09375,
+            "headerTop": 20,
+            "innerHeight": 549,
+            "visualHeight": 549,
+            "visualTop": 0,
+            "scrollY": 0,
+            "dialogScroll": 278.5,
+            "active": "TEXTAREA"
+          },
+          "input": {
+            "top": 295.5,
+            "bottom": 383.5,
+            "headerBottom": 68
+          }
+        }
+      ],
+      "savePersisted": true
+    },
+    "landscape": {
+      "before": {
+        "top": 20,
+        "bottom": 318.34375,
+        "height": 298.34375,
+        "headerTop": 40,
+        "innerHeight": 351,
+        "visualHeight": 351,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 0,
+        "active": "BODY"
+      },
+      "keyboard": {
+        "top": 20,
+        "bottom": 141.546875,
+        "height": 121.546875,
+        "headerTop": 20,
+        "innerHeight": 143,
+        "visualHeight": 143,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 46,
+        "active": "INPUT"
+      },
+      "after": {
+        "top": 20,
+        "bottom": 318.34375,
+        "height": 298.34375,
+        "headerTop": 20,
+        "innerHeight": 351,
+        "visualHeight": 351,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 46,
+        "active": "INPUT"
+      },
+      "movement": 0,
+      "errors": [],
+      "fields": [
+        {
+          "selector": "dialog[open] input[type=number]",
+          "state": {
+            "top": 20,
+            "bottom": 172.1484375,
+            "height": 152.1484375,
+            "headerTop": 20,
+            "innerHeight": 179,
+            "visualHeight": 179,
+            "visualTop": 0,
+            "scrollY": 0,
+            "dialogScroll": 337,
+            "active": "INPUT"
+          },
+          "input": {
+            "top": 91,
+            "bottom": 139,
+            "headerBottom": 68
+          }
+        },
+        {
+          "selector": "dialog[open] textarea",
+          "state": {
+            "top": 20,
+            "bottom": 141.546875,
+            "height": 121.546875,
+            "headerTop": 20,
+            "innerHeight": 143,
+            "visualHeight": 143,
+            "visualTop": 0,
+            "scrollY": 0,
+            "dialogScroll": 482.5,
+            "active": "TEXTAREA"
+          },
+          "input": {
+            "top": 91.5,
+            "bottom": 139.5,
+            "headerBottom": 68
+          }
+        }
+      ],
+      "savePersisted": true
+    },
+    "fontScale2": {
+      "before": {
+        "top": 20,
+        "bottom": 758,
+        "height": 738,
+        "headerTop": 40,
+        "innerHeight": 820,
+        "visualHeight": 820,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 0,
+        "active": "BODY"
+      },
+      "keyboard": {
+        "top": 20,
+        "bottom": 514.09375,
+        "height": 494.09375,
+        "headerTop": 40,
+        "innerHeight": 549,
+        "visualHeight": 549,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 0,
+        "active": "INPUT"
+      },
+      "after": {
+        "top": 20,
+        "bottom": 758,
+        "height": 738,
+        "headerTop": 40,
+        "innerHeight": 820,
+        "visualHeight": 820,
+        "visualTop": 0,
+        "scrollY": 0,
+        "dialogScroll": 0,
+        "active": "INPUT"
+      },
+      "movement": 0,
+      "errors": [],
+      "fields": [
+        {
+          "selector": "dialog[open] input[type=number]",
+          "state": {
+            "top": 20,
+            "bottom": 550.09375,
+            "height": 530.09375,
+            "headerTop": 20,
+            "innerHeight": 589,
+            "visualHeight": 589,
+            "visualTop": 0,
+            "scrollY": 0,
+            "dialogScroll": 297,
+            "active": "INPUT"
+          },
+          "input": {
+            "top": 267.5,
+            "bottom": 335,
+            "headerBottom": 78
+          }
+        },
+        {
+          "selector": "dialog[open] textarea",
+          "state": {
+            "top": 20,
+            "bottom": 514.09375,
+            "height": 494.09375,
+            "headerTop": 20,
+            "innerHeight": 549,
+            "visualHeight": 549,
+            "visualTop": 0,
+            "scrollY": 0,
+            "dialogScroll": 540,
+            "active": "TEXTAREA"
+          },
+          "input": {
+            "top": 285.5,
+            "bottom": 393.5,
+            "headerBottom": 78
+          }
+        }
+      ],
+      "savePersisted": true
+    }
+  },
+  "domainTests": 14,
+  "productionBuildPassed": true,
+  "sameSigningIdentityVerified": true,
+  "historicalAndroidInstrumentationTests": 20,
+  "androidInstrumentationRepeatedThisRelease": false,
+  "physicalPhoneVerified": false,
+  "chinaAccessFeedback": {
+    "source": "user report",
+    "scope": "Website access and download speed normal after v0.2.1 deployment; not an independent multi-carrier benchmark"
+  }
+}

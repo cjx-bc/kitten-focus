@@ -416,7 +416,7 @@ try {
           'source permission guidance',
           'backup before install',
           'system installer confirmation',
-          'base APK to QA target installation',
+          'base APK to target installation',
           'post-upgrade data equality',
         ],
         runtimeErrors,

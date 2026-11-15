@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 8,
+    "versionName": "0.2.2",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.2/xiaomao-focus-0.2.2-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.2/xiaomao-focus-0.2.2-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.2-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.2/xiaomao-focus-0.2.2-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.2-debug.apk"
+    ],
+    "size": 4621167,
+    "sha256": "8982ef8bd75fedb6e65b5e2b67246c997feecae725bae60c1ca390b69c98682f",
+    "notes": "修复编辑待办时输入法弹出、收起造成弹窗上下跳动的问题。弹窗顶部保持固定，内部表单可滚动，关闭按钮始终可见；横屏小空间下也可输入备注。保留原有数据和下载备用线路。"
+  }
+}
