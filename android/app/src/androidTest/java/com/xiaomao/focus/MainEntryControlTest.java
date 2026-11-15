@@ -82,6 +82,7 @@ public class MainEntryControlTest {
     @Test public void selectedPreferenceDoesNotRestrictFocusPauseOrRestAndCannotBeForgedInStartPayload() throws Exception {
         preference(true);
         JSONObject session = new JSONObject().put("id", "focus").put("title", "自由专注").put("mode", "stopwatch").put("targetMs", 60000)
+            .put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL).put("themeName", "自由专注").put("color", "#222222")
             .put("startedAt", clock.epoch()).put("timeZone", "UTC").put("segments", new JSONArray())
             .put("kind", "lock").put("originalEnhancedProtectionSettings", new JSONArray("[\"lockMainInterfaceRestricted\"]"));
         control.startFocus(session); route("/tasks", "/tasks"); control.focusAction("pause"); route("/statistics", "/statistics");

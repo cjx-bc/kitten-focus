@@ -32,3 +32,9 @@
 首轮外部脚本已通过原 Sheet 默认关闭、独立保存和真实按钮 Home 返回。按钮 APP_SWITCH 的前台 Activity 与截图均显示回到暂停计时页，但 Android 没有再次发出 MainActivity 的 `TYPE_WINDOW_STATE_CHANGED`；当时按保守规则标记超时失败，没有把前次 Home 成功延用成成功证据。修复增加 MainActivity 真实窗口获得焦点回调，仅在本轮存在待确认返回请求时记录确认；不会凭 `startActivity()` 返回或 `onResume()` 推断成功。
 
 切换导航 overlay 会使 Android 重建 Activity/WebView。脚本在每次切换后关闭旧 CDP/forward 并重新连接，保证后续桥接作用于当前页面。失败产物保留在 `artifacts/focus-control/api36/t14-device/failure.json`、`failure.png`；恢复后的基线保存在 `restored-baseline.json`。首次插桩实际输入用例因测试环境无法保持服务绑定而只在前置条件失败，没有作为导航行为验收，最终改为外部真实输入脚本。
+
+## 最终 API36 实际复验
+
+集成流程使用包含最终窗口焦点补丁的 T12 合并 QA APK（构建在 `958dbb2` 基线上），重新执行全部外部脚本，九组场景全部通过：原 Sheet 默认关闭与独立保存、按钮 Home、暂停中 APP_SWITCH、精确匹配真实默认拨号器、必要授权页、手势 Home、手势 Overview、故障恢复保留计时而解除 Home 限制、下一轮重新生效及正常结束/休息释放。每次返回同时要求本轮 `lastReturnedAt` 更新、`active=true`、实际 topResumedActivity 为 MainActivity 和当前计时页可见；没有只以动作返回值通过。
+
+最终前置故障来自脚本在已重建的 WebView 中重复 `Page.reload`，旧 CDP 上 `document.body` 为 null；删除这个不必要的重载，仍保留导航 overlay 后重新连接及真实 DOM 等待。未修改产品导航规则。证据 `artifacts/focus-control/api36/t14-device/results.json` 和九组实际系统截图；基线服务 `null`、无障碍总开关 `0`、原 gestural overlay 已恢复。此前失败证据保留为历史，不覆盖 OEM、真实来电或其他 API 的未验收范围。
