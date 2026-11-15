@@ -85,7 +85,15 @@ public class StudyProtectionBridgeTest {
         assertTrue(ownFixed);
     }
     @Test public void globalPolicyStaysFrozenAcrossSettingsChangesAndPauseThenReleasesAtRest() throws Exception {
-        assumeTrue("Enable QA accessibility service before this test", status().optBoolean("authorized") && status().optBoolean("connected"));
+        long connectDeadline = SystemClock.elapsedRealtime() + 5000;
+        JSONObject capability;
+        do {
+            capability = status();
+            if (capability.optBoolean("authorized") && capability.optBoolean("connected")) break;
+            SystemClock.sleep(100);
+        } while (SystemClock.elapsedRealtime() < connectDeadline);
+        assertTrue("Enable QA accessibility service before this acceptance test", capability.optBoolean("authorized"));
+        assertTrue("QA accessibility service must reconnect after instrumentation restarts the process", capability.optBoolean("connected"));
         save(true, new JSONArray().put("missing.first.tool"));
         Call start = new Call(new JSObject().put("session", session())); plugin.startFocus(start); assertNull(start.rejection);
         save(false, new JSONArray().put("missing.second.tool"));
