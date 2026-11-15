@@ -53,6 +53,17 @@ function session(mode: ActiveFocus['mode'] = 'countdown'): ActiveFocus {
   }
 }
 
+it('rejects saved task-card hiding on the browser before creating a session', async () => {
+  const { focusDriver, controlDriver, repository } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  const data = emptyData()
+  data.preferences.protection = { ...defaultProtection(), enhancements: ['recentTasksHidden'] }
+  await repository.save(data)
+  await expect(focusDriver.start(session())).rejects.toThrow('最近任务')
+  expect((await controlDriver.observe()).owner).toBeNull()
+  expect((await repository.load()).preferences.protection?.enhancements).toEqual(['recentTasksHidden'])
+})
+
 it('observes an expired countdown without settling it or creating a rest or record', async () => {
   const { focusDriver, controlDriver, repository } = await import('../src/platform/bridge')
   await focusDriver.start(session())

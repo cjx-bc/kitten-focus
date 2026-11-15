@@ -14,6 +14,7 @@ import type {
   LockSnapshot,
   TemporaryAccessRequest,
   TemporaryAccessResult,
+  RecentTasksStatus,
 } from '../domain/model'
 import { emptyData, effectiveWhitelist } from '../domain/model'
 import { elapsed, settle } from '../domain/focus'
@@ -34,6 +35,7 @@ interface NativeBridge {
   restAction(options: { action: 'read' | 'exit' }): Promise<RestSnapshot>
   grantTemporaryAccess(options: TemporaryAccessRequest): Promise<TemporaryAccessResult>
   observeControl(): Promise<ControlSnapshot>
+  getRecentTasksStatus(): Promise<RecentTasksStatus>
   consumeFocusReturn(): Promise<{ requested: boolean }>
   consumeLockReturn(): Promise<{ requested: boolean }>
   protectionStatus(): Promise<ProtectionStatus>
@@ -111,6 +113,8 @@ export const focusDriver = {
     if (native) return plugin.startFocus({ session, strictModeConfirmed })
     const db = await webReadFocus()
     const preferredProtection = (await repository.load()).preferences.protection
+    if (preferredProtection?.enhancements?.includes('recentTasksHidden'))
+      throw new Error('最近任务卡隐藏仅支持 Android 本机版本，请关闭此选项后继续')
     if (preferredProtection?.enhancements?.includes('navigationHomeRecents'))
       throw new Error('桌面与最近任务限制仅支持 Android 本机版本，请关闭此增强后继续')
     if (preferredProtection?.study)
@@ -231,6 +235,13 @@ export const openAlarmSettings = () => plugin.openAlarmSettings()
 export const syncReminders = () => (native ? plugin.syncReminders() : Promise.resolve())
 
 export const protectionDriver = {
+  async recentTasks(): Promise<RecentTasksStatus> {
+    return native ? plugin.getRecentTasksStatus() : {
+      supported: false, requested: false, preferenceEnabled: false, recoveryAvailable: false,
+      phase: 'unsupported', active: false, verified: false, recoveryPending: false,
+      error: '最近任务卡隐藏仅支持 Android 本机版本',
+    }
+  },
   async status(): Promise<ProtectionStatus> {
     if (native) return plugin.protectionStatus()
     return { supported: false, authorized: false, connected: false, active: false,

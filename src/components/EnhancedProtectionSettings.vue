@@ -4,6 +4,7 @@ import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
 import type { NavigationProtectionStatus } from '../domain/model'
 import { protectionDriver } from '../platform/bridge'
+import RecentTasksSetting from './RecentTasksSetting.vue'
 const app = useApp()
 const option = 'navigationHomeRecents'
 const selected = computed(() => app.data.preferences.protection?.enhancements.includes(option) ?? false)
@@ -65,6 +66,7 @@ async function authorize() {
       <button class="secondary wide" :disabled="busy" @click="authorize">前往无障碍设置</button>
     </div>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+    <RecentTasksSetting />
   </section>
 </template>
 <style scoped>

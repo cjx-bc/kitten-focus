@@ -77,7 +77,8 @@ final class FocusProtection {
         LinkedHashSet<String> selected = new LinkedHashSet<>();
         addPackages(selected, custom ? whitelist.optJSONArray("packages") : preferences(store).optJSONArray("globalWhitelist"));
         selected.add(context.getPackageName());
-        return new JSONObject().put("study", true).put("source", custom ? "custom" : "global").put("whitelist", new JSONArray(selected));
+        return new JSONObject().put("study", true).put("source", custom ? "custom" : "global").put("whitelist", new JSONArray(selected))
+            .put("enhancements", selectedEnhancements(preferences(store)));
     }
     static JSONObject capture(Context context, LocalStore store, JSONObject session, AccessibilityState accessibility) throws JSONException {
         JSONObject prefs = preferences(store);
@@ -105,14 +106,16 @@ final class FocusProtection {
             if (value instanceof String && !((String) value).isEmpty()) packages.add((String) value);
         }
         packages.add(context.getPackageName());
-        JSONArray enhancements = prefs.optJSONArray("enhancements");
-        JSONArray selectedEnhancements = new JSONArray();
+        return new JSONObject().put("study", study).put("source", source)
+            .put("whitelist", new JSONArray(packages)).put("enhancements", selectedEnhancements(prefs));
+    }
+    private static JSONArray selectedEnhancements(JSONObject prefs) {
+        JSONArray enhancements = prefs.optJSONArray("enhancements"), selected = new JSONArray();
         if (enhancements != null) for (int i = 0; i < enhancements.length(); i++) {
             String value = enhancements.optString(i);
-            if ("navigationHomeRecents".equals(value)) selectedEnhancements.put(value);
+            if ("navigationHomeRecents".equals(value) || RecentTasksProtection.KEY.equals(value)) selected.put(value);
         }
-        return new JSONObject().put("study", study).put("source", source)
-            .put("whitelist", new JSONArray(packages)).put("enhancements", selectedEnhancements);
+        return selected;
     }
 
     static JSONObject status(Context context, LocalStore store, JSONObject observation) throws JSONException {
