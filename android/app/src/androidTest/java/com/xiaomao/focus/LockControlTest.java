@@ -132,6 +132,7 @@ public class LockControlTest {
         assertTrue("Saved strict configuration is the native rule", started.getBoolean("strictMode"));
         String id = started.getString("id");
         data.getJSONArray("lockConfigurations").getJSONObject(0).put("strict", false).put("minutes", 2);
+        data.getJSONObject("preferences").getJSONObject("protection").put("strict", true);
         store.saveData(data, false); clock.advance(12000); control.lockAction("read", false); recreate();
         for (int phase = 0; phase < 2; phase++) {
             for (String action : new String[]{"pause", "resume", "cancel", "finish"}) {
@@ -173,5 +174,26 @@ public class LockControlTest {
         assertFalse("Acknowledgement cannot impose strict policy on an ordinary configuration",
             control.startLock("reading", true).getJSONObject("session").getBoolean("strictMode"));
         control.lockAction("finish", true);
+    }
+    @Test public void strictLockRebootKeepsOnlySavedTimeAndDoesNotRestartOrCreateFocusOrRest() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONArray("lockConfigurations").getJSONObject(0).put("strict", true);
+        store.saveData(data, false);
+        String id = control.startLock("reading", true).getJSONObject("session").getString("id");
+        clock.advance(12000); control.lockAction("read", false);
+        clock.advance(3000); clock.boot++; clock.mono = 1; clock.epoch += 3600000; recreate();
+        assertTrue(control.observeControl().getBoolean("needsReconcile"));
+        assertEquals(48000, control.observeControl().getJSONObject("lock").getLong("remainingMs"));
+        control.reconcile(); control.reconcile(); recreate(); control.reconcile();
+        JSONObject snapshot = control.lockAction("read", false);
+        assertTrue(snapshot.isNull("session")); assertEquals(1, snapshot.getJSONArray("records").length());
+        JSONObject interrupted = snapshot.getJSONArray("records").getJSONObject(0);
+        assertEquals(id, interrupted.getString("id")); assertEquals("interrupted", interrupted.getString("status"));
+        assertEquals(12000, interrupted.getLong("durationMs"));
+        assertEquals(interrupted.getLong("startedAt") + 12000, interrupted.getLong("endedAt"));
+        assertEquals(0, control.loadData().getJSONArray("records").length());
+        assertTrue(control.observeControl().getJSONObject("rest").isNull("session"));
+        assertFalse(control.previewRecovery().getBoolean("pending"));
+        assertTrue(control.loadData().getJSONArray("lockConfigurations").getJSONObject(0).getBoolean("strict"));
     }
 }

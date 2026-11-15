@@ -100,7 +100,7 @@ public class FocusBlockActivity extends Activity {
             long ms = lock ? snapshot.optLong("remainingMs") : session.optString("mode").equals("countdown") ? Math.max(0, session.optLong("targetMs") - elapsed) : elapsed;
             long seconds = ms / 1000;
             time.setText(String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60));
-            String description = lock ? "普通锁机保护中 · 可返回确认解除" : strict ? "严格倒计时 · 不可临时放行" : session.optString("state").equals("paused")
+            String description = lock ? strict ? "严格锁机保护中 · 到期自动结束" : "普通锁机保护中 · 可返回确认解除" : strict ? "严格倒计时 · 不可临时放行" : session.optString("state").equals("paused")
                 ? "计时已暂停 · 应用限制继续" : "本轮学霸模式保护中";
             if (!strict && grant != null && grant.optLong("remainingMs") > 0)
                 description += "\n正在放行 " + grant.optString("targetLabel") + " · 剩余 " + (grant.optLong("remainingMs") + 999) / 1000 + " 秒";
