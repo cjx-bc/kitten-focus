@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useApp } from '../stores/app'
 import StrictModeSetting from '../components/StrictModeSetting.vue'
+import DndSetting from '../components/DndSetting.vue'
 import { makeBackup, readBackup, type Backup } from '../domain/backup'
 import { dateKey } from '../domain/dates'
 import {
@@ -25,6 +26,7 @@ const app = useApp(),
   error = ref(''),
   busy = ref(false),
   permissions = ref({ notifications: false, exactAlarms: false })
+function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 onMounted(async () => {
   try {
     permissions.value = await permissionStatus()
@@ -144,7 +146,10 @@ async function enableNotifications() {
           @change="preference('vibration', $event)"
       /></label>
       <StrictModeSetting />
+      <button class="settings-row" @click="recovery"><span class="row"><Icon name="info" :size="20" />保护帮助与故障恢复</span><Icon name="right" :size="16" /></button>
     </div>
+    <h3 class="settings-section-label">声音辅助</h3>
+    <div class="settings-group sound-settings"><DndSetting /></div>
     <template v-if="native"
       ><h3 class="settings-section-label">系统提醒</h3>
       <div class="settings-group">
@@ -287,6 +292,7 @@ async function enableNotifications() {
   border-radius: 20px;
   padding: 0 17px;
 }
+.sound-settings { padding-top: 17px; padding-bottom: 17px; }
 .settings-row {
   display: flex;
   align-items: center;

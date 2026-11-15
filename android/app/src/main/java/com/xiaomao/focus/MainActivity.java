@@ -20,5 +20,8 @@ public class MainActivity extends BridgeActivity {
         if (intent.getBooleanExtra("returnToFocus", false) && getBridge() != null)
             getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(
                 "window.dispatchEvent(new Event('focus-return-request'))", null));
+        if (intent.getBooleanExtra("openRecovery", false) && getBridge() != null)
+            getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(
+                "window.dispatchEvent(new Event('recovery-return-request'))", null));
     }
 }

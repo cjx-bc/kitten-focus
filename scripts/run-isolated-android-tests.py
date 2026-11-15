@@ -11,8 +11,10 @@ import subprocess
 
 def main():
     root = Path(__file__).resolve().parent.parent
+    target_file = root / '.cache/android-test-device.json'
+    configured = json.loads(target_file.read_text(encoding='utf-8')) if target_file.exists() else {}
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--serial', default=os.environ.get('ANDROID_SERIAL'))
+    parser.add_argument('--serial', default=os.environ.get('ANDROID_SERIAL') or configured.get('serial'))
     parser.add_argument('--class-name', required=True)
     parser.add_argument('--app-apk', type=Path, default=root / 'android/app/build/outputs/apk/debug/app-debug.apk')
     parser.add_argument('--test-apk', type=Path, default=root / 'android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
@@ -20,7 +22,7 @@ def main():
     args = parser.parse_args()
     if not args.serial or not re.fullmatch(r'(?:emulator-\d+|127\.0\.0\.1:\d+)', args.serial):
         parser.error('Specify an emulator serial using --serial or ANDROID_SERIAL')
-    adb = Path(os.environ.get('ADB', root / '.tools/android-sdk/platform-tools/adb.exe'))
+    adb = Path(os.environ.get('ADB') or configured.get('adb') or root / '.tools/android-sdk/platform-tools/adb.exe')
     aapt = root / '.tools/android-sdk/build-tools/36.0.0/aapt.exe'
 
     def run(command, timeout=90):

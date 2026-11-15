@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { onMounted, computed, watch } from 'vue'
+import { onMounted, computed, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App as CapacitorApp } from '@capacitor/app'
-import { consumeFocusReturn, native } from './platform/bridge'
+import { consumeFocusReturn, consumeRecoveryReturn, native } from './platform/bridge'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
 import StrictStartConfirmation from './components/StrictStartConfirmation.vue'
+import RecoverySheet from './components/RecoverySheet.vue'
 import { createTabSwipe } from './navigation/tabSwipe'
 import { useUpdates } from './stores/updates'
 const app = useApp(),
+  recoveryOpen = ref(false),
   updates = useUpdates(),
   route = useRoute(),
   router = useRouter(),
@@ -30,9 +32,14 @@ const swipe = createTabSwipe({
   navigate: (path) => void router.replace(path),
 })
 onMounted(async () => {
+  window.addEventListener('open-recovery', () => { recoveryOpen.value = true })
+  window.addEventListener('recovery-return-request', async () => {
+    if (await consumeRecoveryReturn()) recoveryOpen.value = true
+  })
   window.addEventListener('focus-return-request', () => void router.replace('/focus'))
   await app.init()
   if ((await consumeFocusReturn()) && app.focus.session) await router.replace('/focus')
+  if (await consumeRecoveryReturn()) recoveryOpen.value = true
   void updates.init()
   if (native) {
     await CapacitorApp.addListener('appStateChange', (state) => {
@@ -43,8 +50,9 @@ onMounted(async () => {
       }
     })
     await CapacitorApp.addListener('backButton', () => {
-      if (document.querySelector('dialog[open]'))
-        (document.querySelector('dialog[open]') as HTMLDialogElement).dispatchEvent(
+      const dialogs = document.querySelectorAll<HTMLDialogElement>('dialog[open]')
+      if (dialogs.length)
+        dialogs[dialogs.length - 1]!.dispatchEvent(
           new Event('cancel'),
         )
       else if (route.path === '/rest') document.dispatchEvent(new Event('rest-exit-request'))
@@ -85,7 +93,7 @@ onMounted(async () => {
             class="nav-update-dot"
             aria-hidden="true"
         /></RouterLink></nav></template
-    ><StrictStartConfirmation /><Transition name="toast"
+    ><StrictStartConfirmation /><RecoverySheet :open="recoveryOpen" @close="recoveryOpen = false" /><Transition name="toast"
       ><div v-if="app.toast" class="toast" role="status">{{ app.toast }}</div></Transition
     >
   </div>

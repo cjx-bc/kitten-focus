@@ -4,9 +4,11 @@ import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import { timer, duration } from '../domain/dates'
 import Icon from '../components/Icon.vue'
+import DndSetting from '../components/DndSetting.vue'
 const app = useApp(),
   router = useRouter(),
   busy = ref(false)
+function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 const session = computed(() => app.focus.session),
   strict = computed(() => session.value?.mode === 'countdown' && session.value.strictMode === true),
   result = computed(() => app.lastResult),
@@ -97,6 +99,7 @@ async function rest() {
           </button>
         </div>
         <small>返回或锁屏，计时仍会继续</small>
+        <button class="text-button" @click="recovery">保护帮助与故障恢复</button>
       </div></template
     ><template v-else-if="result"
       ><div class="focus-result">
@@ -136,6 +139,7 @@ async function rest() {
       <p>从待办选择一件事，或开始自由专注。</p>
       <button class="primary" @click="router.replace('/tasks')">回到待办</button>
     </div>
+    <DndSetting runtime-only />
   </div>
 </template>
 <style scoped>

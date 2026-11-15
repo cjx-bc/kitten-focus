@@ -8,20 +8,22 @@ import Sheet from './Sheet.vue'
 import Icon from './Icon.vue'
 import StrictModeSetting from './StrictModeSetting.vue'
 import AppWhitelistEditor from './AppWhitelistEditor.vue'
+import DndSetting from './DndSetting.vue'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const app = useApp()
 const prefs = computed(() => app.data.preferences.protection ?? defaultProtection())
 const status = ref<ProtectionStatus | null>(null)
 const error = ref(''), busy = ref(false), permissionHelp = ref(false), editing = ref(false)
-const stateLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持' }
+const stateLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持', recovered: '本轮已撤销' }
 async function refresh() {
   try { status.value = await protectionDriver.status() }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
 }
 function visibility() { if (!document.hidden) void refresh() }
-onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh) })
-onBeforeUnmount(() => { document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh) })
+onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh); window.addEventListener('protection-recovered', refresh) })
+onBeforeUnmount(() => { document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh); window.removeEventListener('protection-recovered', refresh) })
+function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 async function toggleStudy(event: Event) {
   busy.value = true; error.value = ''
   try {
@@ -54,12 +56,14 @@ async function authorize() {
       <p class="notice">开始专注后，仅允许本轮白名单中的应用。普通暂停仍限制应用，结束专注或进入休息后解除。</p>
       <label class="switch"><span>学霸模式<small>限制其他应用使用</small></span><input type="checkbox" :checked="prefs.study" :disabled="busy" @change="toggleStudy" /></label>
       <StrictModeSetting />
+      <DndSetting />
       <div class="protection-state" role="status">
         <strong>{{ status ? stateLabels[status.state] : '正在检查能力' }}</strong>
         <p>{{ status?.reason }}</p>
         <p v-if="status?.supported">系统授权：{{ status.authorized ? '已启用' : '未启用' }} · 服务：{{ status.connected ? '已连接' : '未连接' }}</p>
       </div>
       <button v-if="status?.supported" class="secondary wide" :disabled="busy" @click="permissionHelp = true">查看用途与授权</button>
+      <button class="secondary wide" @click="recovery">保护帮助与故障恢复</button>
       <button class="menu-row" :disabled="busy || !status?.supported" @click="editing = true">
         <span>全局白名单<small>{{ prefs.globalWhitelist.length }} 个已选包 · 小猫始终允许</small></span><Icon name="right" :size="18" />
       </button>

@@ -30,6 +30,7 @@ import java.util.Set;
 
 /** Original implementation using Android APIs; no copied third-party control engine. */
 final class FocusProtection {
+    interface AccessibilityState { boolean authorized(); boolean connected(); }
     private static long settingsUntil;
     private static String settingsPackage = "";
     private static volatile String executionFailure = "";
@@ -57,9 +58,15 @@ final class FocusProtection {
     }
 
     static JSONObject capture(Context context, LocalStore store, JSONObject session) throws JSONException {
+        return capture(context, store, session, new AccessibilityState() {
+            public boolean authorized() { return FocusProtection.authorized(context); }
+            public boolean connected() { return FocusAccessibilityService.connected(); }
+        });
+    }
+    static JSONObject capture(Context context, LocalStore store, JSONObject session, AccessibilityState accessibility) throws JSONException {
         JSONObject prefs = preferences(store);
         boolean study = prefs.optBoolean("study", false);
-        if (study && (!authorized(context) || !FocusAccessibilityService.connected()))
+        if (study && (!accessibility.authorized() || !accessibility.connected()))
             throw new IllegalStateException("学霸模式待授权：请启用小猫专注无障碍服务，并返回确认服务已连接");
         LinkedHashSet<String> packages = new LinkedHashSet<>();
         JSONArray selected = prefs.optJSONArray("globalWhitelist");
@@ -82,7 +89,6 @@ final class FocusProtection {
             if (value instanceof String && !((String) value).isEmpty()) packages.add((String) value);
         }
         packages.add(context.getPackageName());
-        executionFailure = "";
         return new JSONObject().put("study", study).put("source", source)
             .put("whitelist", new JSONArray(packages));
     }
@@ -93,11 +99,12 @@ final class FocusProtection {
         JSONObject session = observation.getJSONObject("focus").optJSONObject("session");
         JSONObject protection = session == null ? null : session.optJSONObject("protection");
         boolean requested = protection != null && protection.optBoolean("study");
-        boolean current = requested && !observation.optBoolean("needsReconcile");
+        boolean withdrawn = protection != null && protection.optBoolean("applicationsWithdrawn");
+        boolean current = requested && !withdrawn && !observation.optBoolean("needsReconcile");
         boolean effective = granted && connected && executionFailure.isEmpty();
-        String state = current ? effective ? "protecting" : "failed"
+        String state = requested && withdrawn ? "recovered" : current ? effective ? "protecting" : "failed"
             : !preferred ? "off" : granted && connected ? "ready" : "authorization";
-        String reason = current && !executionFailure.isEmpty() ? executionFailure : current && (!granted || !connected) ? "本轮应用限制已失效，请检查无障碍授权与服务连接"
+        String reason = requested && withdrawn ? "本轮应用限制已主动撤销；服务重连不会重新开启，计时仍继续" : current && !executionFailure.isEmpty() ? executionFailure : current && (!granted || !connected) ? "本轮应用限制已失效，请检查无障碍授权与服务连接"
             : !granted ? "尚未启用无障碍服务" : !connected ? "已授权，等待无障碍服务连接"
             : current ? "本轮有效白名单已固定；暂停计时仍限制应用"
             : preferred ? "开始专注后执行应用限制" : "应用限制未开启";
@@ -122,7 +129,7 @@ final class FocusProtection {
         JSONObject focus = observation.optJSONObject("focus");
         JSONObject session = focus == null ? null : focus.optJSONObject("session");
         JSONObject protection = session == null ? null : session.optJSONObject("protection");
-        if (protection == null || !protection.optBoolean("study") || context.getPackageName().equals(packageName)) return false;
+        if (protection == null || !protection.optBoolean("study") || protection.optBoolean("applicationsWithdrawn") || context.getPackageName().equals(packageName)) return false;
         JSONArray whitelist = protection.optJSONArray("whitelist");
         if (whitelist != null) for (int i = 0; i < whitelist.length(); i++)
             if (packageName.equals(whitelist.optString(i))) return false;

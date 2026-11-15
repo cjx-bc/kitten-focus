@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import assert from 'node:assert/strict'
+import { androidDevice } from './android-device.mjs'
 
 export const delay = ms => new Promise(done => setTimeout(done, ms))
 export async function until(fn, label, timeout = 15000) {
@@ -17,8 +18,7 @@ export async function until(fn, label, timeout = 15000) {
 /** Real QA WebView/native bridge. Explicit emulator and separate application required. */
 export async function connectQa({ port = 9237, output = 'artifacts/focus-control/qa' } = {}) {
   const root = resolve(import.meta.dirname, '../..')
-  const adb = process.env.ADB || resolve(root, '.tools/android-sdk/platform-tools/adb.exe')
-  const serial = process.env.ANDROID_SERIAL
+  const { adb, serial } = androidDevice(root)
   const appId = process.env.ANDROID_APP_ID || 'com.xiaomao.focus.qa'
   assert(serial && /^(?:emulator-\d+|127\.0\.0\.1:\d+)$/.test(serial), 'Select an emulator explicitly')
   assert(appId.endsWith('.qa'), 'Only the isolated QA application may be mutated')
