@@ -8,6 +8,7 @@ import android.view.View;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        restrictOrdinaryEntry(getIntent());
         registerPlugin(CatFocusPlugin.class);
         registerPlugin(AppUpdatesPlugin.class);
         super.onCreate(savedInstanceState);
@@ -15,6 +16,7 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().setOverScrollMode(View.OVER_SCROLL_NEVER);
     }
     @Override protected void onNewIntent(Intent intent) {
+        restrictOrdinaryEntry(intent);
         super.onNewIntent(intent);
         setIntent(intent);
         if (intent.getBooleanExtra("returnToFocus", false) && getBridge() != null)
@@ -35,6 +37,15 @@ public class MainActivity extends BridgeActivity {
         if (intent.getBooleanExtra("returnToLock", false) && getBridge() != null)
             getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(
                 "window.dispatchEvent(new Event('lock-return-request'))", null));
+    }
+    private void restrictOrdinaryEntry(Intent intent) {
+        if (intent == null) return;
+        try {
+            if ("/lock".equals(new FocusControl(this).resolveMainEntry("/tasks").optString("path")))
+                intent.putExtra("returnToLock", true);
+        } catch (Exception ignored) {
+            // The Vue guard retries through the public bridge; do not invent another owner.
+        }
     }
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);

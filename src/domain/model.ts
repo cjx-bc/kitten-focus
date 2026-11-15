@@ -181,6 +181,7 @@ export interface RestSnapshot {
   remainingMs: number
 }
 export interface ControlSnapshot {
+  mainEntry?: { requested: boolean; active: boolean; withdrawn: boolean }
   recentTasks?: RecentTasksStatus
   owner: 'focus' | 'rest' | 'lock' | null
   focus: FocusSnapshot
@@ -196,6 +197,7 @@ export interface LockConfiguration {
   whitelist: WhitelistConfiguration
 }
 export interface LockSession {
+  originalEnhancedProtectionSettings?: string[]
   id: string
   configurationId: string
   title: string

@@ -131,6 +131,7 @@ final class FocusControl {
             started.remove("kind");
             started.remove("configurationId");
             started.remove("temporaryAccess");
+            started.remove("originalEnhancedProtectionSettings");
             started.put("temporaryAccessRuntime", new JSONObject().put("used", 0).put("requests", new JSONArray()));
             started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
                 .put("segments", new JSONArray());
@@ -186,6 +187,11 @@ final class FocusControl {
             session.put("protection", accessibility == null
                 ? FocusProtection.captureLock(context, store, configuration)
                 : FocusProtection.captureLock(context, store, configuration, accessibility));
+            JSONArray selected = new JSONArray(session.getJSONObject("protection").getJSONArray("enhancements").toString());
+            JSONArray preferred = FocusProtection.preferences(store).optJSONArray("enhancements");
+            if (preferred != null) for (int i = 0; i < preferred.length(); i++)
+                if (FocusRecovery.MAIN_ENTRY.equals(preferred.optString(i))) { selected.put(FocusRecovery.MAIN_ENTRY); break; }
+            session.put("originalEnhancedProtectionSettings", selected);
             session.put("notificationsRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("interceptNotifications")));
             notifications.checkStart(session);
             recentTasks.checkStart(session);
@@ -273,7 +279,24 @@ final class FocusControl {
                 .put("notifications", notifications.observe(active))
                 .put("recentTasks", recentTasks.observe(active))
                 .put("needsReconcile", needsReconcile);
-            return observation.put("navigation", navigation.observe(observation));
+            return observation.put("navigation", navigation.observe(observation)).put("mainEntry", mainEntryStatus(observation));
+        }
+    }
+
+    private JSONObject mainEntryStatus(JSONObject observation) throws JSONException {
+        JSONObject session = ControlSession.from(observation);
+        boolean requested = FocusRecovery.mainEntryRequested(session);
+        boolean withdrawn = requested && recovery.withdrawn(session.optString("id"), FocusRecovery.MAIN_ENTRY);
+        return new JSONObject().put("requested", requested).put("withdrawn", withdrawn)
+            .put("active", requested && !withdrawn && !observation.optBoolean("needsReconcile"));
+    }
+    /** Read-only policy shared by Android launch/warm entry and every Vue navigation. */
+    JSONObject resolveMainEntry(String path) throws JSONException {
+        synchronized (store) {
+            JSONObject status = observeControl().getJSONObject("mainEntry");
+            boolean safe = "/lock".equals(path) || "/permissions".equals(path) || "/help".equals(path)
+                || "/emergency".equals(path) || "/recovery".equals(path);
+            return status.put("path", status.optBoolean("active") && !safe ? "/lock" : path);
         }
     }
 

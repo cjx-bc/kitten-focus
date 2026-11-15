@@ -14,6 +14,7 @@ import java.util.List;
 final class FocusRecovery {
     static final String APPLICATIONS = "applicationRestriction";
     static final String NAVIGATION = "navigationRestriction";
+    static final String MAIN_ENTRY = "lockMainInterfaceRestricted";
     static final String DISMISS_BLOCK = "com.xiaomao.focus.DISMISS_RECOVERED_BLOCK";
     interface DeviceEffects { void releaseApplicationRestriction() throws Exception; }
     /** Adapters keep their own original-state journal; preview must be read-only. */
@@ -44,12 +45,14 @@ final class FocusRecovery {
     }
     void prepare(JSONObject session) throws JSONException {
         JSONObject protection = session.optJSONObject("protection");
-        if (protection == null || (!protection.optBoolean("study") && !FocusProtection.navigationRequested(protection))) return;
+        boolean mainEntry = mainEntryRequested(session);
+        if (protection == null || (!protection.optBoolean("study") && !FocusProtection.navigationRequested(protection) && !mainEntry)) return;
         JSONObject value = read(); JSONArray steps = value.getJSONArray("steps");
         for (int i = 0; i < steps.length(); i++) {
             JSONObject step = steps.getJSONObject(i);
             boolean required = step.optString("capability").equals(APPLICATIONS) && protection.optBoolean("study")
-                || step.optString("capability").equals(NAVIGATION) && FocusProtection.navigationRequested(protection);
+                || step.optString("capability").equals(NAVIGATION) && FocusProtection.navigationRequested(protection)
+                || step.optString("capability").equals(MAIN_ENTRY) && mainEntry;
             if (required && !step.optString("status").equals("restored"))
                 throw new IllegalStateException("上一轮保护仍有待恢复项目，请先进入故障恢复重试");
         }
@@ -63,7 +66,17 @@ final class FocusRecovery {
         if (FocusProtection.navigationRequested(protection)) retained.put(new JSONObject().put("sessionId", session.getString("id")).put("capability", NAVIGATION)
             .put("title", "桌面与最近任务限制").put("status", "active").put("withdrawn", false)
             .put("reason", "撤销本轮桌面与最近任务限制；计时、严格规则和增强偏好继续保留"));
+        if (mainEntry) retained.put(new JSONObject().put("sessionId", session.getString("id")).put("capability", MAIN_ENTRY)
+            .put("title", "锁机主界面入口限制").put("status", "active").put("withdrawn", false)
+            .put("reason", "恢复普通业务入口；本轮锁机、严格计时和增强偏好继续保留"));
         write(value.put("steps", retained));
+    }
+    static boolean mainEntryRequested(JSONObject session) {
+        if (!LockEngine.owns(session)) return false;
+        JSONArray selected = session.optJSONArray("originalEnhancedProtectionSettings");
+        if (selected != null) for (int i = 0; i < selected.length(); i++)
+            if (MAIN_ENTRY.equals(selected.optString(i))) return true;
+        return false;
     }
     boolean withdrawn(String sessionId, String capability) throws JSONException {
         JSONArray steps = read().getJSONArray("steps");
@@ -115,7 +128,7 @@ final class FocusRecovery {
             step.put("withdrawn", true); write(value);
             try {
                 if (step.optString("capability").equals(APPLICATIONS) || step.optString("capability").equals(NAVIGATION)) effects.releaseApplicationRestriction();
-                else throw new UnsupportedOperationException("此版本无法恢复该项目，请更新后重试");
+                else if (!step.optString("capability").equals(MAIN_ENTRY)) throw new UnsupportedOperationException("此版本无法恢复该项目，请更新后重试");
                 step.put("status", "restored").put("reason", "已撤销本轮保护；计时和偏好保留");
             } catch (UnsupportedOperationException limited) {
                 step.put("status", "limited").put("reason", limited.getMessage());
