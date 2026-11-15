@@ -2,13 +2,16 @@
 import assert from 'node:assert/strict'
 import { emptyData, defaultProtection } from '../src/domain/model.ts'
 import { connectQa, until } from './lib/android-qa.mjs'
+import { verifyOfflineHelp } from './lib/help-device-acceptance.mjs'
 
-let qa = await connectQa({ port: 9256, output: 'artifacts/focus-control/api36/main-entry' })
+const output = process.env.QA_OUTPUT || 'artifacts/focus-control/api36/main-entry'
+let qa = await connectQa({ port: 9256, output })
 const native = (...args) => qa.native(...args), evaluate = expression => qa.evaluate(expression)
 const command = (...args) => qa.command(...args), observe = () => native('observeControl')
 const baseline = { data: (await native('loadData')).data,
   services: command('shell', 'settings', 'get', 'secure', 'enabled_accessibility_services').trim(),
   enabled: command('shell', 'settings', 'get', 'secure', 'accessibility_enabled').trim() }
+qa.save('baseline.json', baseline)
 const results = []
 const text = () => evaluate('document.body.innerText')
 const click = label => evaluate(`(() => { const el = [...document.querySelectorAll('button,a')].find(el => el.textContent.trim() === ${JSON.stringify(label)}); if (!el) throw new Error('Missing ' + ${JSON.stringify(label)}); el.click(); })()`)
@@ -25,7 +28,7 @@ try {
   data.preferences.sound = false; data.preferences.vibration = false
   data.preferences.protection = { ...defaultProtection(), enhancements: ['lockMainInterfaceRestricted'] }
   data.lockConfigurations = [{ id: 'routing-lock', name: '入口限制验证', minutes: 2, strict: true, whitelist: { source: 'global' } }]
-  await native('replaceData', { data }); await qa.send('Page.reload')
+  await native('replaceData', { data }); await evaluate("location.hash = '#/tasks'"); await qa.send('Page.reload')
   await until(() => evaluate('!!document.querySelector(".tabbar")'), 'original five-tab UI')
   assert.equal(await evaluate('document.querySelectorAll(".tabbar a").length'), 5)
   const started = (await native('startLock', { configurationId: 'routing-lock', strictLockConfirmed: true })).session
@@ -39,7 +42,7 @@ try {
   await at('/lock')
   await route('/help'); await at('/help'); await ordinaryStart()
   qa.close(); command('shell', 'am', 'force-stop', qa.appId)
-  qa = await connectQa({ port: 9256, output: 'artifacts/focus-control/api36/main-entry' }); await at('/lock')
+  qa = await connectQa({ port: 9256, output }); await at('/lock')
   assert.equal((await observe()).lock.session.id, started.id)
   await qa.screenshot('01-launcher-and-hash-restricted')
   results.push({ scenario: 'real-launcher-warm-explicit-activity-cold-process-start-and-business-hashes-all-return-lock-safety-pages-reachable', passed: true })
@@ -69,6 +72,7 @@ try {
   await at('/tasks')
   await qa.screenshot('02-recovery-reopens-business-retains-strict-lock')
   results.push({ scenario: 'preference-edits-next-round-real-permission-cancel-and-confirm-recovery-durable-across-reload-same-strict-lock-id-deadline', passed: true })
+  results.push(await verifyOfflineHelp(qa))
   await until(async () => (await native('lockAction', { action: 'read' })).session === null, 'strict natural expiry', started.targetMs + 15000)
   await route('/statistics'); await at('/statistics'); assert.equal((await observe()).owner, null)
   assert.equal((await native('loadData')).data.records.length, 0)
@@ -100,14 +104,19 @@ try {
     await native('startLock', { configurationId: 'routing-lock' }); await route('/tasks'); await at('/lock')
     qa.close(); command('reboot'); command('wait-for-device')
     await until(() => command('shell', 'getprop', 'sys.boot_completed').trim() === '1', 'actual boot', 180000)
-    qa = await connectQa({ port: 9256, output: 'artifacts/focus-control/api36/main-entry' })
+    qa = await connectQa({ port: 9256, output })
     await until(async () => (await native('lockAction', { action: 'read' })).session === null, 'boot settles interrupted lock')
     await route('/tasks'); await at('/tasks'); assert.equal((await observe()).owner, null)
     results.push({ scenario: 'actual-device-reboot-interrupts-lock-and-restores-ordinary-entry', passed: true })
   }
   qa.save('results.json', { serial: qa.serial, appId: qa.appId, rebootExecuted: process.argv.includes('--reboot'), results })
   console.log(JSON.stringify({ serial: qa.serial, results }))
+} catch (error) {
+  qa.save('failure.json', { message: error.stack, results })
+  throw error
 } finally {
+  if (qa.closed) qa = await connectQa({ port: 9256, output })
+  command('shell', 'am', 'start', '-n', qa.appId + '/com.xiaomao.focus.MainActivity')
   await native('lockAction', { action: 'finish', confirmed: true }).catch(() => {})
   if ((await observe()).lock.session?.strictMode) await until(async () => !(await native('lockAction', { action: 'read' })).session, 'cleanup strict expiry', 135000)
   if (baseline.data) await native('replaceData', { data: baseline.data })
