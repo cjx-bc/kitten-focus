@@ -151,7 +151,9 @@ async function enableNotifications() {
       /></label>
       <StrictModeSetting />
       <RouterLink class="settings-row" to="/lock"><span class="row"><Icon name="clock" :size="20" />独立锁机</span><span class="row settings-value">{{ app.lock.session ? '进行中' : '配置与记录' }}<Icon name="right" :size="16" /></span></RouterLink>
-      <button class="settings-row" @click="recovery"><span class="row"><Icon name="info" :size="20" />保护帮助与故障恢复</span><Icon name="right" :size="16" /></button>
+      <RouterLink class="settings-row" to="/permissions"><span class="row"><Icon name="info" :size="20" />权限与保护状态</span><Icon name="right" :size="16" /></RouterLink>
+      <RouterLink class="settings-row" to="/help"><span class="row"><Icon name="info" :size="20" />离线保护帮助</span><Icon name="right" :size="16" /></RouterLink>
+      <button class="settings-row" @click="recovery"><span class="row"><Icon name="info" :size="20" />本轮故障恢复</span><Icon name="right" :size="16" /></button>
     </div>
     <h3 class="settings-section-label">声音辅助</h3>
     <div class="settings-group sound-settings"><DndSetting /></div>

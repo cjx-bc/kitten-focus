@@ -68,6 +68,8 @@ async function authorize() {
       </div>
       <button v-if="status?.supported" class="secondary wide" :disabled="busy" @click="permissionHelp = true">查看用途与授权</button>
       <button class="secondary wide" @click="recovery">保护帮助与故障恢复</button>
+      <RouterLink class="secondary wide" to="/permissions" @click="emit('close')">查看全部能力与失败原因</RouterLink>
+      <RouterLink class="secondary wide" to="/help" @click="emit('close')">阅读完整离线帮助</RouterLink>
       <button class="menu-row" :disabled="busy || !status?.supported" @click="editing = true">
         <span>全局白名单<small>{{ prefs.globalWhitelist.length }} 个已选包 · 小猫始终允许</small></span><Icon name="right" :size="18" />
       </button>
