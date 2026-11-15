@@ -25,6 +25,7 @@ const app = useApp(),
   error = ref(''),
   busy = ref(false),
   permissions = ref({ notifications: false, exactAlarms: false })
+function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 onMounted(async () => {
   try {
     permissions.value = await permissionStatus()
@@ -144,6 +145,7 @@ async function enableNotifications() {
           @change="preference('vibration', $event)"
       /></label>
       <StrictModeSetting />
+      <button class="settings-row" @click="recovery"><span class="row"><Icon name="info" :size="20" />保护帮助与故障恢复</span><Icon name="right" :size="16" /></button>
     </div>
     <template v-if="native"
       ><h3 class="settings-section-label">系统提醒</h3>

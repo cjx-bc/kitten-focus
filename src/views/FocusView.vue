@@ -7,6 +7,7 @@ import Icon from '../components/Icon.vue'
 const app = useApp(),
   router = useRouter(),
   busy = ref(false)
+function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 const session = computed(() => app.focus.session),
   strict = computed(() => session.value?.mode === 'countdown' && session.value.strictMode === true),
   result = computed(() => app.lastResult),
@@ -97,6 +98,7 @@ async function rest() {
           </button>
         </div>
         <small>返回或锁屏，计时仍会继续</small>
+        <button class="text-button" @click="recovery">保护帮助与故障恢复</button>
       </div></template
     ><template v-else-if="result"
       ><div class="focus-result">

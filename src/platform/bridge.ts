@@ -10,6 +10,7 @@ import type {
   RestSnapshot,
   ProtectionStatus,
   ProtectionApp,
+  RecoverySnapshot,
 } from '../domain/model'
 import { emptyData } from '../domain/model'
 import { elapsed, settle } from '../domain/focus'
@@ -31,6 +32,9 @@ interface NativeBridge {
   protectionStatus(): Promise<ProtectionStatus>
   listProtectionApps(): Promise<{ apps: ProtectionApp[] }>
   openProtectionSettings(): Promise<void>
+  previewRecovery(): Promise<RecoverySnapshot>
+  confirmRecovery(options: { revision: string }): Promise<RecoverySnapshot>
+  consumeRecoveryReturn(): Promise<{ requested: boolean }>
   exportFile(options: { text: string; name: string }): Promise<void>
   importFile(): Promise<{ text: string }>
   permissions(): Promise<{ notifications: boolean; exactAlarms: boolean }>
@@ -218,3 +222,13 @@ export const protectionDriver = {
 }
 
 export const consumeFocusReturn = async () => native ? (await plugin.consumeFocusReturn()).requested : false
+export const consumeRecoveryReturn = async () => native ? (await plugin.consumeRecoveryReturn()).requested : false
+export const recoveryDriver = {
+  async preview(): Promise<RecoverySnapshot> {
+    return native ? plugin.previewRecovery() : { supported: false, revision: '', steps: [], pending: false }
+  },
+  async confirm(revision: string): Promise<RecoverySnapshot> {
+    if (!native) throw new Error('故障恢复仅支持 Android 本机版本')
+    return plugin.confirmRecovery({ revision })
+  },
+}
