@@ -94,6 +94,7 @@ try {
   try {
     own(); const observed = await native('observeControl')
     if (observed.owner === 'focus') await native('focusAction', { action: 'finish' })
+    if ((await native('observeControl')).owner === 'rest') await native('restAction', { action: 'exit' })
     await native('replaceData', { data: baseline.data })
     secure('enabled_accessibility_services', baseline.services); secure('accessibility_enabled', baseline.enabled)
     qa.save('restored-baseline.json', { owner: (await native('observeControl')).owner,
