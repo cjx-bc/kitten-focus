@@ -98,6 +98,17 @@ export interface AntiCloseStatus extends Omit<NavigationProtectionStatus, 'lastT
   policyReason: string
   supportScope: string
 }
+export interface RecentTasksStatus {
+  supported: boolean
+  requested: boolean
+  preferenceEnabled: boolean
+  recoveryAvailable: boolean
+  phase: 'off' | 'ready' | 'active' | 'failed' | 'restoration_failed' | 'withdrawn' | 'restored' | 'unsupported'
+  active: boolean
+  verified: boolean
+  recoveryPending: boolean
+  error: string
+}
 export interface RecoveryStep {
   sessionId: string
   capability: string
@@ -179,6 +190,7 @@ export interface RestSnapshot {
   remainingMs: number
 }
 export interface ControlSnapshot {
+  recentTasks?: RecentTasksStatus
   owner: 'focus' | 'rest' | 'lock' | null
   focus: FocusSnapshot
   rest: RestSnapshot
