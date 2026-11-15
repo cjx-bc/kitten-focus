@@ -1,0 +1,27 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace "com.xiaomao.focus.probe.${project.name}"
+    compileSdk 36
+    defaultConfig {
+        applicationId "com.xiaomao.focus.probe.${project.name}"
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName '0.1-debug-probe'
+    }
+    sourceSets.main.java.srcDirs += rootProject.file('common/src/main/java')
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        debug { debuggable true }
+        release { minifyEnabled false }
+    }
+}
+
+// This is a deliberately isolated developer experiment, never a release variant.
+androidComponents {
+    beforeVariants(selector().withBuildType('release')) { variant -> variant.enable = false }
+}
