@@ -141,13 +141,16 @@ final class FocusControl {
             return projectTemporary(result);
         }
     }
-    JSONObject startLock(String configurationId) throws JSONException {
+    JSONObject startLock(String configurationId) throws JSONException { return startLock(configurationId, false); }
+    JSONObject startLock(String configurationId, boolean strictLockConfirmed) throws JSONException {
         synchronized (store) {
             if (store.read("active") != null) throw new IllegalStateException("已有专注或锁机正在进行，请返回当前会话处理");
             JSONObject resting = rest.read().optJSONObject("session");
             if (resting != null && "running".equals(resting.optString("state")))
                 throw new IllegalStateException("请先退出休息，再开始锁机");
             JSONObject configuration = lock.configuration(configurationId);
+            if (Boolean.TRUE.equals(configuration.opt("strict")) && !strictLockConfirmed)
+                throw new IllegalStateException("请先确认严格锁机：开始后不能暂停、取消或提前解除，到期自动结束");
             JSONObject session = lock.create(configuration);
             session.put("protection", accessibility == null
                 ? FocusProtection.captureLock(context, store, configuration)
