@@ -18,6 +18,11 @@ const permission = /android.permission.POST_NOTIFICATIONS: granted=true/.test(co
 const observe = () => native('observeControl')
 const front = () => command('shell', 'am', 'start', '-n', qa.appId + '/com.xiaomao.focus.MainActivity')
 const label = process.env.RECENTS_QA_LABEL || '小猫专注'
+async function replaceFixture(data) {
+  await native('replaceData', { data })
+  await qa.send('Page.reload')
+  await until(() => qa.evaluate('!!document.querySelector(".tabbar") && !document.querySelector(".boot")'), 'fixture loaded into the real app store')
+}
 
 async function overview(name, visible) {
   command('shell', 'input', 'keyevent', '3'); await delay(400)
@@ -40,14 +45,14 @@ try {
   assert.equal((await observe()).owner, null, 'Finish preceding QA work first')
   command('shell', 'pm', 'grant', qa.appId, 'android.permission.POST_NOTIFICATIONS')
   const data = emptyData(); data.preferences.protection = { ...defaultProtection(), enhancements: [] }
-  await native('replaceData', { data }); front()
+  await replaceFixture(data); front()
   await overview('01-original-visible', true); front()
   await native('startFocus', { session: session() }); await delay(300)
   assert.equal((await native('getRecentTasksStatus')).requested, false)
   await overview('02-disabled-visible', true); front()
   await native('focusAction', { action: 'finish' }); await native('restAction', { action: 'exit' })
   data.preferences.protection.enhancements = ['recentTasksHidden']
-  await native('replaceData', { data }); await native('startFocus', { session: session() })
+  await replaceFixture(data); await native('startFocus', { session: session() })
   await until(async () => {
     await native('focusAction', { action: 'read' })
     return (await native('getRecentTasksStatus')).phase === 'active'
