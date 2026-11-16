@@ -1,7 +1,7 @@
 // Final review regressions through real QA UI, bridge and Android Settings.
 import assert from 'node:assert/strict'
 import { emptyData, defaultProtection } from '../src/domain/model.ts'
-import { until } from './lib/android-qa.mjs'
+import { until, delay } from './lib/android-qa.mjs'
 import { runQaUi } from './lib/qa-ui-fixture.mjs'
 
 await runQaUi({ port: 9265, output: 'artifacts/focus-control/api36/final-review' }, async ui => {
@@ -88,6 +88,8 @@ try {
   const ownerBeforeAuthorization = (await native('observeControl')).owner
   await evaluate("void window.Capacitor.nativePromise('CatFocus','openNotificationAccessSettings',{}).catch(error => { window.__authorizationError = String(error) })")
   await until(() => /topResumedActivity=.*com.android.settings/.test(foreground()), 'actual notification authorization remains foreground')
+  await delay(1800)
+  assert(/topResumedActivity=.*com.android.settings/.test(foreground()), 'Authorization remains foreground after Settings renders')
   qa.save('authorization-foreground.json', { activity: foreground(), ownerBeforeAuthorization })
   command('shell', 'screencap', '-p', '/data/local/tmp/qa-review-authorization.png')
   command('pull', '/data/local/tmp/qa-review-authorization.png', 'artifacts/focus-control/api36/final-review/authorization-settings.png')
