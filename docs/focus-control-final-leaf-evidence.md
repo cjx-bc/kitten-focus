@@ -18,10 +18,11 @@ Evidence root: `artifacts/focus-control/final-leaf/`.
 | Original notification dual-app | 24/24, zero skipped; original identity/update/deadline and actual shade click verified | `notification-original-observed/` |
 | Notification lifecycle | 29/29, zero skipped, 210.655 seconds | `notification-lifecycle/` |
 | Corrected scroll fixture | 2/2, zero skipped | `scroll-green/` |
+| Full legacy scroll/swipe on corrected fixture | 5/5, zero skipped, 42.769 seconds; exact QA private baseline restored | `legacy-final/` |
 
 Notification lifecycle covers early updated-original release with actual shade click, 65-second paused stopwatch lease renewal and rest, ordinary-lock cancellation, explicit recovery/reconnection without restart, finite-lease expiry after listener disconnect and authorization loss, original identity after reconnection, withdrawn originals, and ongoing-notification exceptions.
 
-The original-notification and lifecycle groups both contain the same **22** FocusNotificationTest cases. Their combined unique coverage is **31**, consisting of those22 plus2 original-device and7 lifecycle-device cases. Those22 are already included in the121 native batch; they must not be counted again as new cases. Study5 + legacy5 + notification-device9 add19 unique cases to the121 native baseline when the final legacy group is complete.
+The original-notification and lifecycle groups both contain the same **22** FocusNotificationTest cases. Their combined unique coverage is **31**, consisting of those22 plus2 original-device and7 lifecycle-device cases. Those22 are already included in the121 native batch; they must not be counted again as new cases. Study5 + legacy5 + notification-device9 add19 unique cases to the121 native baseline, for140 unique instrumentation cases across these scopes.
 
 ## Failed attempts retained and diagnosed
 
@@ -31,4 +32,4 @@ Initial combined legacy5 failed3. A bounded isolated retry passed all3 swipe cas
 
 The final fixture uses the measured native scrollbar gutter, retains the0.002 pixel threshold, adds exact navigation-geometry equality, and waits for the appended long-page layout's visual commit. Actual vertical scrolling still must exceed100px. No product styling, navigation or threshold was changed. Diagnostic evidence remains in `scroll-diagnostic/scroll-diagnostics/`; diagnostic instrumentation was removed from source.
 
-The accepted original/lifecycle runs used test APK SHA `1dc510b2545b815104b548e79c5941528a6ae04855b9d2a721eb5626c00ecd83`. Final scroll-fixture test APK is `141ee1fcf98b47a9920c3bf71afdb0d5d020d9221dbd4422f04a1e1ac991a9c8`; only ScrollLayoutTest differs. The121 native behavior cases and product Java are unchanged. Full legacy5 on the corrected fixture is the final pending check at this document checkpoint.
+The accepted original/lifecycle runs used test APK SHA `1dc510b2545b815104b548e79c5941528a6ae04855b9d2a721eb5626c00ecd83`. Final scroll-fixture test APK is `141ee1fcf98b47a9920c3bf71afdb0d5d020d9221dbd4422f04a1e1ac991a9c8`; only ScrollLayoutTest differs. The121 native behavior cases and product Java are unchanged. Full legacy5 on the corrected fixture passed, with exact private-baseline restoration digest65e9d35a68aa8ef785b9c6decad4f2753243c9aee9d9770c80290513c3a8ee6c matching the captured baseline.
