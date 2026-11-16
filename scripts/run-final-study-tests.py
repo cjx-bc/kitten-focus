@@ -11,6 +11,7 @@ root = Path(__file__).resolve().parent.parent
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--group', required=True, choices=['study-policy', 'study-denied', 'study-enabled', 'legacy-ui'])
 parser.add_argument('--output', required=True, type=Path)
+parser.add_argument('--scroll-only', action='store_true')
 args = parser.parse_args()
 device = [os.environ['ADB'], '-s', os.environ['ANDROID_SERIAL']]
 assert device[-1] == 'emulator-5580'
@@ -28,8 +29,16 @@ def restore(key, value):
 
 baseline = {key: setting(key) for key in ['enabled_accessibility_services', 'accessibility_enabled']}
 plan = json.loads(subprocess.check_output(['python', str(root / 'scripts/final-native-plan.py'), '--group', args.group], encoding='utf8'))
+if args.scroll_only:
+    assert args.group == 'legacy-ui'
+    plan['entries'] = [entry for entry in plan['entries'] if entry['selector'].endswith('.ScrollLayoutTest')]
+    plan['className'] = ','.join(entry['selector'] for entry in plan['entries'])
+    plan['expectedTests'] = sum(len(entry['tests']) for entry in plan['entries'])
 metadata = {'group': args.group, 'expectedTests': plan['expectedTests'], 'baseline': baseline}
 try:
+    run('shell', 'input', 'keyevent', 'WAKEUP')
+    run('shell', 'wm', 'dismiss-keyguard')
+    run('shell', 'cmd', 'statusbar', 'collapse')
     existing = [] if baseline['enabled_accessibility_services'] in ['', 'null'] else baseline['enabled_accessibility_services'].split(':')
     other = [value for value in existing if value not in [component, 'com.xiaomao.focus.qa/.FocusAccessibilityService']]
     enabled = args.group == 'study-enabled'
@@ -40,10 +49,16 @@ try:
                'com.xiaomao.focus.qa.test/androidx.test.runner.AndroidJUnitRunner']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf8', errors='replace')
     timer = threading.Timer(180, process.kill); timer.start()
-    lines = []; rebound = False
+    lines = []; rebound = False; diagnostics = []
+    def capture_legacy():
+        result = subprocess.run([*device, 'exec-out', 'screencap', '-p'], capture_output=True, timeout=10)
+        if result.returncode == 0: (args.output / 'native-screen.png').write_bytes(result.stdout)
+        (args.output / 'native-window.txt').write_text(run('shell', 'dumpsys', 'window'), encoding='utf8')
     try:
         for line in process.stdout:
             lines.append(line)
+            if args.group == 'legacy-ui' and line.strip() == 'INSTRUMENTATION_STATUS_CODE: 1' and not diagnostics:
+                capture = threading.Timer(2, capture_legacy); diagnostics.append(capture); capture.start()
             if enabled and not rebound and line.strip() == 'INSTRUMENTATION_STATUS_CODE: 1':
                 # Exact QA component only; process restart must produce a real bound service.
                 restore('enabled_accessibility_services', ':'.join(other) if other else 'null')
@@ -52,6 +67,7 @@ try:
         process.wait(timeout=5)
     finally:
         timer.cancel()
+        for capture in diagnostics: capture.join(timeout=12)
     result = ''.join(lines)
     (args.output / 'instrumentation.txt').write_text(result, encoding='utf8')
     metadata['skipped'] = len(re.findall(r'INSTRUMENTATION_STATUS_CODE: -[34]\b', result))
