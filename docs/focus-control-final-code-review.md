@@ -28,3 +28,7 @@
 - 产品 APK SHA256：`6d3427a07519bf06eeac229856337e56f2eb0641a2b547f7a8b1390b5af51e6a`；测试 APK：`1dc510b2545b815104b548e79c5941528a6ae04855b9d2a721eb5626c00ecd83`。证据分别见 `artifacts/focus-control/review-fixes/green/{targeted,final121}` 与 `artifacts/focus-control/api36/final-review`。
 
 标准轴共 1 组强制不符、2 项维护判断：强制不符与重复代码已修复，参数聚集为非阻塞建议。规格轴共 3 项产品缺陷：均已修复并经定向、完整原生及相关实际 UI 验证。代码审查通过不替代最终 A01—A18 的系统、版本、OEM 和剩余组合验收。
+
+最终设备续验还发现旧合法保护对象缺 `enhancements` 时诊断崩溃；同一修复代理以宿主 RED→GREEN 在 `eb892fd` 补齐默认值，宿主增至 58/58，实际旧配置十项诊断、UI 6/6 和授权返回刷新通过，规格复审已确认。最终产品 APK 为 `60ea961b334dd20d1d3fdab82d3dd7ae0c8129e4620f4d7f701f80d312a081aa`，七份原生 DEX 与上述 121 项已测版本逐字相同。最终 Study5、旧UI5、原通知24和生命周期29亦全部通过，重复 kernel 计数已扣除，完整证据见 `focus-control-final-leaf-evidence.md`。
+
+旧滚动用例的截图失败经实际前后图片、像素包围盒和原生滚动条宽度定位为夹具裁剪误差；仅修正测试实测边缘区域与布局提交等待，保留 `.002` 阈值、真实滚动大于100px，并新增导航几何不变断言。产品样式未改。最终测试 APK `141ee1fcf98b47a9920c3bf71afdb0d5d020d9221dbd4422f04a1e1ac991a9c8` 仅此 ScrollLayoutTest 与原 121 项测试构建不同，旧失败保留，最终完整旧UI5/5零跳过通过。
