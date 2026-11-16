@@ -38,7 +38,7 @@ onMounted(() => { recoveryOpen.value = route.path === '/recovery' })
 .page-header { gap: 10px; margin-bottom: 0; } .page-header h1 { font-size: 25px; }
 p { font-size: 14px; line-height: 1.9; overflow-wrap: anywhere; }
 .safety-links { display: flex; flex-wrap: wrap; gap: 4px 20px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
-.safety-links a, .help-contents a { min-height: 44px; display: flex; align-items: center; font-size: 13px; }
+.safety-links a, .help-contents a { min-height: 48px; display: flex; align-items: center; font-size: 13px; }
 .safety-links a[aria-current='page'] { font-weight: 700; text-decoration: underline; text-underline-offset: 6px; }
 .help-contents { display: grid; padding: 10px 18px; background: var(--surface); border-radius: 18px; }
 .help-section { display: grid; gap: 14px; scroll-margin-top: 24px; }

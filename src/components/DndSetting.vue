@@ -122,6 +122,6 @@ onBeforeUnmount(() => {
 .dnd-status { padding: 12px 0; }
 .dnd-status strong { font-size: 13px; font-weight: 500; }
 .dnd-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.dnd-actions button { min-height: 44px; flex: 1 1 140px; font-size: 13px; }
+.dnd-actions button { min-height: 48px; flex: 1 1 140px; font-size: 13px; }
 .dnd-error { color: #c13a25; }
 </style>

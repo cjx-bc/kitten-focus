@@ -235,6 +235,8 @@ export interface LockConfiguration {
   name: string
   minutes: number
   strict?: boolean
+  /** Missing keeps legacy global inheritance; an empty array is independent. */
+  enhancements?: string[]
   whitelist: WhitelistConfiguration
 }
 export interface LockSession {

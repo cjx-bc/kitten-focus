@@ -43,6 +43,31 @@ public class FocusNotificationTest {
     NotificationSystem.Notice notice(String key, String pkg, boolean necessary) {
         return new NotificationSystem.Notice(key, pkg, 10001, "", necessary);
     }
+    @Test public void unavailableSelectedNotificationsRejectFocusAndBothLocksBeforeOwnership() throws Exception {
+        for (String unavailable : new String[]{"unsupported", "permission", "disconnected"}) {
+            for (String kind : new String[]{"focus", "lock", "strictLock"}) {
+                system.supported = !unavailable.equals("unsupported"); system.granted = !unavailable.equals("permission");
+                system.connected = !unavailable.equals("disconnected");
+                JSONObject data = control.loadData(); data.getJSONObject("preferences").getJSONObject("protection").put("strict", false);
+                data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "readiness-lock")
+                    .put("name", "Readiness").put("minutes", 1).put("strict", kind.equals("strictLock"))));
+                store.saveData(data, false);
+                control = new FocusControl(context, store, clock, new FocusRecovery(context, store), new FocusProtection.AccessibilityState() {
+                    public boolean authorized() { return true; } public boolean connected() { return true; }
+                }, new AndroidDndSystem(context), system);
+                try {
+                    if (kind.equals("focus")) control.startFocus(session()); else control.startLock("readiness-lock", kind.equals("strictLock"));
+                    fail("Selected unavailable notifications must reject " + kind + ": " + unavailable);
+                } catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("通知")); }
+                assertTrue(control.observeControl().isNull("owner"));
+                assertTrue(control.loadData().getJSONObject("preferences").getJSONObject("protection").getBoolean("interceptNotifications"));
+                assertEquals(0, system.calls); assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+            }
+        }
+        JSONObject data = control.loadData(); data.getJSONObject("preferences").getJSONObject("protection").put("interceptNotifications", false);
+        store.saveData(data, false); control.startFocus(session());
+        assertEquals("focus", control.observeControl().getString("owner")); control.focusAction("finish");
+    }
     @Test public void necessaryReleaseWaitsThroughAndroidHandoffGapBeforeVerifyingRestoration() throws Exception {
         control.startFocus(session(), true);
         control.notificationPosted(notice("handoff", "other.app", false));
@@ -153,9 +178,9 @@ public class FocusNotificationTest {
         assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
     }
     @Test public void authorizationConnectionAndProcessingAreSeparateAndObservationDoesNotApply() throws Exception {
+        control.startFocus(session(), true);
         system.granted = false; system.connected = false;
         system.active.add(notice("waiting", "other.app", false));
-        control.startFocus(session(), true);
         assertEquals("permission_required", control.getNotificationStatus().getString("phase"));
         system.granted = true;
         assertEquals("disconnected", control.getNotificationStatus().getString("phase"));
@@ -392,10 +417,10 @@ public class FocusNotificationTest {
         assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
     }
     static final class FakeNotifications implements NotificationSystem {
-        boolean granted = true, connected = true, failRelease; int calls, releaseRequests;
+        boolean granted = true, connected = true, supported = true, failRelease; int calls, releaseRequests;
         final Map<String, Long> requests = new LinkedHashMap<>();
         final List<Notice> active = new ArrayList<>(), snoozed = new ArrayList<>();
-        public boolean supported() { return true; }
+        public boolean supported() { return supported; }
         public boolean authorized() { return granted; }
         public boolean connected() { return connected; }
         public List<Notice> active() { return new ArrayList<>(active); }

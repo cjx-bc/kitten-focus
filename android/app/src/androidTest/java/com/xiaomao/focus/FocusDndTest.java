@@ -125,16 +125,40 @@ public class FocusDndTest {
         assertEquals("restored", control.observeControl().getJSONObject("dnd").getString("phase"));
     }
 
-    @Test public void deniedPermissionAndReadOnlyReconstructionKeepTimingAvailable() throws Exception {
-        system.permission = false;
+    @Test public void unavailableSelectedSoundRejectsFocusAndBothLocksBeforeOwnership() throws Exception {
+        for (String unavailable : new String[]{"unsupported", "permission"}) {
+            for (String kind : new String[]{"focus", "lock", "strictLock"}) {
+                system.supported = !unavailable.equals("unsupported"); system.permission = !unavailable.equals("permission");
+                JSONObject data = control.loadData();
+                data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "readiness-lock")
+                    .put("name", "Readiness").put("minutes", 1).put("strict", kind.equals("strictLock"))));
+                store.saveData(data, false); control = lockControl();
+                try {
+                    if (kind.equals("focus")) control.startFocus(session()); else control.startLock("readiness-lock", kind.equals("strictLock"));
+                    fail("Selected unavailable sound must reject " + kind + ": " + unavailable);
+                } catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("声音")); }
+                assertTrue(control.observeControl().isNull("owner"));
+                assertTrue(control.loadData().getJSONObject("preferences").getJSONObject("protection").getBoolean("dnd"));
+                assertTrue(system.rules.isEmpty()); assertFalse(control.getDndStatus().getBoolean("recoveryPending"));
+            }
+        }
+        JSONObject data = control.loadData(); data.getJSONObject("preferences").getJSONObject("protection").put("dnd", false);
+        store.saveData(data, false); control.startFocus(session());
+        assertEquals("focus", control.observeControl().getString("owner")); control.focusAction("finish");
+    }
+
+    @Test public void permissionLostAfterStartAndReadOnlyReconstructionKeepTimingAvailable() throws Exception {
         control.startFocus(session());
+        system.permission = false;
+        control.reconcile();
         assertEquals("permission_required", control.getDndStatus().getString("phase"));
-        assertTrue(system.rules.isEmpty());
+        assertEquals("Revocation must retain the existing owned rule responsibility", 1, system.rules.size());
+        assertEquals("focus", control.observeControl().getString("owner"));
         FocusControl rebuilt = new FocusControl(context, store, clock, system);
         system.permission = true;
         rebuilt.observeControl();
         rebuilt.getDndStatus();
-        assertTrue("Observation must not apply protection", system.rules.isEmpty());
+        assertEquals("Observation must not create another rule", 1, system.rules.size());
         rebuilt.reconcile();
         assertEquals("active", rebuilt.getDndStatus().getString("phase"));
         assertNotNull(rebuilt.observeControl().getJSONObject("focus").optJSONObject("session"));
@@ -249,9 +273,9 @@ public class FocusDndTest {
     }
 
     static final class FakeDndSystem implements DndSystem {
-        boolean permission = true;
+        boolean permission = true, supported = true;
         final Map<String, Rule> rules = new LinkedHashMap<>();
-        public boolean supported() { return true; }
+        public boolean supported() { return supported; }
         public boolean permissionGranted() { return permission; }
         public int globalFilter() { return rules.isEmpty() ? 1 : 2; }
         public Rule find(String condition) { return rules.values().stream().filter(r -> r.condition.equals(condition)).findFirst().orElse(null); }

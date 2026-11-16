@@ -31,9 +31,12 @@ final class DndProtection {
     }
 
     void checkStart(JSONObject session) throws JSONException {
+        if (!session.optBoolean("dndRequested")) return;
         JSONObject journal = journal();
-        if (session.optBoolean("dndRequested") && journal.has("condition"))
+        if (journal.has("condition"))
             throw new IllegalStateException("上一轮声音规则仍有待恢复项目，请先进入故障恢复重试");
+        if (!system.supported()) throw new IllegalStateException("本机不支持声音免打扰辅助，请在设置中明确关闭该选项后再开始");
+        if (!system.permissionGranted()) throw new IllegalStateException("声音免打扰辅助尚未授权，请完成勿扰授权，或在设置中明确关闭该选项后再开始");
     }
 
     /** Exposes the real private duty to the shared recovery flow, without creating one. */

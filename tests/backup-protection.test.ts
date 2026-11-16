@@ -4,6 +4,20 @@ import { makeBackup, readBackup } from '../src/domain/backup'
 import { defaultProtection, emptyData } from '../src/domain/model'
 
 describe('public business backup', () => {
+  it('round trips independent enhancement choices, explicit empty and legacy inheritance', () => {
+    const data = emptyData()
+    data.lockConfigurations = [
+      { id: 'legacy', name: 'Legacy', minutes: 1, whitelist: { source: 'global' } },
+      { id: 'empty', name: 'Empty', minutes: 1, whitelist: { source: 'global' }, enhancements: [] },
+      { id: 'independent', name: 'Independent', minutes: 1, whitelist: { source: 'global' }, enhancements: ['lockMainInterfaceRestricted'] },
+    ]
+    const restored = readBackup(makeBackup(data)).data
+    expect(restored.lockConfigurations).toEqual(data.lockConfigurations)
+    expect(restored.lockConfigurations![0]).not.toHaveProperty('enhancements')
+    const damaged = JSON.parse(makeBackup(data))
+    damaged.data.lockConfigurations[1].enhancements = [true]
+    expect(() => readBackup(JSON.stringify(damaged))).toThrow()
+  })
   it('restores the reactive parsed backup shown by the real confirmation sheet', () => {
     const data = emptyData()
     data.preferences.protection = {
