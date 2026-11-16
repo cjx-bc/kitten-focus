@@ -56,15 +56,11 @@ public class CatFocusPlugin extends Plugin {
     }
     @PluginMethod public void confirmWallpaperManualRecovery(PluginCall call){resolve(call,()->control.confirmWallpaperManualRecovery(Boolean.TRUE.equals(call.getBoolean("acknowledged",false))));}
     @PluginMethod public void openWallpaperSettings(PluginCall call){resolve(call,()->{
-        Intent intent=new Intent(Intent.ACTION_SET_WALLPAPER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        android.content.pm.ResolveInfo target=getContext().getPackageManager().resolveActivity(intent,0);
-        if(target==null)throw new IllegalStateException("系统没有壁纸设置入口，请从桌面设置进入");
-        FocusProtection.allowSettingsForAuthorization(getContext(),target.activityInfo.packageName);
-        getContext().startActivity(intent);return null;
+        FocusProtection.openAuthorizationSettings(getContext(),new Intent(Intent.ACTION_SET_WALLPAPER));return null;
     });}
     @PluginMethod public void getRecentTasksStatus(PluginCall call){resolve(call,()->control.getRecentTasksStatus());}
     @PluginMethod public void openNotificationAccessSettings(PluginCall call){resolve(call,()->{
-        getContext().startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        FocusProtection.openAuthorizationSettings(getContext(),new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
         return null;
     });}
     @PluginMethod public void rebindNotificationListener(PluginCall call){resolve(call,()->{
@@ -72,9 +68,7 @@ public class CatFocusPlugin extends Plugin {
     });}
     @PluginMethod public void restoreDnd(PluginCall call){resolve(call,()->control.restoreDnd());}
     @PluginMethod public void openDndSettings(PluginCall call){resolve(call,()->{
-        Intent intent=new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        getContext().startActivity(intent);return null;
+        FocusProtection.openAuthorizationSettings(getContext(),new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));return null;
     });}
     @PluginMethod public void consumeFocusReturn(PluginCall call){resolve(call,()->{
         Intent intent=getActivity()==null?null:getActivity().getIntent();
@@ -103,7 +97,7 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void permissions(PluginCall call){resolve(call,()->new JSONObject().put("notifications",Reminders.notificationsAllowed(getContext())).put("exactAlarms",Reminders.exactAllowed(getContext())));}
     @PluginMethod public void requestNotifications(PluginCall call){if(Build.VERSION.SDK_INT>=33&&!Reminders.notificationsAllowed(getContext()))requestPermissionForAlias("notifications",call,"notificationsResult");else notificationsResult(call);}
     @PermissionCallback private void notificationsResult(PluginCall call){resolve(call,()->new JSONObject().put("notifications",Reminders.notificationsAllowed(getContext())));}
-    @PluginMethod public void openAlarmSettings(PluginCall call){if(Build.VERSION.SDK_INT>=31)getActivity().startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:"+getContext().getPackageName())));call.resolve();}
+    @PluginMethod public void openAlarmSettings(PluginCall call){resolve(call,()->{if(Build.VERSION.SDK_INT>=31)FocusProtection.openAuthorizationSettings(getContext(),new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:"+getContext().getPackageName())));return null;});}
     @PluginMethod public void exportFile(PluginCall call){Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE,call.getString("name","小猫专注备份.json"));startActivityForResult(call,intent,"exportResult");}
     @ActivityCallback private void exportResult(PluginCall call,ActivityResult result){if(call==null)return;if(result.getResultCode()!=Activity.RESULT_OK||result.getData()==null){call.reject("已取消导出");return;}try(OutputStream stream=getContext().getContentResolver().openOutputStream(result.getData().getData(),"wt")){if(stream==null)throw new IllegalStateException("无法打开备份文件");stream.write(call.getString("text","").getBytes(StandardCharsets.UTF_8));call.resolve();}catch(Exception error){call.reject("备份导出失败",error);}}
     @PluginMethod public void importFile(PluginCall call){if(readActive()){call.reject("请先结束当前专注");return;}startActivityForResult(call,new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"),"importResult");}

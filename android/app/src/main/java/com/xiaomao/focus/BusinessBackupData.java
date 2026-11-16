@@ -30,6 +30,7 @@ final class BusinessBackupData {
                     lock.has("strict") && !(lock.get("strict") instanceof Boolean))
                     throw new IllegalArgumentException("锁机配置损坏");
                 JSONObject list = lock.getJSONObject("whitelist");
+                if (lock.has("enhancements")) strings(lock.getJSONArray("enhancements"));
                 if (list.optString("source").equals("custom")) strings(list.getJSONArray("packages"));
                 else if (!list.optString("source").equals("global")) throw new IllegalArgumentException("锁机白名单损坏");
             }
@@ -65,7 +66,7 @@ final class BusinessBackupData {
             {"semesters", "id name startDate weeks"},
             {"courses", "id semesterId title weekday firstPeriod lastPeriod firstWeek lastWeek parity room teacher color reminderMinutes"},
             {"courseExceptions", "courseId date cancelled start end"},
-            {"lockConfigurations", "id name minutes strict"},
+            {"lockConfigurations", "id name minutes strict enhancements"},
         };
         for (String[] group : groups) {
             if (!source.has(group[0])) continue; // Old schema-one backups lack protection fields.

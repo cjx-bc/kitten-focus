@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useApp } from '../stores/app'
 import Sheet from './Sheet.vue'
+import ProtectionStartSummary from './ProtectionStartSummary.vue'
 const app = useApp()
 </script>
 <template>
@@ -43,6 +44,8 @@ const app = useApp()
         </p>
       </template>
       <p class="field-help">严格模式只约束倒计时，不会自动开启应用限制或申请系统权限。</p>
+      <p v-if="!app.startConfirmation.study" class="field-help">本轮通知名单：{{ app.startConfirmation.whitelistSource === 'custom' ? '子待办独立白名单' : '跟随全局白名单' }} · {{ app.startConfirmation.whitelistCount }} 个自选应用。开始后本轮名单固定。</p>
+      <ProtectionStartSummary :preferences="app.startConfirmation.protections" @settings="app.confirmStart(false)" />
       <button class="primary wide" @click="app.confirmStart(true)">按此规则开始</button>
       <button class="secondary wide" @click="app.confirmStart(false)">暂不开始</button>
     </div>

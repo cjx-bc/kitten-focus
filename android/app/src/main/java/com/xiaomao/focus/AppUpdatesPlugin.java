@@ -35,7 +35,7 @@ public class AppUpdatesPlugin extends Plugin {
     }
     @PluginMethod public void installPermission(PluginCall call) {
         if (manager.canInstall()) { call.resolve(); return; }
-        try { getActivity().startActivity(manager.permissionIntent()); call.resolve(); }
+        try { FocusProtection.openAuthorizationSettings(getContext(), manager.permissionIntent()); call.resolve(); }
         catch (Exception error) { call.reject("无法打开安装权限设置，请在系统设置中允许此来源", error); }
     }
     @PluginMethod public void install(PluginCall call) {

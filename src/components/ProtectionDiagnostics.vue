@@ -87,13 +87,13 @@ onBeforeUnmount(() => {
 <style scoped>
 .diagnostics, .capability-body, .permission-copy { display: grid; gap: 16px; }
 .diagnostics-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.diagnostics-heading h2 { font-size: 19px; } .diagnostics-heading button { flex-shrink: 0; min-height: 44px; }
+.diagnostics-heading h2 { font-size: 19px; } .diagnostics-heading button { flex-shrink: 0; min-height: 48px; }
 .capability { border-radius: 16px; background: var(--surface); padding: 0 16px; min-width: 0; }
 summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; cursor: pointer; font-size: 14px; }
 summary::after { content: '+'; color: var(--muted); } details[open] summary::after { content: '−'; }
 summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 8px; }
 .capability-state { margin-left: auto; flex-shrink: 0; font-size: 12px; color: var(--muted); }
-.support-note { display: block; font-size: 11px; font-weight: 400; margin-top: 4px; }
+.support-note { display: block; font-size: 12px; font-weight: 400; margin-top: 4px; }
 .capability-body { padding-bottom: 18px; } p { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
 dl { margin: 0; display: grid; gap: 9px; font-size: 12px; } dl div { display: flex; justify-content: space-between; gap: 14px; }
 dt { color: var(--muted); flex-shrink: 0; } dd { margin: 0; text-align: right; overflow-wrap: anywhere; }

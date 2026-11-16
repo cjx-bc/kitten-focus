@@ -51,6 +51,32 @@ public class LockControlTest {
         assertEquals(0, control.loadData().getJSONArray("records").length());
         assertTrue(control.observeControl().getJSONObject("rest").isNull("session"));
     }
+    @Test public void presetsKeepIndependentEnhancementsWhileLegacyInheritsAndRoundStaysFrozen() throws Exception {
+        JSONObject data = control.loadData();
+        JSONArray locks = data.getJSONArray("lockConfigurations");
+        JSONObject legacy = new JSONObject(locks.getJSONObject(0).toString()).put("id", "legacy");
+        JSONObject empty = new JSONObject(legacy.toString()).put("id", "empty").put("enhancements", new JSONArray());
+        JSONObject first = new JSONObject(legacy.toString()).put("id", "first").put("enhancements", new JSONArray().put("lockMainInterfaceRestricted"));
+        JSONObject second = new JSONObject(legacy.toString()).put("id", "second").put("enhancements", new JSONArray().put("navigationHomeRecents"));
+        data.put("lockConfigurations", new JSONArray().put(legacy).put(empty).put(first).put(second));
+        data.getJSONObject("preferences").getJSONObject("protection").put("enhancements", new JSONArray());
+        store.saveData(data, false);
+        JSONObject started = control.startLock("first").getJSONObject("session");
+        assertEquals("[\"lockMainInterfaceRestricted\"]", started.getJSONArray("originalEnhancedProtectionSettings").toString());
+        assertEquals("/lock", control.resolveMainEntry("/tasks").getString("path"));
+        data.getJSONObject("preferences").getJSONObject("protection").put("enhancements", new JSONArray().put("navigationHomeRecents"));
+        first.put("enhancements", new JSONArray()); store.saveData(data, false); recreate();
+        assertEquals("[\"lockMainInterfaceRestricted\"]", control.lockAction("read", false).getJSONObject("session").getJSONArray("originalEnhancedProtectionSettings").toString());
+        control.lockAction("finish", true);
+        assertEquals("[]", control.startLock("empty").getJSONObject("session").getJSONArray("originalEnhancedProtectionSettings").toString());
+        control.lockAction("finish", true);
+        assertEquals("[\"navigationHomeRecents\"]", control.startLock("second").getJSONObject("session").getJSONArray("originalEnhancedProtectionSettings").toString());
+        control.lockAction("finish", true);
+        assertEquals("[\"navigationHomeRecents\"]", control.startLock("legacy").getJSONObject("session").getJSONArray("originalEnhancedProtectionSettings").toString());
+        control.lockAction("finish", true);
+        assertEquals("[]", control.startLock("first").getJSONObject("session").getJSONArray("originalEnhancedProtectionSettings").toString());
+        control.lockAction("finish", true);
+    }
     @Test public void dueAndRebootUseIndependentIdempotentSettlementAndCleanup() throws Exception {
         control.startLock("reading"); clock.advance(60000);
         assertTrue(control.observeControl().getBoolean("needsReconcile"));
@@ -109,10 +135,14 @@ public class LockControlTest {
     @Test public void focusAdmissionCannotForgeIndependentLockOwnership() throws Exception {
         JSONObject session = new JSONObject().put("id", "forged-kind").put("kind", "lock")
             .put("configurationId", "reading").put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
+            .put("originalEnhancedProtectionSettings", new JSONArray().put("lockMainInterfaceRestricted"))
+            .put("protection", new JSONObject().put("enhancements", new JSONArray().put("navigationHomeRecents")))
             .put("title", "Focus").put("themeName", "Focus").put("color", "#222222")
             .put("mode", "countdown").put("targetMs", 60000).put("timeZone", "UTC");
         control.startFocus(session);
         assertEquals("focus", control.observeControl().getString("owner"));
+        assertFalse(control.observeControl().getJSONObject("focus").getJSONObject("session").has("originalEnhancedProtectionSettings"));
+        assertEquals("[]", control.observeControl().getJSONObject("focus").getJSONObject("session").getJSONObject("protection").getJSONArray("enhancements").toString());
         clock.advance(10000); control.focusAction("finish");
         assertEquals(1, control.loadData().getJSONArray("records").length());
         assertEquals(0, control.lockAction("read", false).getJSONArray("records").length());

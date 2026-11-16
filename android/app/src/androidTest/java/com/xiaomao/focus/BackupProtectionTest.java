@@ -83,6 +83,30 @@ public class BackupProtectionTest {
         catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("锁机")); }
         assertOriginal(); control.lockAction("finish", true);
     }
+    @Test public void manualAndUpgradeBackupsPreservePresetEmptyIndependentAndAbsentEnhancements() throws Exception {
+        JSONObject portable = data("legacy");
+        JSONObject legacy = portable.getJSONArray("lockConfigurations").getJSONObject(0);
+        portable.getJSONArray("lockConfigurations")
+            .put(new JSONObject(legacy.toString()).put("id", "empty").put("enhancements", new JSONArray()))
+            .put(new JSONObject(legacy.toString()).put("id", "independent").put("enhancements", new JSONArray().put("lockMainInterfaceRestricted")));
+        control.replaceData(portable);
+        assertEquals("[]", control.loadData().getJSONArray("lockConfigurations").getJSONObject(1).getJSONArray("enhancements").toString());
+        String id = backups.create(501, 502);
+        JSONObject exported = backups.export(id).getJSONObject("data");
+        assertFalse(exported.getJSONArray("lockConfigurations").getJSONObject(0).has("enhancements"));
+        assertEquals("[]", exported.getJSONArray("lockConfigurations").getJSONObject(1).getJSONArray("enhancements").toString());
+        assertEquals("[\"lockMainInterfaceRestricted\"]", exported.getJSONArray("lockConfigurations").getJSONObject(2).getJSONArray("enhancements").toString());
+        control.replaceData(data("replacement")); backups.restore(id);
+        JSONArray restored = control.loadData().getJSONArray("lockConfigurations");
+        assertFalse(restored.getJSONObject(0).has("enhancements"));
+        assertEquals("[]", restored.getJSONObject(1).getJSONArray("enhancements").toString());
+        assertEquals("[\"lockMainInterfaceRestricted\"]", restored.getJSONObject(2).getJSONArray("enhancements").toString());
+        JSONObject invalid = new JSONObject(portable.toString());
+        invalid.getJSONArray("lockConfigurations").getJSONObject(1).put("enhancements", new JSONArray().put(true));
+        try { control.replaceData(invalid); fail("Malformed per-preset enhancement must be rejected"); }
+        catch (IllegalArgumentException expected) { }
+        assertEquals(restored.toString(), control.loadData().getJSONArray("lockConfigurations").toString());
+    }
     @Test public void manualCleanupFailureRetainsBusinessAndDutyUntilSuccessfulRetry() throws Exception {
         control.startFocus(session()); failRelease = true; control.focusAction("finish");
         assertTrue(control.previewRecovery().getBoolean("pending"));

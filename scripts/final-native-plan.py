@@ -8,7 +8,7 @@ CORE = [
     'FocusControlTest', 'CatFocusControlBridgeTest', 'FocusEngineTest', 'LockControlTest',
     'TemporaryAccessControlTest', 'RecoveryControlTest', 'FocusDndTest', 'FocusNotificationTest',
     'RecentTasksControlTest', 'MainEntryControlTest', 'AntiCloseControlTest', 'LauncherControlTest',
-    'BackupProtectionTest', 'UpdateProtectionTest',
+    'BackupProtectionTest', 'UpdateProtectionTest', 'AuthorizationSettingsTest',
 ]
 STUDY = 'StudyProtectionBridgeTest'
 GROUPS = {
