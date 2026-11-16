@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { runQaUi } from './lib/qa-ui-fixture.mjs'
 import { delay, until } from './lib/android-qa.mjs'
+const detailsOnly = process.argv.includes('--details-only')
 
 await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-business-regression' }, async ui => {
   const { qa } = ui
@@ -97,10 +98,10 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
   await ui.click('退出休息'); await ui.waitText('退出本次休息？'); await ui.click('继续休息')
   await ui.closedSheet()
   assert.equal((await observe()).rest.session.startedAt, rest.startedAt, 'Cancel exit preserves the same rest deadline')
-  console.log('Waiting for the real five-minute rest deadline; no clock replacement')
+  if (!detailsOnly) console.log('Waiting for the real five-minute rest deadline; no clock replacement')
   const waitStarted = Date.now()
   let heartbeat = Date.now()
-  while ((await observe()).rest.session?.state !== 'completed') {
+  while (!detailsOnly && (await observe()).rest.session?.state !== 'completed') {
     assert(Date.now() - waitStarted < 325000, 'Real rest failed to complete at its fixed deadline')
     await delay(1000)
     if (Date.now() - heartbeat > 30000) {
@@ -108,6 +109,7 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
       heartbeat = Date.now()
     }
   }
+  if (!detailsOnly) {
   await ui.waitText('休息结束')
   await delay(2000)
   assert.equal((await observe()).focus.session, null, 'Rest never automatically starts another focus')
@@ -115,6 +117,11 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
   await qa.screenshot('07-rest-completed-no-auto-focus')
   ui.pass('real-five-minute-rest-cancel-exit-completes-without-extra-statistics-or-auto-next-round', { waitedMs: Date.now() - waitStarted })
   await ui.click('返回待办'); await ui.waitText(title)
+  } else {
+    console.log('Details-only continuation: full rest evidence belongs to the separate timed-phase result; this run does not claim timed acceptance')
+    await ui.click('退出休息'); await ui.waitText('退出本次休息？'); await ui.click('确认退出')
+  }
+  await until(() => qa.evaluate(`location.hash === '#/tasks' && !!document.querySelector('.tabbar') && !!document.querySelector('[aria-label="编辑待办${title}"]')`), 'tasks after rest exit settled')
 
   // Reuse the SAME item as an ordinary countdown; early end offers manual rest.
   await ui.click('编辑待办' + title); await ui.click('倒计时'); await ui.fill('专注时长（分钟）', '1')
