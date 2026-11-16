@@ -26,6 +26,8 @@ public class WallpaperControlTest {
         Reminders.cancelFocus(context); Reminders.cancelRest(context);
         store.close(); context.deleteDatabase(database);
         context.getSharedPreferences("catfocus-wallpaper-" + database, 0).edit().clear().commit();
+        for (String prefix : new String[]{"catfocus-recents-", "catfocus-launcher-", "catfocus-recovery-"})
+            context.getSharedPreferences(prefix + database, 0).edit().clear().commit();
     }
     @Test public void defaultOffObservationExposesActualSelectionWithoutPreparingOrChangingWallpaper() throws Exception {
         JSONObject first = control.observeControl().getJSONObject("wallpaper");
@@ -237,5 +239,54 @@ public class WallpaperControlTest {
         assertTrue(control.observeControl().isNull("owner")); assertFalse(control.getWallpaperStatus().getBoolean("selected"));
         assertFalse(control.getWallpaperStatus().getBoolean("recoveryPending"));
         assertEquals("interrupted", record("reboot").getString("status")); assertEquals(5000, record("reboot").getLong("durationMs"));
+    }
+
+    @Test public void combinedWallpaperFailureRestoresOwnEntrypointsAndBlocksReplacementUntilRetryWithoutResettingStrictLock() throws Exception {
+        Clock clock = new Clock(); Wallpapers wallpapers = new Wallpapers(); wallpapers.component = "";
+        RecentTasksControlTest.Tasks tasks = new RecentTasksControlTest.Tasks();
+        tasks.values.add(new RecentTasksSystem.Task(9, "combination-main", false));
+        tasks.values.add(new RecentTasksSystem.Task(10, "originally-hidden-main", true));
+        LauncherControlTest.Launcher launcher = new LauncherControlTest.Launcher();
+        FocusProtection.AccessibilityState access = new FocusProtection.AccessibilityState() {
+            public boolean authorized() { return true; }
+            public boolean connected() { return true; }
+        };
+        control = combined(clock, wallpapers, tasks, launcher, access);
+        control.replaceData(new JSONObject("{\"schemaVersion\":1,\"records\":[],\"deletedRecordIds\":[],\"preferences\":{\"sound\":false,\"vibration\":false,\"protection\":{\"enhancements\":[\"wallpaperProtection\",\"recentTasksHidden\",\"launcherIconHidden\",\"lockMainInterfaceRestricted\"]}},\"lockConfigurations\":[{\"id\":\"combined-strict\",\"name\":\"Combined strict recovery\",\"minutes\":1,\"strict\":true,\"whitelist\":{\"source\":\"global\"}}]}"));
+        suppliedOriginal(); JSONObject started = control.startLock("combined-strict", true).getJSONObject("session");
+        wallpapers.component = wallpapers.ownComponent(); wallpapers.home = 11;
+        control.wallpaperPickerReturned(wallpapers.pickerToken);
+        assertTrue(control.getWallpaperStatus().getBoolean("active"));
+        assertTrue(control.getRecentTasksStatus().getBoolean("verified"));
+        assertTrue(control.getLauncherStatus().getBoolean("verified"));
+        assertEquals("/lock", control.resolveMainEntry("/tasks").getString("path"));
+        wallpapers.failRestore = true;
+        JSONObject preview = control.previewRecovery(); control.confirmRecovery(preview.getString("revision"));
+        assertTrue(control.getWallpaperStatus().getBoolean("recoveryPending"));
+        assertEquals("restoration_failed", control.getWallpaperStatus().getString("phase"));
+        assertFalse(tasks.excluded(9)); assertTrue(tasks.excluded(10)); assertEquals(0, launcher.state);
+        assertEquals("/tasks", control.resolveMainEntry("/tasks").getString("path"));
+        control = combined(clock, wallpapers, tasks, launcher, access); clock.time += 5000; control.reconcile();
+        JSONObject same = control.observeControl().getJSONObject("lock").getJSONObject("session");
+        for (String key : new String[]{"id", "startedAt", "targetMs", "strictMode"}) assertEquals(started.get(key), same.get(key));
+        assertFalse(tasks.excluded(9)); assertTrue(tasks.excluded(10)); assertEquals(0, launcher.state);
+        try { control.lockAction("finish", true); fail("Recovery must preserve strict timing"); } catch (IllegalStateException expected) { }
+        clock.time += 60000; control.reconcile(); assertTrue(control.observeControl().isNull("owner"));
+        JSONObject replacement = new JSONObject(control.loadData().toString());
+        replacement.getJSONObject("preferences").put("protection", new JSONObject().put("enhancements", new JSONArray()));
+        try { control.replaceData(replacement); fail("Failed wallpaper duty must block data replacement"); } catch (IllegalStateException expected) { }
+        assertTrue(control.loadData().getJSONObject("preferences").getJSONObject("protection").getJSONArray("enhancements").length() > 0);
+        wallpapers.failRestore = false; preview = control.previewRecovery(); control.confirmRecovery(preview.getString("revision"));
+        assertFalse(control.previewRecovery().getBoolean("pending"));
+        assertEquals("", wallpapers.component); assertFalse(tasks.excluded(9)); assertTrue(tasks.excluded(10)); assertEquals(0, launcher.state);
+        control.replaceData(replacement); assertTrue(control.observeControl().isNull("owner"));
+        assertEquals(0, control.loadData().getJSONArray("records").length());
+        assertEquals(0, control.loadData().getJSONObject("preferences").getJSONObject("protection").getJSONArray("enhancements").length());
+    }
+    FocusControl combined(Clock clock, Wallpapers wallpapers, RecentTasksControlTest.Tasks tasks,
+                          LauncherControlTest.Launcher launcher, FocusProtection.AccessibilityState access) {
+        return new FocusControl(context, store, clock, new FocusRecovery(context, store), access,
+            new AndroidDndSystem(context), new AndroidNotificationSystem(context), target -> () -> {},
+            FocusNavigation.android(context, access), tasks, new AndroidAntiCloseSystem(context, access), launcher, wallpapers);
     }
 }
