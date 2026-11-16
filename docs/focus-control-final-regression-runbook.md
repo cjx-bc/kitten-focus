@@ -80,7 +80,7 @@ node scripts/whitelist-editor-device-smoke.mjs
 node scripts/business-regression-device-smoke.mjs
 ```
 
-两个脚本只接受空闲且无旧恢复责任的 QA 基线，通过既有 `android-qa.mjs` 连接真实 WebView。业务基线只留在进程内存，不写入报告或调试输出；退出前结束自己的普通会话、确认无残留责任，恢复基线并重新初始化页面，再核对业务数据。未发生断电/进程被强杀时，失败也会尝试恢复；`cleanupCompleted=false` 的报告需要协调器处理，不能直接重跑并覆盖残留。脚本本身不修改任何系统授权。
+两个脚本只接受空闲且无旧恢复责任的 QA 基线，通过既有 `android-qa.mjs` 连接真实 WebView。业务基线不写入报告或调试输出；退出前结束自己的普通会话、确认无残留责任，恢复基线并重新初始化页面，再核对业务数据。未发生断电/进程被强杀时，失败也会尝试恢复；`cleanupCompleted=false` 的报告需要协调器处理，不能直接重跑并覆盖残留。脚本本身不修改任何系统授权。
 
 实际执行前补强夹具保全：空闲检查后关闭 CDP 并 force-stop 精确 QA 包，使用 `run-as` 把 `databases`/`shared_prefs` 保存到内存及本机私有临时归档，业务正文不进入 artifacts。结束时关闭数据库用户，删除仅本轮新增的精确文件，恢复归档并等候 `adb exec-in` 远端提取完成；全部文件 SHA256 与原始清单一致后才重启，核对公开业务数据、授权集合及壁纸标识，重新同步业务提醒。成功删除私有临时归档；恢复失败保留其本机路径供协调器恢复。原始 `lastFinished`、`rest`、独立 lockHistory 与各私有 journal 因此也保留，避免只通过 `replaceData(loadData)` 丢失非便携文档。`privateBaselineDigest`/`privateBaselineRestoredDigest` 只记录摘要。
 
@@ -94,6 +94,8 @@ node scripts/business-regression-device-smoke.mjs
 | business-regression / A18 | **同一 itemId** 再次用作一分钟倒计时，提前结束后无自动休息，手动进入五分钟休息且确认退出；两个状态 completed/early；日历创建关联日程，实际页显示两条真实记录；统计累计 2 次、待办分组和记录 Sheet；浏览不改变记录 | 日历/统计/常驻待办 PNG、分场景结果 |
 
 原生 Android 确认使用实际 UIAutomator 识别当前对话框资源 ID 后点击按钮中心；不替换 `window.confirm`。五分钟脚本没有缩短时钟或跳过等待模式；约六分钟，运行期间 console 定期打印剩余时长。自动脚本只断言保留原结构与交互，字体/间距/颜色/原图标是否符合原设计仍须逐张查看最终 APK 截图，不能把 DOM 数量当像素审阅。
+
+默认运行始终包含完整五分钟等待。若该时间批次已经有实际证据而后续短步骤发生夹具问题，可使用 `node scripts/business-regression-device-smoke.mjs --details-only` 重新执行短步骤；该选项不会缩短产品时钟，而是在正常休息中执行确认退出，并且不输出五分钟到期通过场景。保留原 timed-phase-results.json 和失败状态，后续结果明确引用不同运行，重复初始场景不累计。已执行结果见 [实际 UI 证据](focus-control-final-business-ui-evidence.md)。
 
 现有 `item-whitelist-device-smoke.mjs` 验证独立名单覆盖、跟随全局、空独立名单与真实外部应用限制；新增 A03 脚本补的是名单编辑器操作，两者范围不同。`backup-device-smoke.mjs` 继续负责旧备份/坏文件/正式导入确认；`updater-smoke.mjs` 与原生更新测试不能代替版本 9 → 10 的真实升级。本清单不把这些其他脚本的历史结果改写为最终共同 APK 通过。
 
