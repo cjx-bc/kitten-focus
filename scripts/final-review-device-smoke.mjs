@@ -13,7 +13,7 @@ const baseline = {
 const results = []
 const text = () => evaluate('document.body.innerText')
 const click = label => evaluate(`(() => {
-  const root = document.querySelector('dialog[open]') || document;
+  const root = [...document.querySelectorAll('dialog[open]')].at(-1) || document;
   const el = [...root.querySelectorAll('button')].find(el => el.getAttribute('aria-label') === ${JSON.stringify(label)} || el.textContent.trim() === ${JSON.stringify(label)});
   if (!el) throw new Error('Missing button: ' + ${JSON.stringify(label)}); el.click();
 })()`)
