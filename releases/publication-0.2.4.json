@@ -1,7 +1,7 @@
 {
   "version": "0.2.4",
   "versionCode": 10,
-  "status": "candidate-staged-and-verified",
+  "status": "published-and-publicly-verified",
   "authorizedBy": "User explicitly requested commit, push and publish on 2026-11-16",
   "applicationId": "com.xiaomao.focus",
   "apk": {
@@ -25,5 +25,20 @@
   },
   "priorIsolatedQaUniqueInstrumentationPassed": 140,
   "limitsReport": "docs/focus-control-final-acceptance.md",
-  "fullPlatformMatrixPassed": false
+  "fullPlatformMatrixPassed": false,
+  "releaseSourceCommit": "aa91dd14b65b1b1d0848f0b7098260e275d9e2fe",
+  "publishedAt": "2026-11-16T05:37:37Z",
+  "prerelease": true,
+  "publicVerification": {
+    "githubAssetHash": true,
+    "directDownloadHash": true,
+    "downloadRedirect": true,
+    "domainStableManifest": true,
+    "ipFallbackManifest": true,
+    "landingVersionAndLinks": true,
+    "nginxConfigTest": true,
+    "nginxReload": true
+  },
+  "verificationReportLocal": "artifacts/focus-control/publication-0.2.4/public-verification.json",
+  "knownTransientFailure": "First verification request returned HTTP403; full explicit rerun of all endpoints succeeded."
 }
