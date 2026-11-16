@@ -1,16 +1,16 @@
 // Final review regressions through real QA UI, bridge and Android Settings.
 import assert from 'node:assert/strict'
 import { emptyData, defaultProtection } from '../src/domain/model.ts'
-import { connectQa, until } from './lib/android-qa.mjs'
+import { until } from './lib/android-qa.mjs'
+import { runQaUi } from './lib/qa-ui-fixture.mjs'
 
-const qa = await connectQa({ port: 9265, output: 'artifacts/focus-control/api36/final-review' })
+await runQaUi({ port: 9265, output: 'artifacts/focus-control/api36/final-review' }, async ui => {
+const { qa, results } = ui
 const { native, evaluate, command } = qa
 const baseline = {
-  data: (await native('loadData')).data,
   services: command('shell', 'settings', 'get', 'secure', 'enabled_accessibility_services').trim(),
   enabled: command('shell', 'settings', 'get', 'secure', 'accessibility_enabled').trim(),
 }
-const results = []
 const text = () => evaluate('document.body.innerText')
 const click = label => evaluate(`(() => {
   const root = [...document.querySelectorAll('dialog[open]')].at(-1) || document;
@@ -26,7 +26,10 @@ async function reload(path) {
   await evaluate(`location.hash = ${JSON.stringify('#' + path)}`)
   await qa.send('Page.reload')
 }
-async function seed(data, path) { await native('replaceData', { data }); await reload(path) }
+async function seed(data, path) {
+  data.preferences.sound = false; data.preferences.vibration = false
+  await native('replaceData', { data }); await reload(path)
+}
 const foreground = () => command('shell', 'dumpsys', 'activity', 'activities')
 try {
   assert.equal((await native('observeControl')).owner, null)
@@ -96,11 +99,10 @@ try {
 } finally {
   command('shell', 'am', 'start', '-n', qa.appId + '/com.xiaomao.focus.MainActivity')
   await native('lockAction', { action: 'finish', confirmed: true }).catch(() => {})
-  if (baseline.data) await native('replaceData', { data: baseline.data })
   for (const [key, value] of [['enabled_accessibility_services', baseline.services], ['accessibility_enabled', baseline.enabled]])
     command('shell', 'settings', value === 'null' ? 'delete' : 'put', 'secure', key, ...(value === 'null' ? [] : [value]))
   await qa.send('Page.reload')
   assert.equal((await native('observeControl')).owner, null)
   assert.equal((await native('previewRecovery')).pending, false)
-  qa.close()
 }
+})
