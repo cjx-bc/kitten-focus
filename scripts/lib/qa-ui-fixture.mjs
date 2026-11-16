@@ -1,15 +1,32 @@
 // Thin drivers for real QA WebView controls; no Vue/store access or replacement app logic.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { emptyData } from '../../src/domain/model.ts'
+import { createHash } from 'node:crypto'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { emptyData, defaultProtection } from '../../src/domain/model.ts'
 import { connectQa, until } from './android-qa.mjs'
+import { androidDevice } from './android-device.mjs'
 
 export async function runQaUi({ output, port }, exercise) {
-  const qa = await connectQa({ output, port })
+  output = process.env.QA_EVIDENCE_ROOT ? join(process.env.QA_EVIDENCE_ROOT, output.split('/').at(-1)) : output
+  let qa = await connectQa({ output, port })
   const results = [], startedAt = new Date().toISOString()
   let baseline, fixtureInstalled = false, failure, cleanupCompleted = false
+  let privateArchive, privateHashes, privateDirectory, systemBefore
+  const digest = value => createHash('sha256').update(value).digest('hex')
+  const { adb } = androidDevice(new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))
+  const privateCommand = (...args) => execFileSync(adb, ['-s', qa.serial, ...args], { windowsHide: true, timeout: 30000, maxBuffer: 64 * 1024 * 1024 })
+  const fileHashes = () => privateCommand('shell', `run-as ${qa.appId} sh -c 'find databases shared_prefs -type f | sort | xargs sha256sum'`).toString('utf8').trim()
+  const systemState = () => ({
+    accessibility: qa.command('shell', 'settings', 'get', 'secure', 'enabled_accessibility_services').trim(),
+    accessibilityEnabled: qa.command('shell', 'settings', 'get', 'secure', 'accessibility_enabled').trim(),
+    listeners: qa.command('shell', 'settings', 'get', 'secure', 'enabled_notification_listeners').trim(),
+    wallpaperIds: qa.command('shell', 'dumpsys', 'wallpaper').split('\n').filter(line => /mWallpaperId=|mWhich=|mWallpaperComponent=/.test(line)).map(line => line.trim()),
+  })
   const ui = {
-    qa, results,
+    get qa() { return qa }, results,
     text: () => qa.evaluate('document.body.innerText'),
     click: label => qa.evaluate(`(() => {
       const dialogs = [...document.querySelectorAll('dialog[open]')];
@@ -34,6 +51,7 @@ export async function runQaUi({ output, port }, exercise) {
     route: async path => {
       await qa.evaluate(`location.hash = ${JSON.stringify('#' + path)}`)
       await until(() => qa.evaluate(`location.hash === ${JSON.stringify('#' + path)}`), path)
+      await until(() => qa.evaluate(`!!document.querySelector('.tabbar a[href="#${path}"][aria-current="page"]')`), path + ' Vue navigation settled')
     },
     closedSheet: () => until(() => qa.evaluate('!document.querySelector("dialog[open]")'), 'sheet closed'),
     pass: (scenario, evidence = {}) => {
@@ -55,10 +73,22 @@ export async function runQaUi({ output, port }, exercise) {
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: new URL('../..', import.meta.url), encoding: 'utf8', windowsHide: true }).trim(),
       installedApkSha256: qa.command('shell', 'sha256sum', apkPath).trim().split(/\s+/)[0],
       api: qa.command('shell', 'getprop', 'ro.build.version.sdk').trim(),
+      installedSourceScope: process.env.QA_INSTALLED_SOURCE_SCOPE || 'installed APK identity is authoritative; sourceCommit identifies runner checkout only',
     }
     assert.match(identity.installedApkSha256, /^[a-f0-9]{64}$/)
+    if (process.env.QA_EXPECTED_APK_SHA256) assert.equal(identity.installedApkSha256, process.env.QA_EXPECTED_APK_SHA256)
+    systemBefore = systemState()
+    qa.close()
+    qa.command('shell', 'am', 'force-stop', qa.appId)
+    privateArchive = privateCommand('exec-out', 'run-as', qa.appId, 'tar', 'cf', '-', 'databases', 'shared_prefs')
+    privateHashes = fileHashes()
+    privateDirectory = mkdtempSync(join(tmpdir(), 'kitten-qa-ui-baseline-'))
+    writeFileSync(join(privateDirectory, 'private-baseline.tar'), privateArchive)
+    qa = await connectQa({ output, port })
+    identity.privateBaselineDigest = digest(privateHashes)
     const data = emptyData()
     data.preferences.sound = false; data.preferences.vibration = false
+    data.preferences.protection = defaultProtection()
     await qa.native('replaceData', { data })
     fixtureInstalled = true
     await ui.route('/tasks')
@@ -76,18 +106,38 @@ export async function runQaUi({ output, port }, exercise) {
         await qa.native('restAction', { action: 'exit' })
         assert.equal((await qa.native('observeControl')).owner, null)
         assert.equal((await qa.native('previewRecovery')).pending, false)
-        await qa.native('replaceData', { data: baseline })
-        await qa.send('Page.reload')
-        assert.deepEqual((await qa.native('loadData')).data, baseline, 'Restore exact QA business baseline')
+      }
+      if (privateArchive) {
+        // Close all SQLite/prefs users before restoring our exact idle baseline.
+        qa.close()
+        qa.command('shell', 'am', 'force-stop', qa.appId)
+        const originalPaths = new Set(privateHashes.split('\n').map(line => line.trim().split(/\s+/).at(-1)))
+        const currentPaths = fileHashes().split('\n').map(line => line.trim().split(/\s+/).at(-1))
+        for (const path of currentPaths.filter(path => !originalPaths.has(path))) {
+          assert(/^(?:databases|shared_prefs)\/[A-Za-z0-9._-]+$/.test(path), 'Refuse unexpected fixture file path')
+          qa.command('shell', 'run-as', qa.appId, 'rm', '-f', path)
+        }
+        execFileSync(adb, ['-s', qa.serial, 'exec-in', 'run-as', qa.appId, 'tar', 'xf', '-'], { input: privateArchive, windowsHide: true, timeout: 30000 })
+        // adb exec-in can close its input transport before the remote extraction finishes.
+        await until(() => fileHashes() === privateHashes, 'all private baseline files restored after adb input drain', 15000)
+        assert.equal(fileHashes(), privateHashes, 'All QA database and preference file bytes restored before restart')
+        identity.privateBaselineRestoredDigest = digest(fileHashes())
+        qa = await connectQa({ output, port })
+        assert.deepEqual((await qa.native('loadData')).data, baseline, 'Restore exact QA public business baseline')
+        assert.deepEqual(systemState(), systemBefore, 'System authorization and wallpaper identifiers unchanged')
+        await qa.native('syncReminders')
+        rmSync(privateDirectory, { recursive: true })
+        privateDirectory = null
       }
       cleanupCompleted = true
     } catch (error) {
       failure = failure ? new AggregateError([failure, error], 'UI acceptance and QA restoration failed') : error
+      if (privateDirectory) console.error('Private QA recovery archive retained locally: ' + privateDirectory)
     }
     qa.save('results.json', { ...identity, startedAt, finishedAt: new Date().toISOString(),
       complete: !failure, cleanupCompleted, results,
-      ...(failure ? { failure: failure.message } : {}) })
-    qa.close()
+      ...(failure ? { failure: failure.message, failureDetails: failure instanceof AggregateError ? failure.errors.map(error => error.stack) : failure.stack } : {}) })
+    if (!qa.closed) qa.close()
   }
   if (failure) throw failure
 }
