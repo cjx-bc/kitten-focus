@@ -73,6 +73,7 @@ try {
   await until(async () => (await native('protectionStatus')).connected, 'actual accessibility connection')
   await click('开始')
   await until(() => evaluate("!!document.querySelector('.start-capabilities [data-capability=mainEntry]')"), 'lock selected capability summary')
+  await until(() => evaluate("[...document.querySelectorAll('dialog[open] button')].some(el => el.textContent.trim() === '确认开始锁机' && !el.disabled)"), 'lock confirmation refreshed actual connection')
   await qa.screenshot('lock-preset-prestart')
   await click('确认开始锁机')
   await until(async () => (await native('observeControl')).owner === 'lock', 'lock owner')
