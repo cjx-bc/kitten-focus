@@ -42,6 +42,26 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void getDndStatus(PluginCall call){resolve(call,()->control.getDndStatus());}
     @PluginMethod public void getNotificationStatus(PluginCall call){resolve(call,()->control.getNotificationStatus());}
     @PluginMethod public void getLauncherStatus(PluginCall call){resolve(call,()->control.getLauncherStatus());}
+    @PluginMethod public void getWallpaperStatus(PluginCall call){resolve(call,()->control.getWallpaperStatus());}
+    @PluginMethod public void prepareWallpaper(PluginCall call){resolve(call,()->control.prepareWallpaper(Boolean.TRUE.equals(call.getBoolean("limitsAccepted",false)),Boolean.TRUE.equals(call.getBoolean("originalMatches",false))));}
+    @PluginMethod public void requestWallpaperPicker(PluginCall call){resolve(call,()->control.requestWallpaperPicker(Boolean.TRUE.equals(call.getBoolean("restoreOriginal",false))));}
+    @PluginMethod public void importWallpaperOriginal(PluginCall call){
+        if(readActive()){call.reject("请先结束当前专注或锁机，再选择原图");return;}
+        startActivityForResult(call,new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),"wallpaperOriginalResult");
+    }
+    @ActivityCallback private void wallpaperOriginalResult(PluginCall call,ActivityResult result){
+        if(call==null)return;
+        if(result.getResultCode()!=Activity.RESULT_OK||result.getData()==null||result.getData().getData()==null){call.reject("已取消原图选择，未更改壁纸");return;}
+        resolve(call,()->control.importWallpaperOriginal(result.getData().getData().toString(),Boolean.TRUE.equals(call.getBoolean("lockSource",false))));
+    }
+    @PluginMethod public void confirmWallpaperManualRecovery(PluginCall call){resolve(call,()->control.confirmWallpaperManualRecovery(Boolean.TRUE.equals(call.getBoolean("acknowledged",false))));}
+    @PluginMethod public void openWallpaperSettings(PluginCall call){resolve(call,()->{
+        Intent intent=new Intent(Intent.ACTION_SET_WALLPAPER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        android.content.pm.ResolveInfo target=getContext().getPackageManager().resolveActivity(intent,0);
+        if(target==null)throw new IllegalStateException("系统没有壁纸设置入口，请从桌面设置进入");
+        FocusProtection.allowSettingsForAuthorization(getContext(),target.activityInfo.packageName);
+        getContext().startActivity(intent);return null;
+    });}
     @PluginMethod public void getRecentTasksStatus(PluginCall call){resolve(call,()->control.getRecentTasksStatus());}
     @PluginMethod public void openNotificationAccessSettings(PluginCall call){resolve(call,()->{
         getContext().startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

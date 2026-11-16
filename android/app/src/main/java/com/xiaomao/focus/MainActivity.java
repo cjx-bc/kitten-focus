@@ -8,6 +8,7 @@ import android.view.View;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        WallpaperLifecycle.record(this, "activity_create", false, null);
         restrictOrdinaryEntry(getIntent());
         registerPlugin(CatFocusPlugin.class);
         registerPlugin(AppUpdatesPlugin.class);

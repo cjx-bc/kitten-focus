@@ -115,6 +115,30 @@ export interface LauncherStatus extends RecentTasksStatus {
   launcherResolved: boolean
   launcherCacheVerified: false
 }
+export interface WallpaperStatus {
+  supported: boolean
+  requested: boolean
+  preferenceEnabled: boolean
+  phase: string
+  selected: boolean
+  lockSelected: boolean
+  active: boolean
+  verified: boolean
+  prepared: boolean
+  pickerOpen: boolean
+  preview?: boolean
+  recoveryPending: boolean
+  withdrawn: boolean
+  current: { homeId?: number; lockId?: number; component?: string; lockComponent?: string }
+  error: string
+  homeSourceAvailable?: boolean
+  lockSourceAvailable?: boolean
+  manualConfirmationRequired?: boolean
+  lastAssociation?: { pid?: number; processToken?: string; sessionId?: string; focusElapsedMs?: number; bootCount?: number }
+  forceStopImmune: false
+  cropVerified: false
+  providerSettingsVerified: false
+}
 export interface RecoveryStep {
   sessionId: string
   capability: string
@@ -199,6 +223,7 @@ export interface ControlSnapshot {
   mainEntry?: { requested: boolean; active: boolean; withdrawn: boolean }
   recentTasks?: RecentTasksStatus
   launcher?: LauncherStatus
+  wallpaper?: WallpaperStatus
   owner: 'focus' | 'rest' | 'lock' | null
   focus: FocusSnapshot
   rest: RestSnapshot

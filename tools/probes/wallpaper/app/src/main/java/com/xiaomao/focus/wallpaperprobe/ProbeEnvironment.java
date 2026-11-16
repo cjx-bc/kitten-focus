@@ -180,6 +180,23 @@ public final class ProbeEnvironment implements ProbeSession.Platform, ProbeSessi
             return "";
         }
     }
+    /** Test-only supplied-image export for actual product SAF acceptance, never user0. */
+    public void exportStaticFixture() throws Exception {
+        if (!fixtureUserAllowed() || Build.VERSION.SDK_INT < 29) throw new IllegalStateException("Only a disposable secondary user on API29+ may export the known fixture");
+        File file = new File(directory, "fixture-home.png");
+        if (!file.isFile()) throw new IllegalStateException("Explicitly create the known static original first");
+        android.content.ContentValues values = new android.content.ContentValues();
+        values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "KittenT17-original.png");
+        values.put(android.provider.MediaStore.Downloads.MIME_TYPE, "image/png");
+        values.put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/");
+        android.net.Uri uri = context.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+        if (uri == null) throw new IllegalStateException("Cannot create disposable source download");
+        try (InputStream input = new FileInputStream(file); java.io.OutputStream output = context.getContentResolver().openOutputStream(uri)) {
+            if (output == null) throw new IllegalStateException("Cannot open source download");
+            byte[] bytes = new byte[16384]; int count; while ((count = input.read(bytes)) != -1) output.write(bytes, 0, count);
+        }
+        event("fixture_source_exported", "Known PNG exported through this user's public MediaStore Downloads for real SAF selection; not an arbitrary wallpaper backup.");
+    }
 
     public void restoreStatic(ProbeSession.Baseline baseline, boolean restoreLock) throws Exception {
         // Restore lock first: a failure before home is changed keeps ownership observable and retryable.

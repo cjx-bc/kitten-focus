@@ -16,6 +16,7 @@ import type {
   TemporaryAccessResult,
   RecentTasksStatus,
   LauncherStatus,
+  WallpaperStatus,
 } from '../domain/model'
 import { emptyData, effectiveWhitelist } from '../domain/model'
 import { elapsed, settle } from '../domain/focus'
@@ -39,6 +40,12 @@ interface NativeBridge {
   observeControl(): Promise<ControlSnapshot>
   getRecentTasksStatus(): Promise<RecentTasksStatus>
   getLauncherStatus(): Promise<LauncherStatus>
+  getWallpaperStatus(): Promise<WallpaperStatus>
+  prepareWallpaper(options: { limitsAccepted: boolean; originalMatches: boolean }): Promise<WallpaperStatus>
+  requestWallpaperPicker(options: { restoreOriginal: boolean }): Promise<WallpaperStatus>
+  importWallpaperOriginal(options: { lockSource: boolean }): Promise<WallpaperStatus>
+  confirmWallpaperManualRecovery(options: { acknowledged: boolean }): Promise<WallpaperStatus>
+  openWallpaperSettings(): Promise<void>
   consumeFocusReturn(): Promise<{ requested: boolean }>
   consumeLockReturn(): Promise<{ requested: boolean }>
   protectionStatus(): Promise<ProtectionStatus>
@@ -241,6 +248,34 @@ export const openAlarmSettings = () => plugin.openAlarmSettings()
 export const syncReminders = () => (native ? plugin.syncReminders() : Promise.resolve())
 
 export const protectionDriver = {
+  async wallpaper(): Promise<WallpaperStatus> {
+    return native ? plugin.getWallpaperStatus() : {
+      supported: false, requested: false, preferenceEnabled: false, phase: 'unsupported', selected: false,
+      lockSelected: false, active: false, verified: false, prepared: false, pickerOpen: false,
+      recoveryPending: false, withdrawn: false, current: {}, error: '壁纸辅助仅支持 Android 本机版本',
+      forceStopImmune: false, cropVerified: false, providerSettingsVerified: false,
+    }
+  },
+  async prepareWallpaper(limitsAccepted: boolean, originalMatches: boolean): Promise<WallpaperStatus> {
+    if (!native) throw new Error('请在 Android 本机版本保存原壁纸')
+    return plugin.prepareWallpaper({ limitsAccepted, originalMatches })
+  },
+  async wallpaperPicker(restoreOriginal = false): Promise<WallpaperStatus> {
+    if (!native) throw new Error('请在 Android 本机版本确认系统壁纸')
+    return plugin.requestWallpaperPicker({ restoreOriginal })
+  },
+  async importWallpaperOriginal(lockSource = false): Promise<WallpaperStatus> {
+    if (!native) throw new Error('请在 Android 文件选择器中提供原图')
+    return plugin.importWallpaperOriginal({ lockSource })
+  },
+  async confirmWallpaperManualRecovery(acknowledged: boolean): Promise<WallpaperStatus> {
+    if (!native) throw new Error('请在 Android 本机版本核对原壁纸')
+    return plugin.confirmWallpaperManualRecovery({ acknowledged })
+  },
+  async openWallpaperSettings(): Promise<void> {
+    if (!native) throw new Error('请在 Android 本机版本打开壁纸设置')
+    return plugin.openWallpaperSettings()
+  },
   async launcher(): Promise<LauncherStatus> {
     return native ? plugin.getLauncherStatus() : {
       supported: false, requested: false, preferenceEnabled: false, recoveryAvailable: false, recoveryReachable: false,

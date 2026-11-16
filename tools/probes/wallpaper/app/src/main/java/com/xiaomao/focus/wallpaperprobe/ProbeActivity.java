@@ -40,6 +40,12 @@ public final class ProbeActivity extends Activity {
         title.setContentDescription("Wallpaper probe recovery entry");
         text(body, "Separate test app · ordinary application identity · no root/device-owner. It records Android wallpaper service callbacks; it cannot guarantee process survival or immunity to force-stop. Production focus data is not touched.", 16);
         button(body, "Fixture - set known static original", v -> fixture(false, false));
+        button(body, "Fixture - export known source to Downloads", v -> {
+            try {
+                environment.exportStaticFixture();
+                new AlertDialog.Builder(this).setMessage("Exported KittenT17-original.png to this disposable user's Downloads. This is a known test source, not a read of arbitrary wallpaper pixels.").setPositiveButton("OK", null).show();
+            } catch (Exception e) { showFixtureFailure(e.toString()); }
+        });
         button(body, "Fixture - choose known live original", v -> {
             if (!environment.fixtureUserAllowed()) { showFixtureFailure("Live test fixture is blocked for system user 0."); return; }
             if (session.snapshot().unresolved) { showFixtureFailure("Resolve the existing experiment first."); return; }
