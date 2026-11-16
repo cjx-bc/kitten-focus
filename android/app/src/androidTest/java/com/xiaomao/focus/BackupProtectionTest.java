@@ -46,6 +46,7 @@ public class BackupProtectionTest {
         control.replaceData(data("original"));
     }
     @After public void cleanup() throws Exception {
+        if (store == null) return;
         Reminders.cancelFocus(context); Reminders.cancelRest(context);
         store.close(); context.deleteDatabase(database);
         File directory = new File(context.getFilesDir(), "upgrade-backups-" + database);

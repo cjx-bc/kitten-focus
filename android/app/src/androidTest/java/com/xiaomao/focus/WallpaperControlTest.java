@@ -13,14 +13,16 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class WallpaperControlTest {
     Context context; LocalStore store; FocusControl control; String database;
-    @Before public void setup() {
+    @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        QaBusinessBaseline.assertIdle(context);
         assertTrue(context.getPackageName().endsWith(".qa"));
         database = "wallpaper-control-" + System.nanoTime() + ".db";
         store = new LocalStore(context, database);
         control = new FocusControl(context, store, SessionClock.system(context));
     }
     @After public void cleanup() {
+        if (store == null) return;
         Reminders.cancelFocus(context); Reminders.cancelRest(context);
         store.close(); context.deleteDatabase(database);
         context.getSharedPreferences("catfocus-wallpaper-" + database, 0).edit().clear().commit();

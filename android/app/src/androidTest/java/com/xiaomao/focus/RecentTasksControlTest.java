@@ -57,6 +57,7 @@ public class RecentTasksControlTest {
             new AndroidDndSystem(context), new AndroidNotificationSystem(context), target -> () -> {}, FocusNavigation.android(context, access), tasks);
     }
     @After public void cleanup() {
+        if (store == null) return;
         Reminders.cancelFocus(context); Reminders.cancelRest(context); store.close(); context.deleteDatabase(database);
         context.getSharedPreferences("catfocus-recents-" + database, 0).edit().clear().commit();
     }

@@ -51,6 +51,7 @@ public class LauncherControlTest {
             new AndroidAntiCloseSystem(context, available), launcher);
     }
     @After public void cleanup() {
+        if (store == null) return;
         Reminders.cancelFocus(context); Reminders.cancelRest(context); store.close(); context.deleteDatabase(database);
         context.getSharedPreferences("catfocus-launcher-" + database, 0).edit().clear().commit();
     }

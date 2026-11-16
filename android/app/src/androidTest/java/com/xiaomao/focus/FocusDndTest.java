@@ -44,6 +44,7 @@ public class FocusDndTest {
     }
 
     @After public void cleanup() {
+        if (store == null) return;
         Reminders.cancelFocus(context);
         Reminders.cancelRest(context);
         store.close();

@@ -37,6 +37,7 @@ public class MainEntryControlTest {
         });
     }
     @After public void cleanup() {
+        if (store == null) return;
         Reminders.cancelFocus(context); Reminders.cancelRest(context); store.close(); context.deleteDatabase(database);
         context.getSharedPreferences("catfocus-recovery-" + database, 0).edit().clear().commit();
     }

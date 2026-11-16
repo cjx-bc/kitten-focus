@@ -30,6 +30,7 @@ public class FocusNotificationTest {
         control.replaceData(new JSONObject("{\"schemaVersion\":1,\"records\":[],\"preferences\":{\"sound\":false,\"vibration\":false,\"protection\":{\"strict\":true,\"interceptNotifications\":true,\"globalWhitelist\":[\"allowed.app\"]}}}"));
     }
     @After public void cleanup() {
+        if (store == null) return;
         Reminders.cancelFocus(context); Reminders.cancelRest(context); store.close(); context.deleteDatabase(database);
         context.getSharedPreferences("catfocus-notifications-" + database, 0).edit().clear().commit();
     }
