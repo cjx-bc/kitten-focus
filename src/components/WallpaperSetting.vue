@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { capabilityToggleDisabled } from '../domain/protectionDisplay'
+import InfoHint from './InfoHint.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
@@ -15,7 +17,7 @@ const labels: Record<string, string> = { off: '未开启', baseline_ready: '原�
   restoration_failed: '恢复失败，可重试', failed: '状态检查失败', restored: '原壁纸已恢复，请核对显示',
   user_choice_preserved: '已保留后续选择', unsupported: '本机不支持' }
 let timer: ReturnType<typeof setInterval> | undefined
-async function refresh() { try { status.value = await protectionDriver.wallpaper() } catch (e) { error.value = String(e) } }
+async function refresh() { try { status.value = await protectionDriver.wallpaper() } catch (e) { status.value = undefined; error.value = String(e) } }
 function visible() { if (!document.hidden) void refresh() }
 onMounted(() => {
   void refresh(); timer = setInterval(visible, 2000)
@@ -33,6 +35,7 @@ async function perform(action: () => Promise<unknown>) {
 }
 async function toggle(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
+  if (checked && !status.value?.supported) return
   await perform(async () => {
     await app.mutate(data => {
       const protection = { ...defaultProtection(), ...data.preferences.protection }
@@ -54,8 +57,10 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
 </script>
 <template>
   <div class="wallpaper-setting" :aria-busy="busy">
-    <label class="switch"><span>壁纸辅助保护<small>默认关闭；下一轮经过 Android 确认后生效</small></span><input type="checkbox" :checked="selected" :disabled="busy" @change="toggle" /></label>
-    <p>选择小猫动态壁纸，让系统关联同一进程的壁纸服务，重连时协调已有专注或锁机会话。普通暂停保留；结束、休息及重启中断恢复原状态。不能保证防强停、厂商保活或所有版本效果。</p>
+    <div class="help-row"><label class="switch"><span>壁纸辅助保护</span><input type="checkbox" :checked="selected" :disabled="capabilityToggleDisabled(selected, status?.supported, busy)" @change="toggle" /></label>
+      <InfoHint label="壁纸辅助说明">
+<p>默认关闭；下一轮经过 Android 确认后生效</p>
+<p>选择小猫动态壁纸，让系统关联同一进程的壁纸服务，重连时协调已有专注或锁机会话。普通暂停保留；结束、休息及重启中断恢复原状态。不能保证防强停、厂商保活或所有版本效果。</p>
     <div class="wallpaper-status" role="status">
       <strong>{{ status ? labels[status.phase] ?? status.phase : '正在检查壁纸状态' }}</strong>
       <p>下一轮偏好：{{ selected ? '已开启' : '未开启' }} · 本轮请求：{{ status?.requested ? '已选择' : '未选择' }}</p>
@@ -64,6 +69,10 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
       <p v-if="status?.error">{{ status.error }}</p>
     </div>
     <p>静态原图由你通过 Android 文件选择器提供并私有复制（每张至多 20 MB、6400 万像素），不是读取系统原图。原图和运行态不进入业务备份。原动态组件恢复需要再次系统确认；私有设置与裁剪无法保证。没有可恢复基线时拒绝启用。</p>
+      </InfoHint>
+    </div>
+    <p class="field-help" role="status">{{ status ? labels[status.phase] ?? status.phase : '正在检查' }}</p>
+    <p v-if="status?.supported && status.error" class="form-error" role="alert">{{ status.error }}</p>
     <button v-if="status?.supported && selected && !status.requested && !status.recoveryPending" class="secondary wide" :disabled="busy" @click="perform(() => protectionDriver.importWallpaperOriginal(false))">提供当前主屏原图</button>
     <button v-if="status?.supported && selected && !status.requested && !status.recoveryPending" class="secondary wide" :disabled="busy" @click="perform(() => protectionDriver.importWallpaperOriginal(true))">提供独立锁屏原图（如有）</button>
     <button v-if="status?.supported && selected && !status.requested && !status.recoveryPending" class="secondary wide" :disabled="busy" @click="showConsent">保存原状态与查看影响</button>
@@ -72,11 +81,11 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
     <Sheet :open="consentOpen" title="保存本轮原壁纸" @close="consentOpen = false">
       <div class="wallpaper-consent">
-        <p>这里先记录当前主屏和锁屏身份，不会立即更换。下一轮开始后打开 Android 选择器；你可取消。主屏和锁屏选择不同，请核对系统界面的范围。</p>
-        <p>原动态壁纸结束后需要再次由你确认原组件。私有设置、裁剪和偏移无法导出；不同厂商效果未获保证。恢复未完成时保留责任并阻止冲突的新壁纸保护。</p>
-        <p>静态原图必须与你当前的主屏、独立锁屏分别匹配。若两者系统标识相同，将使用同一张所提供主屏原图；不同原图请分别选择。复制图片不证明像素匹配，恢复时会重新裁剪，请自行核对。</p>
-        <label><input v-model="originalMatches" type="checkbox" /> 我确认所提供原图与当前原壁纸匹配（动态原组件已保全必要设置），并接受恢复显示需核对</label>
-        <label><input v-model="limitsAccepted" type="checkbox" /> 我已了解系统确认、原状态恢复限制与不保证防强停</label>
+        <p>保存原壁纸后，下轮开始时由你在系统中确认更换。</p>
+        <p>恢复动态壁纸需要再次确认；裁剪和个性设置可能无法还原。</p>
+        <p>请提供与当前主屏、锁屏对应的原图，恢复后核对显示。</p>
+        <label><input v-model="originalMatches" type="checkbox" /> 原图与当前壁纸一致，已保留必要设置</label>
+        <label><input v-model="limitsAccepted" type="checkbox" /> 了解恢复限制，且此功能不保证防强停</label>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary wide" :disabled="busy || !originalMatches || !limitsAccepted" @click="prepare">确认保存原状态</button>
         <button class="secondary wide" :disabled="busy" @click="consentOpen = false">取消，保持现状</button>
@@ -85,7 +94,7 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
   </div>
 </template>
 <style scoped>
-.wallpaper-setting { display: grid; gap: 14px; border-top: 1px solid var(--line); padding-top: 18px; }
+.wallpaper-setting { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 18px; }
 .wallpaper-consent { display: grid; gap: 18px; }
 p, .wallpaper-consent label { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .wallpaper-consent label { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; }

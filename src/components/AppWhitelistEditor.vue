@@ -14,7 +14,7 @@ let loadVersion = 0
 watch(() => props.open, async (open) => {
   const version = ++loadVersion
   if (!open) return
-  selected.value = [...props.packages]; query.value = ''; showSystem.value = false
+  apps.value = []; selected.value = [...props.packages]; query.value = ''; showSystem.value = false
   loading.value = true; error.value = ''
   try {
     const available = await protectionDriver.apps()
@@ -30,29 +30,33 @@ watch(() => props.open, async (open) => {
 const filtered = computed(() => apps.value.filter((row) =>
   (!row.system || showSystem.value || row.fixed || selected.value.includes(row.packageName)) &&
   `${row.name} ${row.packageName}`.toLocaleLowerCase().includes(query.value.toLocaleLowerCase())))
-const count = computed(() => new Set([...selected.value, ...apps.value.filter(a => a.fixed).map(a => a.packageName)]).size)
+const count = computed(() => {
+  const fixed = new Set(apps.value.filter(row => row.fixed).map(row => row.packageName))
+  return new Set(selected.value.filter(name => !fixed.has(name))).size
+})
 function select(row: ProtectionApp, event: Event) {
-  if (row.fixed) return
+  if (row.fixed || loading.value || props.saving) return
   selected.value = (event.target as HTMLInputElement).checked
     ? [...new Set([...selected.value, row.packageName])]
     : selected.value.filter(name => name !== row.packageName)
 }
 function confirm() {
+  if (loading.value || props.saving || error.value) return
   const fixed = new Set(apps.value.filter(row => row.fixed).map(row => row.packageName))
   emit('confirm', [...new Set(selected.value)].filter(name => !fixed.has(name)))
 }
 </script>
 <template>
-  <Sheet :open="open" :title="title" @close="!saving && emit('close')">
+  <Sheet :open="open" :title="title" :close-disabled="saving" @close="!saving && emit('close')">
     <form @submit.prevent="confirm">
       <label>搜索应用<input v-model="query" type="search" placeholder="名称或包名" /></label>
       <label class="switch"><span>显示系统应用</span><input v-model="showSystem" type="checkbox" /></label>
-      <p role="status">{{ loading ? '正在读取应用' : `已选 ${count} 个应用 · 筛选保留已选项` }}</p>
+      <p role="status">{{ loading ? '正在读取应用' : `已选 ${count} 个应用` }}</p>
       <div class="app-choices">
         <label v-for="row in filtered" :key="row.packageName" class="app-choice">
           <img v-if="row.icon" :src="row.icon" alt="" width="36" height="36" /><span v-else class="app-icon"><Icon name="tasks" /></span>
           <span class="app-label">{{ row.name }}<small>{{ row.fixed ? `固定允许 · ${row.packageName}` : !row.installed ? `未安装 · 保留选择 · ${row.packageName}` : row.system ? `系统应用 · ${row.packageName}` : row.packageName }}</small></span>
-          <input type="checkbox" :checked="row.fixed || selected.includes(row.packageName)" :disabled="row.fixed || saving" @change="select(row, $event)" />
+          <input type="checkbox" :checked="row.fixed || selected.includes(row.packageName)" :disabled="row.fixed || saving || loading" @change="select(row, $event)" />
         </label>
         <p v-if="!loading && !filtered.length" class="notice">没有匹配的应用。已选名单仍保留。</p>
       </div>

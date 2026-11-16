@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import ConfirmationDialog from '../components/ConfirmationDialog.vue'
+import { useConfirmation } from '../components/useConfirmation'
 import { useApp } from '../stores/app'
 import type { CalendarEvent, Semester, Course, Occurrence, FocusRecord } from '../domain/model'
 import { uid, defaultPeriods } from '../domain/model'
@@ -21,6 +23,7 @@ import {
 } from '../domain/dates'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
+const { confirmation, confirm, resolveConfirmation } = useConfirmation()
 const app = useApp(),
   router = useRouter(),
   tab = ref<'schedule' | 'timetable'>('schedule'),
@@ -188,7 +191,9 @@ async function saveEvent() {
     payload.start.slice(0, 10),
     payload.end.slice(0, 10),
   ).filter((o) => o.sourceId !== payload.id && o.start < payload.end && o.end > payload.start)
-  if (conflicts.length && !confirm(`与“${conflicts[0]!.title}”时间重叠，仍然保存吗？`)) {
+  if (conflicts.length && !(await confirm(`与“${conflicts[0]!.title}”时间重叠，仍然保存吗？`, {
+    title: '时间有重叠', confirmLabel: '仍然保存', danger: false,
+  }))) {
     throw new Error('可以调整时间后再保存，刚才填写的内容已保留')
   }
   await app.saveEvent(payload, source.value, scope.value)
@@ -199,9 +204,10 @@ function showDetail(o: Occurrence) {
   sheet.value = 'detail'
 }
 async function deleteSelected(which: 'once' | 'all') {
-  if (!selected.value) return
-  if (!confirm(which === 'all' ? '删除整组安排？' : '删除这一次安排？')) return
-  await execute(() => app.removeOccurrence(selected.value!, which))
+  const occurrence = selected.value
+  if (!occurrence) return
+  if (!(await confirm(which === 'all' ? '删除整组安排？' : '删除这一次安排？'))) return
+  await execute(() => app.removeOccurrence(occurrence, which))
 }
 function openSemester(semester?: Semester) {
   Object.assign(
@@ -308,6 +314,7 @@ function coursePosition(o: Occurrence) {
 </script>
 <template>
   <div class="page calendar-page">
+    <ConfirmationDialog :request="confirmation" @resolve="resolveConfirmation" />
     <header class="page-header">
       <h1>日历</h1>
       <div class="actions">
@@ -793,7 +800,7 @@ function coursePosition(o: Occurrence) {
 </template>
 <style scoped>
 .calendar-tabs {
-  margin-bottom: 19px;
+  margin-bottom: 12px;
 }
 .calendar-month {
   display: flex;
@@ -810,12 +817,12 @@ function coursePosition(o: Occurrence) {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 5px;
-  padding-bottom: 23px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
 .week-strip button {
   padding: 11px 0 5px;
-  min-height: 80px;
+  min-height: 68px;
   border-radius: 17px;
   display: flex;
   flex-direction: column;
@@ -880,7 +887,7 @@ function coursePosition(o: Occurrence) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin: 23px 0;
+  margin: 12px 0;
 }
 .timeline-header h2 {
   font-size: 17px;
@@ -914,7 +921,7 @@ function coursePosition(o: Occurrence) {
 }
 .timeline-entry {
   position: relative;
-  padding: 0 0 26px 24px;
+  padding: 0 0 16px 24px;
   border-left: 1px dashed #d7d7db;
 }
 .timeline-entry:last-child {
@@ -944,7 +951,7 @@ function coursePosition(o: Occurrence) {
   font-weight: 400;
 }
 .timeline-card {
-  padding: 18px;
+  padding: 14px;
   background: var(--surface);
   border-radius: 17px;
   width: 100%;
@@ -985,8 +992,13 @@ function coursePosition(o: Occurrence) {
   margin-right: 14px;
 }
 .calendar-empty {
-  padding-top: 36px;
-  padding-bottom: 40px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  gap: 12px;
+}
+.calendar-empty .empty-mark {
+  width: 56px;
+  height: 56px;
 }
 .calendar-empty h2 {
   font-size: 18px;

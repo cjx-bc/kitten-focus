@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import { capabilityToggleDisabled } from '../domain/protectionDisplay'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
 import { notificationDriver, type NotificationStatus } from '../platform/notifications'
 import Sheet from './Sheet.vue'
+import InfoHint from './InfoHint.vue'
 import RecoverySheet from './RecoverySheet.vue'
 
-const props = withDefaults(defineProps<{ runtimeOnly?: boolean }>(), { runtimeOnly: false })
+const props = withDefaults(defineProps<{ runtimeOnly?: boolean; compact?: boolean }>(), { runtimeOnly: false, compact: false })
 const app = useApp(), status = ref<NotificationStatus>(), busy = ref(false), error = ref('')
 const permissionOpen = ref(false), recoveryOpen = ref(false)
 let interval: ReturnType<typeof setInterval> | undefined
@@ -19,13 +21,15 @@ const phaseText = computed(() => ({
 } as Record<string, string>)[status.value?.phase || ''] || '正在检查')
 async function refresh() {
   try { status.value = await notificationDriver.read() }
-  catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
+  catch (failure) { status.value = undefined; error.value = failure instanceof Error ? failure.message : String(failure) }
 }
 async function toggle(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
+  if (checked && !status.value?.supported) return
   busy.value = true; error.value = ''
   try {
     await app.mutate(data => { data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, interceptNotifications: checked } })
+    await refresh()
     if (checked && status.value?.supported && !status.value.authorized) permissionOpen.value = true
   } catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
   finally { busy.value = false }
@@ -34,7 +38,7 @@ async function authorize() {
   busy.value = true; error.value = ''
   try { await notificationDriver.openSettings(); permissionOpen.value = false }
   catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
-  finally { busy.value = false }
+  finally { busy.value = false; await refresh() }
 }
 async function reconnect() {
   busy.value = true; error.value = ''
@@ -55,15 +59,23 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-if="!props.runtimeOnly || status?.requested || status?.recoveryPending" class="notification-setting stack" aria-label="通知拦截" :aria-busy="busy">
-    <template v-if="!props.runtimeOnly">
-      <label class="switch"><span>通知拦截</span><input type="checkbox" :checked="enabled" :disabled="busy" @change="toggle" /></label>
+  <section v-if="!props.runtimeOnly || status?.requested || status?.recoveryPending || !!error" class="notification-setting stack" :class="{ compact: props.compact }" aria-label="通知拦截" :aria-busy="busy">
+    <div v-if="!props.runtimeOnly" class="help-row">
+      <label class="switch"><span>通知拦截<small v-if="props.compact" class="compact-status" role="status">{{ !status ? (error ? '状态异常' : '检查中') : status.supported ? phaseText : '仅 Android 可用' }}</small></span><input type="checkbox" :checked="enabled" :disabled="capabilityToggleDisabled(enabled, status?.supported, busy)" @change="toggle" /></label>
+      <InfoHint v-if="props.compact" label="通知拦截说明">
+        <p>暂缓名单外的普通通知，保留电话、闹钟与紧急通知。</p>
+        <p>结束后请求恢复通知，结果由系统确认。修改用于下一轮。</p>
+        <p>{{ phaseText }}</p>
+        <p v-if="status?.supported">授权：{{ status.authorized ? '已授权' : '未授权' }} · 监听：{{ status.connected ? '已连接' : '未连接' }} · 实际处理：{{ status.active ? '执行中' : '未执行' }}。</p>
+      </InfoHint>
+    </div>
+    <template v-if="!props.runtimeOnly && !props.compact">
       <p class="field-help">按本轮有效白名单暂缓其他应用的普通通知；电话、闹钟、紧急与小猫控制通知保留。与学霸模式、严格模式和声音辅助分别选择。</p>
       <p class="field-help">专注、暂停和锁机期间按本轮名单暂缓通知。普通会话采用最长 60 秒的滚动租期；结束、休息或故障恢复会请求立即释放原通知，实际结果等待 Android 核实。修改开关用于下一轮。</p>
     </template>
-    <div role="status">
-      <strong>通知拦截：{{ phaseText }}</strong>
-      <p v-if="status?.supported" class="field-help">通知访问：{{ status.authorized ? '已授权' : '未授权' }}；监听：{{ status.connected ? '已连接' : '未连接' }}；实际处理：{{ status.active ? '本轮监听中' : '未执行新拦截' }}。</p>
+    <div v-if="!props.compact || status?.requested || status?.recoveryPending || error || status?.error" role="status">
+      <strong>{{ props.compact ? (status?.supported ? phaseText : '本机不支持') : '通知拦截：' + phaseText }}</strong>
+      <p v-if="status?.supported && !props.compact" class="field-help">通知访问：{{ status.authorized ? '已授权' : '未授权' }}；监听：{{ status.connected ? '已连接' : '未连接' }}；实际处理：{{ status.active ? '本轮监听中' : '未执行新拦截' }}。</p>
       <p v-if="status && (status.pendingCount || status.restoredCount || status.absentCount)" class="field-help">待核实 {{ status.pendingCount }} 条 · 已观察原通知恢复 {{ status.restoredCount }} 条 · 已撤回或当前不存在 {{ status.absentCount }} 条。不存在不等于已恢复。</p>
       <p v-if="status?.snoozedCount" class="field-help">系统最近已核实暂缓 {{ status.snoozedCount }} 条；断连期间状态等待重连核实。</p>
       <p v-if="status?.releaseRequestedCount || status?.releaseFailedCount" class="field-help">已请求释放 {{ status?.releaseRequestedCount || 0 }} 条 · 释放失败 {{ status?.releaseFailedCount || 0 }} 条；失败与尚待系统核实的责任可在故障恢复重试。</p>
@@ -79,8 +91,8 @@ onBeforeUnmount(() => {
   </section>
   <Sheet v-if="permissionOpen" title="通知拦截与通知访问" @close="permissionOpen = false">
     <div class="stack">
-      <p>通知访问允许小猫判断原应用、通知键和必要例外，并让 Android 暂缓普通通知。到期由原应用通知恢复，原点击动作仍由系统保留。</p>
-      <p class="field-help">通知正文不会写入长期记录、日志或业务备份。拒绝授权仍可计时。授权与监听连接、实际暂缓分开显示。</p>
+      <p>允许小猫在专注期间暂缓名单外应用的通知，结束后恢复。</p>
+      <p class="field-help">不保存通知正文。电话、闹钟和紧急通知保留。</p>
       <button class="primary" :disabled="busy" @click="authorize">前往系统通知访问</button>
       <button class="secondary" @click="permissionOpen = false">暂不授权</button>
     </div>
@@ -90,6 +102,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .notification-setting { gap: 10px; text-align: left; }
+.notification-setting.compact { gap: 0; }
+.compact-status { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 4px; }
+.notification-actions:empty { display: none; }
 .notification-setting strong { font-size: 13px; font-weight: 500; }
 .notification-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .notification-actions button { min-height: 48px; flex: 1 1 140px; font-size: 13px; }

@@ -59,7 +59,7 @@ v2 直接内嵌 `src/style.css` 及 TasksView、FocusView、RestView、SettingsV
 
 原型中的事项、应用与授权均为示例数据，不读取真实业务或系统数据；字体和必要素材内嵌，支持双击离线打开。正式产品不包含模拟工具。
 
-素材来源：`public/brand/kitten-curled-v3.svg` 为项目已有小猫标识；`public/fonts/Nunito.ttf` 为现有计时数字字体，其 `OFL.txt` 许可随 HTML 内嵌保留。不会将竞品截图作为打包素材。
+素材来源：`public/fonts/Nunito.ttf` 为现有计时数字字体，其 `OFL.txt` 许可随 HTML 内嵌保留。原小猫插画、候选标识与演示页内嵌图片已按用户要求移除。不会将竞品截图作为打包素材。
 
 后续 to-spec 续写采用本原型的操作方案作为可执行规格默认：普通锁机确认后可提前解除，严格锁机到点结束；锁机记录独立、不计入专注统计、不自动休息；临时放行不同时释放通知；故障恢复列明影响、确认后逐项处理并保留计时与严格约束。完整规则及 A01—A18 验收见[执行规格](focus-control-implementation-spec.md)。该收口不表示用户此前逐项确认或演示已接入系统能力。
 

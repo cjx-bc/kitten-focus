@@ -6,10 +6,12 @@ import { timer, duration } from '../domain/dates'
 import Icon from '../components/Icon.vue'
 import DndSetting from '../components/DndSetting.vue'
 import NotificationSetting from '../components/NotificationSetting.vue'
+import ConfirmationDialog from '../components/ConfirmationDialog.vue'
+import { useConfirmation } from '../components/useConfirmation'
+const { confirmation, confirm, resolveConfirmation } = useConfirmation()
 const app = useApp(),
   router = useRouter(),
   busy = ref(false)
-function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 const session = computed(() => app.focus.session),
   strict = computed(() => session.value?.mode === 'countdown' && session.value.strictMode === true),
   result = computed(() => app.lastResult),
@@ -29,7 +31,12 @@ async function toggle() {
   }
 }
 async function finish() {
-  if (!confirm('结束本次专注？已经投入的时间会保留。')) return
+  const sessionId = session.value?.id
+  if (!sessionId || strict.value || busy.value) return
+  if (!(await confirm('已经投入的时间会保留。', {
+    title: '结束本次专注？', confirmLabel: '结束专注', cancelLabel: '继续专注', danger: false,
+  }))) return
+  if (session.value?.id !== sessionId || strict.value || busy.value) return
   busy.value = true
   try {
     await app.action('finish')
@@ -64,6 +71,7 @@ async function rest() {
 </script>
 <template>
   <div class="focus-page">
+    <ConfirmationDialog :request="confirmation" @resolve="resolveConfirmation" />
     <header class="focus-header">
       <button class="icon-button" aria-label="返回待办，保持计时" @click="router.replace('/tasks')">
         <Icon name="back" /></button
@@ -97,7 +105,7 @@ async function rest() {
         </p>
       </div>
       <div class="focus-bottom">
-        <p>{{ strict ? '严格倒计时 · 不能暂停或提前结束' : '只做眼前这一件事。' }}</p>
+        <p v-if="strict">严格倒计时 · 不能暂停或提前结束</p>
         <div v-if="!strict" class="focus-controls">
           <button
             class="pause-control"
@@ -110,9 +118,6 @@ async function rest() {
             <Icon name="stop" :size="24" />
           </button>
         </div>
-        <small>返回或锁屏，计时仍会继续</small>
-        <button class="text-button" @click="recovery">保护帮助与故障恢复</button>
-        <div class="focus-help-links"><RouterLink class="text-button" to="/permissions">权限与逐项状态</RouterLink><RouterLink class="text-button" to="/help">离线保护帮助</RouterLink></div>
       </div></template
     ><template v-else-if="result"
       ><div class="focus-result">
@@ -158,7 +163,9 @@ async function rest() {
 </template>
 <style scoped>
 .focus-page {
-  padding: calc(18px + env(safe-area-inset-top)) 24px 30px;
+  padding: calc(var(--page-block) + env(safe-area-inset-top))
+    max(var(--page-inline), env(safe-area-inset-right)) 16px
+    max(var(--page-inline), env(safe-area-inset-left));
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -179,7 +186,7 @@ async function rest() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 50px 0 30px;
+  padding: clamp(16px, 5dvh, 50px) 0 clamp(12px, 3dvh, 30px);
   text-align: center;
 }
 .focus-mode {
@@ -199,7 +206,7 @@ async function rest() {
 }
 .focus-name {
   font-size: 19px;
-  margin-top: 32px;
+  margin-top: clamp(16px, 3dvh, 32px);
   max-width: 100%;
   overflow-wrap: anywhere;
   font-weight: 600;
@@ -222,10 +229,8 @@ async function rest() {
 }
 .focus-bottom {
   text-align: center;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
 }
-.focus-help-links { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
-.focus-help-links a { display: inline-flex; align-items: center; }
 .focus-bottom > p {
   font-size: 13px;
   color: #919196;
@@ -235,7 +240,7 @@ async function rest() {
   align-items: center;
   justify-content: center;
   gap: 32px;
-  margin: 28px 0;
+  margin: clamp(12px, 3dvh, 28px) 0;
 }
 .pause-control {
   width: 84px;
@@ -253,9 +258,6 @@ async function rest() {
   display: grid;
   place-items: center;
   background: var(--surface);
-}
-.focus-bottom small {
-  font-size: 11px;
 }
 .focus-result {
   flex: 1;

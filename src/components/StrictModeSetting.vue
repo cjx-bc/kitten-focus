@@ -38,13 +38,8 @@ async function change(event: Event) {
         ><span>严格倒计时</span
         ><input type="checkbox" :checked="enabled" :disabled="busy" @change="change"
       /></label>
-      <p class="notice">倒计时开始后不能暂停、取消或提前结束，到期后正常结算并休息 5 分钟。</p>
-      <p>正计时不适用，仍可暂停和手动结束。开始前会再次显示本轮实际规则。</p>
-      <p class="field-help">此开关独立于学霸模式，不会限制其他应用，也不需要额外系统权限。</p>
+      <p class="field-help">倒计时开始后不可暂停或提前结束。正计时不受影响。</p>
       <p v-if="app.focus.session" class="field-help">当前专注规则已固定，修改只影响下一轮。</p>
-      <p class="field-help">
-        返回、锁屏或重新打开应用不会结束严格倒计时。帮助和故障恢复仍可进入；故障恢复不提前结束计时。
-      </p>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <button class="primary wide" @click="open = false">知道了</button>
     </div>
@@ -56,10 +51,11 @@ async function change(event: Event) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 63px;
+  min-height: 50px;
+  padding: 0;
   width: 100%;
   font-size: 14px;
-  border-top: 1px solid #e9e9eb;
+  border-bottom: 1px solid #e9e9eb;
   text-align: left;
 }
 .strict-setting .row {

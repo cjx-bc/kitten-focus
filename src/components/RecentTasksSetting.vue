@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { capabilityToggleDisabled } from '../domain/protectionDisplay'
+import InfoHint from './InfoHint.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
@@ -11,7 +13,7 @@ const labels = { off: '未开启', ready: '等待执行', active: '本轮任务�
 let timer: ReturnType<typeof setInterval> | undefined
 async function refresh() {
   try { status.value = await protectionDriver.recentTasks() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  catch (e) { status.value = undefined; error.value = e instanceof Error ? e.message : String(e) }
 }
 function visible() { if (!document.hidden) void refresh() }
 onMounted(() => {
@@ -26,6 +28,7 @@ async function toggle(event: Event) {
   busy.value = true; error.value = ''
   try {
     const checked = (event.target as HTMLInputElement).checked
+    if (checked && !status.value?.supported) return
     await app.mutate(data => {
       const protection = { ...defaultProtection(), ...data.preferences.protection }
       protection.enhancements = (protection.enhancements ?? []).filter(value => value !== option)
@@ -46,8 +49,10 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
 </script>
 <template>
   <div class="recent-tasks-setting" :aria-busy="busy">
-    <label class="switch"><span>隐藏自身最近任务卡<small>仅在本轮保护期间隐藏小猫卡片</small></span><input type="checkbox" :checked="selected" :disabled="busy" @change="toggle" /></label>
-    <p>无需额外系统身份，仅修改小猫自己的主任务。开始前保存原状态；结束、休息或重启中断后恢复。隐藏任务卡不代表无法被系统强停。</p>
+    <div class="help-row"><label class="switch"><span>隐藏自身最近任务卡</span><input type="checkbox" :checked="selected" :disabled="capabilityToggleDisabled(selected, status?.supported, busy)" @change="toggle" /></label>
+      <InfoHint label="隐藏最近任务卡说明">
+<p>仅在本轮保护期间隐藏小猫卡片</p>
+<p>无需额外系统身份，仅修改小猫自己的主任务。开始前保存原状态；结束、休息或重启中断后恢复。隐藏任务卡不代表无法被系统强停。</p>
     <p>需保留小猫控制通知，其中“帮助与故障恢复”可重新进入应用。未确认通知入口可达时不会隐藏；拒绝通知后可暂不开启本选项。</p>
     <div class="recent-tasks-status" role="status">
       <strong>{{ status ? labels[status.phase] : '正在检查任务卡状态' }}</strong>
@@ -55,13 +60,17 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
       <p v-if="status?.supported && selected && !status.requested">{{ status.recoveryAvailable ? '通知入口可用，下一轮开始时再检查并执行' : '待开启通知，暂不具备可达恢复入口' }}</p>
       <p v-if="status?.error">{{ status.error }}</p>
     </div>
+      </InfoHint>
+    </div>
+    <p class="field-help" role="status">{{ status ? labels[status.phase] : '正在检查' }}</p>
+    <p v-if="status?.supported && status.error" class="form-error" role="alert">{{ status.error }}</p>
     <button v-if="status?.supported && selected && !status.recoveryAvailable" class="secondary wide" :disabled="busy" @click="authorize">开启控制通知</button>
     <button v-if="status?.recoveryPending || status?.requested" class="secondary wide" :disabled="busy" @click="recover">查看本轮恢复项目</button>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
   </div>
 </template>
 <style scoped>
-.recent-tasks-setting { display: grid; gap: 14px; border-top: 1px solid var(--line); padding-top: 18px; }
+.recent-tasks-setting { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 18px; }
 p { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 small { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
 .recent-tasks-status { background: var(--surface); padding: 16px; border-radius: 14px; }

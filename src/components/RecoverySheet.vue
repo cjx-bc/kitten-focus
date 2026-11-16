@@ -53,14 +53,13 @@ async function manualWallpaperRecovery() {
 <template>
   <Sheet :open="open" title="保护帮助与故障恢复" @close="close">
     <div class="recovery-stack" :aria-busy="busy">
-      <p>保护异常时，可以撤销本轮已施加的限制。下面列出实际登记的恢复项目；取消或关闭此页不会操作。</p>
-      <p class="notice">专注或锁机计时继续，严格倒计时和严格锁机仍不能暂停、取消或提前结束。保存的白名单、保护偏好和记录保留。本轮主动撤销的能力不会因服务重连再次开启；下一轮重新按偏好检查。</p>
+      <p class="notice">撤销下列本轮保护，计时与记录保留。严格计时仍会继续到期。</p>
       <p v-if="busy" role="status">{{ confirmed ? '正在重试恢复…' : '正在检查或执行恢复…' }}</p>
-      <p v-if="snapshot && !snapshot.supported" class="notice">Android 本机版本提供系统保护与故障恢复。浏览器版本没有施加系统限制。</p>
+      <p v-if="snapshot && !snapshot.supported" class="notice">此环境无需恢复系统保护。</p>
       <div v-for="step in snapshot?.steps" :key="`${step.sessionId}:${step.capability}`" class="recovery-step">
         <strong>{{ step.title }} · {{ labels[step.status] }}</strong>
         <p>{{ step.reason }}</p>
-        <small v-if="step.retryable && step.status !== 'active'">恢复责任仍保留，可以重试。存在冲突的新保护会被阻止。</small>
+        <small v-if="step.retryable && step.status !== 'active'">尚未恢复，可重试。</small>
         <template v-if="step.capability === 'wallpaperProtection' && step.retryable">
           <button class="secondary wide" :disabled="busy" @click="restoreWallpaper">恢复原壁纸 / 确认系统步骤</button>
           <button class="secondary wide" :disabled="busy" @click="protectionDriver.openWallpaperSettings().catch(e => error = String(e))">前往系统壁纸设置手动修复</button>

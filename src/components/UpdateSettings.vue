@@ -195,7 +195,6 @@ async function restoreRecovery() {
       >
         重新检查
       </button>
-      <p class="field-help">按自己的节奏更新。暂不更新也可继续使用。</p>
     </div>
   </Sheet>
   <Sheet v-if="panel === 'backups'" title="升级恢复副本" @close="close">
@@ -249,17 +248,15 @@ async function restoreRecovery() {
 <style scoped>
 .settings-row {
   width: 100%;
-  min-height: 62px;
+  min-height: 50px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 15px 17px;
+  padding: 0;
+  border-bottom: 1px solid #e9e9eb;
   text-align: left;
   font-size: 14px;
-}
-.settings-row + .settings-row {
-  border-top: 1px solid var(--line);
 }
 .settings-value {
   color: var(--muted);

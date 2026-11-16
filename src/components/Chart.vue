@@ -36,7 +36,7 @@ onBeforeUnmount(() => {
   <div
     ref="element"
     class="chart"
-    :style="{ height: (height || 210) + 'px' }"
+    :style="{ height: `clamp(160px, 26dvh, ${height || 210}px)` }"
     role="img"
     :aria-label="label"
   />

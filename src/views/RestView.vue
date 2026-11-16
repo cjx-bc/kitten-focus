@@ -83,37 +83,18 @@ onBeforeRouteLeave(async () => {
       <span class="header-space" aria-hidden="true" />
     </header>
     <div class="rest-center">
-      <p class="rest-caption">
-        {{ session.record.status === 'completed' ? '刚刚完成' : '刚刚专注' }}「{{
-          session.record.title
-        }}」
-      </p>
-      <p class="rest-summary">专注 {{ duration(session.record.durationMs) }}</p>
-      <div class="rest-dial">
-        <svg viewBox="0 0 280 280" aria-hidden="true">
-          <circle class="dial-track" cx="140" cy="140" r="130" />
-          <circle
-            class="dial-progress"
-            cx="140"
-            cy="140"
-            r="130"
-            pathLength="1"
-            :stroke-dasharray="`${progress} 1`"
-          />
-        </svg>
+      <div class="rest-stage">
+        <div class="stage-heading"><span class="rest-phase" role="status"><i :class="{ breathing: running }" aria-hidden="true" />{{ running ? '休息中' : '休息完成' }}</span><span>5 分钟</span></div>
         <div class="rest-clock number" role="timer" aria-label="休息剩余时间" aria-live="off">
           {{ timer(app.rest.remainingMs) }}
         </div>
-        <span class="dial-label">{{ running ? '给自己五分钟' : '休息已完成' }}</span>
+        <div class="rest-meter" aria-hidden="true"><span v-for="step in 5" :key="step"><i :style="{ transform: `scaleX(${Math.min(1, Math.max(0, (1 - progress) * 5 - (step - 1)))})` }" /></span></div>
       </div>
-      <p class="rest-message" role="status">
-        {{ running ? '放松一下，慢慢来。' : '休息结束，准备好再开始。' }}
-      </p>
+      <div class="rest-receipt"><div><span class="receipt-label">本次专注</span><p class="rest-caption">{{ session.record.title }}</p></div><span class="receipt-duration number">{{ duration(session.record.durationMs) }}</span></div>
     </div>
     <div class="rest-actions">
       <template v-if="running">
         <button class="secondary wide" :disabled="busy" @click="requestExit">退出休息</button>
-        <small>锁屏或切到后台，休息计时仍会继续</small>
       </template>
       <template v-else>
         <button class="primary wide" :disabled="busy" @click="again">
@@ -122,11 +103,10 @@ onBeforeRouteLeave(async () => {
         <button class="text-button" :disabled="busy" @click="exit">返回待办</button>
       </template>
     </div>
-    <Sheet :open="confirmExit" title="退出本次休息？" @close="confirmExit = false">
-      <div class="exit-confirmation">
-        <p class="muted">退出后将停止休息倒计时并返回待办。刚刚的专注记录会保留。</p>
-        <button class="primary wide" :disabled="busy" @click="exit">确认退出</button>
-        <button class="text-button" :disabled="busy" @click="confirmExit = false">继续休息</button>
+    <Sheet :open="confirmExit" title="退出休息？" @close="confirmExit = false">
+      <div class="form-footer">
+        <button class="secondary" :disabled="busy" @click="confirmExit = false">继续休息</button>
+        <button class="primary" :disabled="busy" @click="exit">退出休息</button>
       </div>
     </Sheet>
   </div>
@@ -135,7 +115,9 @@ onBeforeRouteLeave(async () => {
 <style scoped>
 .rest-page {
   min-height: 100dvh;
-  padding: calc(18px + env(safe-area-inset-top)) 24px calc(30px + env(safe-area-inset-bottom));
+  padding: calc(var(--page-block) + env(safe-area-inset-top))
+    max(var(--page-inline), env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom))
+    max(var(--page-inline), env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
 }
@@ -159,92 +141,69 @@ onBeforeRouteLeave(async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  padding: 36px 0;
-  text-align: center;
+  padding: clamp(16px, 4dvh, 40px) 0;
 }
 .rest-caption {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.rest-summary {
-  font-size: 13px;
-  color: var(--muted);
-  margin-top: 8px;
+.rest-stage {
+  container-type: inline-size;
+  padding: clamp(22px, 5vw, 32px);
+  background: #f5f5f5;
+  border: 1px solid #ededed;
+  border-radius: 32px;
 }
-.rest-dial {
-  position: relative;
-  width: min(280px, 100%);
-  aspect-ratio: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  margin: 32px 0;
-}
-.rest-dial svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-.rest-dial circle {
-  fill: none;
-  stroke-width: 1.5;
-}
-.dial-track {
-  stroke: var(--line);
-}
-.dial-progress {
-  stroke: var(--ink);
-  stroke-linecap: round;
-}
+.stage-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.rest-phase { display: flex; align-items: center; gap: 8px; color: var(--ink); }
+.rest-phase > i { width: 6px; height: 6px; border-radius: 50%; background: #88888d; }
+.breathing { animation: rest-breathe 3s ease-in-out infinite; }
+@keyframes rest-breathe { 50% { opacity: .3; } }
+.rest-meter { display: flex; gap: 6px; }
+.rest-meter > span { flex: 1; height: 4px; background: #e2e2e5; border-radius: 4px; overflow: hidden; }
+.rest-meter i { display: block; width: 100%; height: 100%; background: #77777c; transform-origin: left; border-radius: inherit; }
+.rest-receipt { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 4px 0; }
+.rest-receipt > div { min-width: 0; }
+.receipt-label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+.receipt-duration { font-size: 16px; color: var(--muted); text-align: right; max-width: 45%; overflow-wrap: anywhere; }
 .rest-clock {
-  font-size: clamp(64px, 19vw, 88px);
-  line-height: 1.2;
-  font-weight: 850;
-}
-.dial-label {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 12px;
-}
-.rest-message {
-  font-size: 14px;
-  color: var(--muted);
+  padding-block: clamp(24px, 5dvh, 44px);
+  text-align: center;
+  font-size: clamp(56px, 17vw, 88px);
+  font-size: clamp(48px, 26cqi, 88px);
+  line-height: 1;
+  font-weight: 750;
+  letter-spacing: -0.055em;
+  white-space: nowrap;
 }
 .rest-actions {
   display: grid;
   justify-items: center;
   gap: 12px;
-  padding-bottom: 20px;
+  padding-bottom: 8px;
 }
 .rest-actions .wide {
-  max-width: 300px;
+  max-width: 240px;
 }
-.rest-actions small {
-  font-size: 11px;
-  text-align: center;
-}
-.exit-confirmation {
-  display: grid;
-  gap: 16px;
+.rest-actions .secondary {
+  background: var(--white);
+  border: 1px solid var(--line);
 }
 @media (max-height: 500px) and (min-width: 600px) {
   .rest-center {
     padding: 12px 0;
   }
-  .rest-dial {
-    width: 150px;
-    margin: 14px 0;
-  }
-  .rest-clock {
-    font-size: 48px;
-  }
+  .rest-stage { padding: 18px 24px; border-radius: 24px; }
+  .rest-clock { font-size: 60px; padding-block: 16px; }
+  .rest-receipt { padding-top: 12px; }
   .rest-actions {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
     padding-bottom: 0;
   }
 }

@@ -1,0 +1,27 @@
+{
+  "version": "0.2.5",
+  "versionCode": 11,
+  "status": "validated-awaiting-publication",
+  "applicationId": "com.xiaomao.focus",
+  "apk": {
+    "name": "xiaomao-focus-0.2.5-debug.apk",
+    "size": 4781785,
+    "sha256": "966a438152794735c32fd4d79def559b8f72013464f9a55ff5a76c0946451d1e"
+  },
+  "signerSha256": "dac507ed579b5fd68cd294c91759e60bdef23da30e427070d7e69e3100123cfe",
+  "githubRelease": "https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.5",
+  "prerelease": true,
+  "validation": {
+    "hostTestsPassed": 66,
+    "frontendBuild": true,
+    "androidApkBuild": true,
+    "androidJvmTestsPassed": 1,
+    "sameSigningIdentity": true,
+    "browserPages": 9,
+    "browserViewportChecks": 27,
+    "productionDeviceSmoke": false,
+    "fullDeviceMatrixPassed": false
+  },
+  "serverPublication": "pending",
+  "publicVerification": {}
+}

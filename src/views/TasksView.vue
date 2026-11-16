@@ -8,10 +8,14 @@ import { dateKey, duration, readableDate, weekdayName } from '../domain/dates'
 import { statistics, itemToday } from '../domain/statistics'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
+import ConfirmationDialog from '../components/ConfirmationDialog.vue'
+import { useConfirmation } from '../components/useConfirmation'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
 import AppWhitelistEditor from '../components/AppWhitelistEditor.vue'
 import { protectionDriver } from '../platform/bridge'
 import type { ProtectionStatus } from '../domain/model'
+import { studyDisplay } from '../domain/protectionDisplay'
+const { confirmation, confirm, resolveConfirmation } = useConfirmation()
 const app = useApp(),
   router = useRouter(),
   sheet = ref<'theme' | 'item' | 'free' | 'removeTheme' | null>(null),
@@ -19,18 +23,28 @@ const app = useApp(),
   busy = ref(false),
   studyOpen = ref(false)
 const protectionState = ref<ProtectionStatus | null>(null)
+const protectionReadFailed = ref(false)
+let protectionRevision = 0
 const itemWhitelistOpen = ref(false)
 const itemPackages = computed(() => itemForm.whitelist?.source === 'custom' ? itemForm.whitelist.packages : app.data.preferences.protection?.globalWhitelist ?? [])
 function setItemWhitelist(source: 'global' | 'custom') {
   itemForm.whitelist = source === 'global' ? { source } : { source, packages: [...itemPackages.value] }
 }
-const protectionLabels = { off: '未开启', authorization: '待授权', ready: '已就绪', protecting: '保护中', failed: '保护失效', unsupported: '本机不支持', recovered: '本轮已撤销' }
+const studyEntry = computed(() => studyDisplay(app.data.preferences.protection?.study === true,
+  app.focus.session?.protection?.study === true, app.focus.session?.protection?.applicationsWithdrawn === true,
+  protectionState.value, protectionReadFailed.value))
 async function refreshProtection() {
-  try { protectionState.value = await protectionDriver.status() } catch { protectionState.value = null }
+  const revision = ++protectionRevision
+  try {
+    const value = await protectionDriver.status()
+    if (revision === protectionRevision) { protectionState.value = value; protectionReadFailed.value = false }
+  } catch {
+    if (revision === protectionRevision) { protectionState.value = null; protectionReadFailed.value = true }
+  }
 }
 function refreshWhenVisible() { if (!document.hidden) void refreshProtection() }
-onMounted(() => { void refreshProtection(); document.addEventListener('visibilitychange', refreshWhenVisible) })
-onBeforeUnmount(() => document.removeEventListener('visibilitychange', refreshWhenVisible))
+onMounted(() => { void refreshProtection(); document.addEventListener('visibilitychange', refreshWhenVisible); window.addEventListener('focus', refreshWhenVisible); window.addEventListener('protection-recovered', refreshWhenVisible) })
+onBeforeUnmount(() => { protectionRevision++; document.removeEventListener('visibilitychange', refreshWhenVisible); window.removeEventListener('focus', refreshWhenVisible); window.removeEventListener('protection-recovered', refreshWhenVisible) })
 watch([() => app.data.preferences.protection, () => app.focus.session?.id, () => studyOpen.value], refreshProtection)
 const today = dateKey(),
   todayStats = computed(() => statistics(app.data.records, today, today)),
@@ -120,8 +134,9 @@ function openFree() {
   sheet.value = 'free'
 }
 async function deleteItem() {
-  if (!confirm('删除这个待办？历史专注记录会保留。')) return
-  await execute(() => app.removeItem(itemForm.id))
+  const id = itemForm.id
+  if (!(await confirm('删除这个待办？历史专注记录会保留。'))) return
+  await execute(() => app.removeItem(id))
 }
 function removeTheme() {
   moveTo.value = ''
@@ -134,8 +149,16 @@ function toggleTheme(theme: Theme) {
 </script>
 <template>
   <div class="page tasks-page">
+    <ConfirmationDialog :request="confirmation" @resolve="resolveConfirmation" />
     <header class="page-header">
-      <h1>待办</h1>
+      <div class="task-title">
+        <h1>待办</h1>
+        <button class="study-entry" aria-haspopup="dialog" :aria-expanded="studyOpen"
+          :aria-label="'学霸模式，' + studyEntry.text"
+          @click="studyOpen = true">
+          <span class="study-chip" :data-tone="studyEntry.tone">学霸模式<span class="study-entry-state" role="status">· {{ studyEntry.text }}</span><Icon name="down" :size="12" /></span>
+        </button>
+      </div>
       <div class="actions">
         <button class="icon-button" aria-label="自由专注" @click="openFree">
           <Icon name="clock" /></button
@@ -144,7 +167,6 @@ function toggleTheme(theme: Theme) {
         </button>
       </div>
     </header>
-    <button class="study-entry secondary wide" @click="studyOpen = true"><span>学霸模式</span><span>{{ protectionState ? protectionLabels[protectionState.state] : '正在检查' }}</span></button>
     <StudyModeSheet v-if="studyOpen" :open="studyOpen" @close="studyOpen = false" />
     <AppWhitelistEditor :open="itemWhitelistOpen && sheet === 'item'" title="子待办独立白名单" :packages="itemPackages"
       @close="itemWhitelistOpen = false" @confirm="(packages) => { itemForm.whitelist = { source: 'custom', packages }; itemWhitelistOpen = false }" />
@@ -247,7 +269,6 @@ function toggleTheme(theme: Theme) {
     <button class="free-focus secondary wide" @click="openFree">
       <Icon name="clock" :size="18" />自由专注
     </button>
-    <p class="footer-note">待办一直都在，按自己的节奏来。</p>
     <Sheet
       :open="sheet === 'theme'"
       :title="app.themes.some((t) => t.id === themeForm.id) ? '编辑主题' : '新建主题'"
@@ -362,7 +383,7 @@ function toggleTheme(theme: Theme) {
           <legend>应用白名单</legend>
           <label class="switch"><span>跟随全局<small>每轮开始时使用最新全局名单</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source !== 'custom'" @change="setItemWhitelist('global')" /></label>
           <label class="switch"><span>独立白名单<small>替代全局名单，不自动合并</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source === 'custom'" @change="setItemWhitelist('custom')" /></label>
-          <button v-if="itemForm.whitelist?.source === 'custom'" type="button" class="secondary wide" @click="itemWhitelistOpen = true">编辑独立白名单（{{ itemPackages.length }} 个包）</button>
+          <button v-if="itemForm.whitelist?.source === 'custom'" type="button" class="secondary wide" :disabled="!protectionState?.supported" @click="itemWhitelistOpen = true">编辑独立白名单（{{ itemPackages.length }} 个应用）</button>
           <p class="muted">独立空名单仅保留小猫与必要功能例外。保存待办后生效；本轮专注保持开始时的名单。</p>
         </fieldset>
         <label v-if="itemForm.mode === 'countdown'"
@@ -432,7 +453,6 @@ function toggleTheme(theme: Theme) {
           })
         "
       >
-        <p class="muted">不用创建待办，现在就开始。</p>
         <div class="segmented">
           <button
             type="button"
@@ -496,13 +516,34 @@ function toggleTheme(theme: Theme) {
   </div>
 </template>
 <style scoped>
-.study-entry { display:flex; justify-content:space-between; margin-bottom:20px; font-size:13px; }
+.tasks-page {
+  min-height: calc(100dvh - var(--nav-height) - env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+.tasks-page > * {
+  flex-shrink: 0;
+}
+.task-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.task-title h1 { flex-shrink: 0; }
+.study-entry { display: inline-flex; align-items: center; min-height: 44px; flex-shrink: 0; border-radius: 100px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.study-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; background: var(--surface); border-radius: 100px; white-space: nowrap; line-height: 18px; }
+.study-entry-state { font-weight: 600; }
+.study-chip[data-tone='enabled'] { background: var(--ink); color: var(--white); }
+.study-chip[data-tone='warning'] { background: #fff1ef; color: #c13a25; }
+@media (max-width: 360px) {
+  .page-header { gap: 4px; }
+  .page-header .actions .icon-button { width: 44px; height: 44px; }
+  .task-title { gap: 6px; }
+  .study-chip { gap: 3px; padding-inline: 6px; }
+  .study-chip > svg { display: none; }
+}
 .daily-line {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
   color: var(--muted);
-  margin: 0 0 28px;
+  margin: 0 0 16px;
   gap: 8px;
 }
 .daily-line strong {
@@ -511,7 +552,7 @@ function toggleTheme(theme: Theme) {
   margin-left: 4px;
 }
 .theme-section {
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 .theme-header {
   display: flex;
@@ -665,32 +706,26 @@ function toggleTheme(theme: Theme) {
   min-height: 46px;
   color: var(--muted);
   font-size: 13px;
-  margin-bottom: 26px;
+  margin-bottom: 8px;
 }
 .task-empty {
-  padding-top: 66px;
-  padding-bottom: 58px;
+  padding-top: clamp(16px, 5dvh, 40px);
+  padding-bottom: clamp(16px, 4dvh, 32px);
 }
 .free-focus {
-  margin-top: 12px;
+  margin-top: auto;
   background: white;
   border: 1px solid var(--line);
-}
-.footer-note {
-  font-size: 11px;
-  text-align: center;
-  color: #919196;
-  margin-top: 20px;
 }
 .ongoing {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
+  padding: 12px 16px;
   background: #fff4f1;
   border-radius: 18px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   text-align: left;
   font-size: 14px;
 }

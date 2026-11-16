@@ -75,10 +75,10 @@ onBeforeUnmount(() => {
     <p v-if="error" class="form-error" role="alert">{{ error }}。当前结果可能已过期，请重新检查。</p>
     <Sheet :open="!!permission" title="权限用途与选择" @close="permission = undefined">
       <div class="permission-copy">
-        <template v-if="permission === 'accessibility'"><p>无障碍识别前台应用与系统窗口所属应用，用于返回限制页。精确防关闭只在已知系统设置和安装器特定页面，有界读取小猫自己的标题、包名与按钮文字；不读取任意应用正文，不存储、上传或记录节点内容。</p><p>从此入口打开的必要授权窗口会短时放行。授权后返回会重新检查连接；普通无障碍不保证系统防强停或防卸载。</p></template>
-        <template v-else-if="permission === 'notifications'"><p>通知访问用于按本轮有效名单暂缓普通通知显示，再请求 Android 释放原通知。消息与点击动作仍属于原应用，不保存通知正文或代发消息。</p><p>授权和监听连接分别检查。系统暂缓、释放请求与实际恢复分别显示，拒绝授权不影响基础计时。</p></template>
-        <template v-else-if="permission === 'dnd'"><p>勿扰授权用于创建小猫自己的声音规则，减少通知声音和振动。通知仍可显示，来电、闹钟、媒体默认放行；其他规则可能进一步限制。</p><p>恢复只撤销小猫的变更，保留用户和其他应用的选择。系统确认规则不等于本页验证实际声音。</p></template>
-        <template v-else><p>隐藏图标前，需要小猫控制通知及其中的帮助与故障恢复入口真实可达。开启通知不会立即隐藏图标；开始本轮时会再次检查。</p><p>结束或确认故障恢复后按原状态恢复图标。启动器缓存可能延迟更新，隐藏图标不能防卸载或强停。</p></template>
+        <template v-if="permission === 'accessibility'"><p>用于识别并限制名单外应用，不读取其他应用正文。</p><p>精确防关闭仅识别系统页面中小猫自己的入口，不保存或上传内容。</p></template>
+        <template v-else-if="permission === 'notifications'"><p>专注期间暂缓名单外通知，结束后请求恢复。不保存通知正文。</p><p>电话、闹钟与紧急通知保留。</p></template>
+        <template v-else-if="permission === 'dnd'"><p>减少通知声音和振动，保留来电、闹钟与媒体。</p><p>其他勿扰设置不变。</p></template>
+        <template v-else><p>隐藏图标后，可从小猫控制通知重新进入应用。</p><p>结束后恢复图标；桌面刷新可能有延迟。</p></template>
         <button class="primary wide" @click="authorize">前往系统授权</button><button class="secondary wide" @click="permission = undefined">暂不授权</button>
       </div>
     </Sheet>

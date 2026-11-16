@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { capabilityToggleDisabled } from '../domain/protectionDisplay'
+import InfoHint from './InfoHint.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
@@ -11,7 +13,7 @@ const labels = { off: '未开启', ready: '等待执行', active: '本轮启动�
 let timer: ReturnType<typeof setInterval> | undefined
 async function refresh() {
   try { status.value = await protectionDriver.launcher() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  catch (e) { status.value = undefined; error.value = e instanceof Error ? e.message : String(e) }
 }
 function visible() { if (!document.hidden) void refresh() }
 onMounted(() => {
@@ -26,6 +28,7 @@ async function toggle(event: Event) {
   busy.value = true; error.value = ''
   try {
     const checked = (event.target as HTMLInputElement).checked
+    if (checked && !status.value?.supported) return
     await app.mutate(data => {
       const protection = { ...defaultProtection(), ...data.preferences.protection }
       protection.enhancements = (protection.enhancements ?? []).filter(value => value !== option)
@@ -46,8 +49,10 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
 </script>
 <template>
   <div class="launcher-setting" :aria-busy="busy">
-    <label class="switch"><span>隐藏桌面图标<small>默认关闭；仅用于下一轮专注或锁机</small></span><input type="checkbox" :checked="selected" :disabled="busy" @change="toggle" /></label>
-    <p>仅停用小猫自己的普通桌面入口，不影响控制页和恢复页。开始前保存原状态；结束、休息、重启中断或升级后恢复。此功能不能禁止卸载或系统强停。</p>
+    <div class="help-row"><label class="switch"><span>隐藏桌面图标</span><input type="checkbox" :checked="selected" :disabled="capabilityToggleDisabled(selected, status?.supported, busy)" @change="toggle" /></label>
+      <InfoHint label="隐藏桌面图标说明">
+<p>默认关闭；仅用于下一轮专注或锁机</p>
+<p>仅停用小猫自己的普通桌面入口，不影响控制页和恢复页。开始前保存原状态；结束、休息、重启中断或升级后恢复。此功能不能禁止卸载或系统强停。</p>
     <p>隐藏前会实际检查小猫控制通知和“帮助与故障恢复”入口。图标隐藏后，从该通知返回控制页；在恢复页确认撤销即可恢复本轮更改。下一轮不再隐藏时，请关闭此开关。</p>
     <div class="launcher-status" role="status">
       <strong>{{ status ? labels[status.phase] : '正在检查启动入口状态' }}</strong>
@@ -56,13 +61,17 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
       <p v-if="status?.error">{{ status.error }}</p>
     </div>
     <p v-if="status?.supported" class="muted">状态仅验证系统组件和启动器查询结果；桌面图标可能因启动器缓存延迟更新，请等待刷新。原本已停用的入口保持原状态。</p>
+      </InfoHint>
+    </div>
+    <p class="field-help" role="status">{{ status ? labels[status.phase] : '正在检查' }}</p>
+    <p v-if="status?.supported && status.error" class="form-error" role="alert">{{ status.error }}</p>
     <button v-if="status?.supported && selected && !status.recoveryAvailable" class="secondary wide" :disabled="busy" @click="authorize">开启控制通知</button>
     <button v-if="status?.recoveryPending || status?.requested" class="secondary wide" :disabled="busy" @click="recover">查看本轮恢复项目</button>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
   </div>
 </template>
 <style scoped>
-.launcher-setting { display: grid; gap: 14px; border-top: 1px solid var(--line); padding-top: 18px; }
+.launcher-setting { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 18px; }
 p { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 small { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
 .launcher-status { background: var(--surface); padding: 16px; border-radius: 14px; }

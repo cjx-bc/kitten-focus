@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { capabilityToggleDisabled } from '../domain/protectionDisplay'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { App } from '@capacitor/app'
 import type { PluginListenerHandle } from '@capacitor/core'
@@ -7,8 +8,9 @@ import { defaultProtection } from '../domain/model'
 import { dndDriver, type DndStatus } from '../platform/dnd'
 import { native } from '../platform/bridge'
 import Sheet from './Sheet.vue'
+import InfoHint from './InfoHint.vue'
 
-const props = withDefaults(defineProps<{ runtimeOnly?: boolean }>(), { runtimeOnly: false })
+const props = withDefaults(defineProps<{ runtimeOnly?: boolean; compact?: boolean }>(), { runtimeOnly: false, compact: false })
 const app = useApp(), status = ref<DndStatus>(), busy = ref(false), error = ref('')
 const panel = ref<'permission' | 'restore' | null>(null), gateReady = ref(false)
 let interval: ReturnType<typeof setInterval> | undefined
@@ -29,15 +31,17 @@ const phaseText = computed(() => {
 })
 async function refresh() {
   try { status.value = await dndDriver.read() }
-  catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
+  catch (failure) { status.value = undefined; error.value = failure instanceof Error ? failure.message : String(failure) }
 }
 async function toggle(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
+  if (checked && !status.value?.supported) return
   busy.value = true; error.value = ''
   try {
     await app.mutate(data => {
       data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, dnd: checked }
     })
+    await refresh()
     if (checked && status.value?.supported && !status.value.permissionGranted) show('permission')
   } catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
   finally { busy.value = false }
@@ -78,17 +82,25 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-if="!props.runtimeOnly || status?.requested || status?.recoveryPending" class="dnd-setting stack" aria-label="声音免打扰辅助" :aria-busy="busy">
-    <template v-if="!props.runtimeOnly">
+  <section v-if="!props.runtimeOnly || status?.requested || status?.recoveryPending || !!error" class="dnd-setting stack" :class="{ compact: props.compact }" aria-label="声音免打扰辅助" :aria-busy="busy">
+    <div v-if="!props.runtimeOnly" class="help-row">
       <label class="switch">
-        <span>声音免打扰辅助</span>
-        <input type="checkbox" :checked="enabled" :disabled="busy" @change="toggle" />
+        <span>声音免打扰辅助<small v-if="props.compact" class="compact-status" role="status">{{ !status ? (error ? '状态异常' : '检查中') : status.supported ? phaseText : '仅 Android 可用' }}</small></span>
+        <input type="checkbox" :checked="enabled" :disabled="capabilityToggleDisabled(enabled, status?.supported, busy)" @change="toggle" />
       </label>
+      <InfoHint v-if="props.compact" label="声音免打扰说明">
+        <p>减少通知声音和振动，保留来电、闹钟与媒体。</p>
+        <p>修改用于下一轮，需 Android 10 或更新系统。</p>
+        <p>{{ phaseText }}</p><p v-if="status?.supported">勿扰授权：{{ status.permissionGranted ? '已授权' : '未授权' }}。其他系统或应用的勿扰规则仍可能施加更严格限制。</p>
+      </InfoHint>
+    </div>
+    <template v-if="!props.runtimeOnly && !props.compact">
       <p class="field-help">减少通知声音和振动，保留来电、闹钟与媒体。通知仍可显示；这项辅助与应用限制、通知拦截分别选择。</p>
       <p v-if="app.focus.session" class="field-help">开关修改用于下一轮；本轮按开始时的选择执行。</p>
       <p v-if="!status?.supported" class="field-help">需要 Android 10 或更新系统；浏览器预览不执行系统声音规则。</p>
     </template>
-    <div class="dnd-status" role="status">
+    <p v-if="props.compact && (status?.error || error)" class="form-error" role="alert">{{ error || status?.error }}</p>
+    <div v-if="!props.compact" class="dnd-status" role="status">
       <strong>声音辅助：{{ phaseText }}</strong>
       <p v-if="status?.supported" class="field-help">勿扰授权：{{ status.permissionGranted ? '已授权' : '未授权' }}；本轮选择：{{ status.requested ? '开启' : '关闭' }}。</p>
       <p v-if="status?.phase === 'active'" class="field-help">其他系统或应用的勿扰规则仍可能施加更严格限制。</p>
@@ -101,16 +113,14 @@ onBeforeUnmount(() => {
   </section>
   <Sheet v-if="panel === 'permission'" title="声音辅助与勿扰授权" @close="panel = null">
     <div class="stack">
-      <p>小猫只在本轮选择开启时创建独立声音规则。来电、闹钟和媒体默认放行，通知仍保留供稍后查看。</p>
-      <p class="field-help">授权状态与规则编号只在本机处理。结束、休息或主动撤销会移除小猫自身规则。可随时在系统勿扰设置中关闭；拒绝授权也能继续计时。</p>
+      <p>允许小猫减少通知声音和振动，保留来电、闹钟与媒体。</p>
       <button class="primary" :disabled="!gateReady || busy" @click="authorize">前往系统设置</button>
       <button class="secondary" @click="panel = null">暂不授权</button>
     </div>
   </Sheet>
   <Sheet v-if="panel === 'restore'" title="撤销声音辅助" @close="panel = null">
     <div class="stack">
-      <p>仅撤销小猫在本轮施加的声音规则，计时继续。本轮不会自动重新开启声音辅助。</p>
-      <p class="field-help">用户或其他应用的勿扰选择会保留。若规则已有后续修改或系统未确认移除，会显示具体原因并保留重试入口。</p>
+      <p>撤销本轮声音规则，计时继续。其他勿扰设置不变。</p>
       <button class="primary" :disabled="!gateReady || busy" @click="restore">确认撤销</button>
       <button class="secondary" @click="panel = null">取消</button>
     </div>
@@ -119,6 +129,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .dnd-setting { gap: 10px; text-align: left; }
+.dnd-setting.compact { gap: 0; }
+.compact-status { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 4px; }
+.dnd-actions:empty { display: none; }
 .dnd-status { padding: 12px 0; }
 .dnd-status strong { font-size: 13px; font-weight: 500; }
 .dnd-actions { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 11,
+    "versionName": "0.2.5",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.5/xiaomao-focus-0.2.5-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.5/xiaomao-focus-0.2.5-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.5-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.5/xiaomao-focus-0.2.5-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.5-debug.apk"
+    ],
+    "size": 4781785,
+    "sha256": "966a438152794735c32fd4d79def559b8f72013464f9a55ff5a76c0946451d1e",
+    "notes": "优化不同屏幕尺寸下的页面布局、底部导航与控件对齐；统一居中弹窗、确认操作和全局开关样式，精简说明文案。重整“我的”和“关于”页面，增加 GitHub 与官网入口；优化专注和休息页面。修复学霸模式状态显示、不可用功能开关、白名单单选与计数、加载状态及嵌套弹窗焦点。移除小猫插画及候选素材。沿用原包名和签名，可覆盖安装保留数据。系统保护的设备兼容性限制仍适用；本轮未重跑真机与模拟器系统效果验收。"
+  }
+}

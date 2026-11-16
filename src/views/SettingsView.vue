@@ -16,11 +16,12 @@ import {
 } from '../platform/bridge'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
+import InfoHint from '../components/InfoHint.vue'
 import UpdateSettings from '../components/UpdateSettings.vue'
 import { useUpdates } from '../stores/updates'
 const app = useApp(),
   updates = useUpdates(),
-  sheet = ref<'duration' | 'restore' | 'about' | null>(null),
+  sheet = ref<'duration' | 'restore' | 'about' | 'sound' | null>(null),
   minutes = ref(25),
   importInput = ref<HTMLInputElement>(),
   backup = ref<Backup | null>(null),
@@ -126,7 +127,7 @@ async function enableNotifications() {
       <div class="profile-icon"><Icon name="cat" :size="33" /></div>
       <div>
         <h2>小猫专注</h2>
-        <p>专注当下，慢慢积累。</p>
+        <p>版本 {{ updates.state.currentVersion }}</p>
       </div>
     </div>
     <h3 class="settings-section-label">专注设置</h3>
@@ -149,15 +150,18 @@ async function enableNotifications() {
           :checked="app.data.preferences.vibration"
           @change="preference('vibration', $event)"
       /></label>
+    </div>
+    <h3 class="settings-section-label">专注保护</h3>
+    <div class="settings-group">
       <StrictModeSetting />
       <RouterLink class="settings-row" to="/lock"><span class="row"><Icon name="clock" :size="20" />独立锁机</span><span class="row settings-value">{{ app.lock.session ? '进行中' : '配置与记录' }}<Icon name="right" :size="16" /></span></RouterLink>
+      <button class="settings-row" @click="sheet = 'sound'"><span class="row"><Icon name="bell" :size="20" />声音与通知</span><Icon name="right" :size="16" /></button>
       <RouterLink class="settings-row" to="/permissions"><span class="row"><Icon name="info" :size="20" />权限与保护状态</span><Icon name="right" :size="16" /></RouterLink>
-      <RouterLink class="settings-row" to="/help"><span class="row"><Icon name="info" :size="20" />离线保护帮助</span><Icon name="right" :size="16" /></RouterLink>
-      <button class="settings-row" @click="recovery"><span class="row"><Icon name="info" :size="20" />本轮故障恢复</span><Icon name="right" :size="16" /></button>
     </div>
-    <h3 class="settings-section-label">声音辅助</h3>
-    <div class="settings-group sound-settings"><DndSetting /></div>
-    <div class="settings-group"><NotificationSetting /></div>
+    <Sheet :open="sheet === 'sound'" title="声音与通知" @close="sheet = null">
+      <div class="notification-preferences">
+        <DndSetting compact />
+        <NotificationSetting compact />
     <template v-if="native"
       ><h3 class="settings-section-label">系统提醒</h3>
       <div class="settings-group">
@@ -173,11 +177,14 @@ async function enableNotifications() {
           /></span>
         </button>
       </div>
-      <p class="settings-footnote">
+      <InfoHint label="系统提醒说明"><p>
         日程和课程的提醒可以单独设置。关闭系统提醒不影响专注记录。
-      </p></template
+      </p></InfoHint></template
     >
-    <h3 class="settings-section-label">本地数据</h3>
+        <button class="primary wide" @click="sheet = null">完成</button>
+      </div>
+    </Sheet>
+    <div class="settings-section-heading"><h3 class="settings-section-label">本地数据</h3><InfoHint label="本地数据与备份"><p>数据保存在这台设备上。定期导出一份备份，换设备时也能带走。</p><p>恢复备份会替换当前数据，请先结束专注或锁机。</p></InfoHint></div>
     <div class="settings-group">
       <button class="settings-row" @click="exportBackup">
         <span class="row"><Icon name="download" :size="20" />导出备份</span
@@ -195,7 +202,6 @@ async function enableNotifications() {
       aria-label="选择小猫专注备份"
       @change="fileChanged"
     />
-    <p class="settings-footnote">数据保存在这台设备上。定期导出一份备份，换设备时也能带走。</p>
     <h3 class="settings-section-label">关于</h3>
     <div class="settings-group">
       <UpdateSettings />
@@ -206,7 +212,7 @@ async function enableNotifications() {
         /></span>
       </button>
     </div>
-    <p class="version-note">小猫专注 · 把时间留给自己</p>
+    <div class="settings-help-links"><RouterLink to="/help">使用帮助</RouterLink><button @click="recovery">故障恢复</button></div>
     <Sheet v-if="sheet === 'duration'" title="默认专注时长" @close="sheet = null"
       ><form @submit.prevent="saveMinutes">
         <label
@@ -230,14 +236,13 @@ async function enableNotifications() {
             {{ m }} 分钟
           </button>
         </div>
-        <p class="field-help">新建待办和自由专注时使用，已经保存的待办不受影响。</p>
+        <p class="field-help">用于新建待办和自由专注。</p>
         <p v-if="error" class="form-error">{{ error }}</p>
         <button class="primary wide">保存设置</button>
       </form></Sheet
     >
     <Sheet v-if="sheet === 'restore' && backup" title="恢复本地备份" @close="sheet = null"
       ><div class="stack">
-        <p>将用这份备份整体替换当前数据。</p>
         <div class="card backup-summary">
           <p>备份时间：{{ new Date(backup.createdAt).toLocaleString('zh-CN') }}</p>
           <p>
@@ -248,8 +253,7 @@ async function enableNotifications() {
           <p>{{ backup.data.lockConfigurations?.length ?? 0 }} 个锁机配置 · 全局白名单 {{ backup.data.preferences.protection?.globalWhitelist.length ?? 0 }} 个应用</p>
           <p>严格模式：{{ backup.data.preferences.protection?.strict ? '开启' : '关闭' }} · 增强保护 {{ backup.data.preferences.protection?.enhancements.length ?? 0 }} 项</p>
         </div>
-        <p class="field-help">只恢复保存的配置和历史；不会重启专注或锁机。恢复后重新检查本机应用与系统权限。</p>
-        <p class="notice">当前设备中未包含在备份里的内容会被替换。建议先导出当前数据，再继续。</p>
+        <p class="notice">当前数据将被备份替换。建议先导出当前数据。</p>
         <button class="secondary wide" @click="exportBackup">先导出当前数据</button>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary wide" :disabled="busy" @click="restore">确认恢复此备份</button>
@@ -257,14 +261,26 @@ async function enableNotifications() {
     >
     <Sheet v-if="sheet === 'about'" title="关于小猫专注" @close="sheet = null"
       ><div class="about">
-        <Icon name="cat" :size="47" />
-        <h2>小猫专注</h2>
-        <p>安排时间，选择一件事，认真投入。<br />让每一段专注都有记录。</p>
-        <small>版本 {{ updates.state.currentVersion }} · 本地使用，无需登录</small>
-        <div class="divider" />
-        <p class="field-help">
-          数字字体 Nunito 使用 SIL Open Font License；界面图标使用 Lucide。字体许可随源码提供。
-        </p>
+        <div class="about-identity"><span class="about-mark"><Icon name="clock" :size="26" /></span><div><h2>小猫专注</h2><span class="about-version">当前版本 {{ updates.state.currentVersion }}</span></div><span class="about-badge">内测版</span></div>
+        <p class="about-description">面向日常学习的专注工具，连接待办、日程课表与专注统计。免登录，数据保存在当前设备。</p>
+        <nav class="about-destinations" aria-label="项目与官方网站">
+          <a href="https://github.com/cjx-bc/kitten-focus" target="_blank" rel="noopener noreferrer"><span class="destination-icon"><img src="/icons/github-mark.png" alt="" width="28" height="28" /></span><span class="destination-copy"><strong>GitHub 项目</strong><small>cjx-bc/kitten-focus</small></span><Icon name="external" :size="15" /></a>
+          <a href="https://focus.linma.asia/" target="_blank" rel="noopener noreferrer"><span class="destination-icon"><Icon name="globe" :size="21" /></span><span class="destination-copy"><strong>官方网站</strong><small>focus.linma.asia</small></span><Icon name="external" :size="15" /></a>
+        </nav>
+        <section class="about-release" aria-labelledby="latest-release-title">
+          <div class="about-section-heading"><h3 id="latest-release-title">最近更新</h3><time datetime="2026-11-16">2026.11.16</time></div>
+          <p class="release-name">v0.2.5 <span>界面与交互优化</span></p>
+          <ul class="release-changes">
+            <li>适配不同屏幕尺寸，统一页面间距与控件对齐。</li>
+            <li>优化弹窗、开关与设置分组，精简专注和休息界面。</li>
+            <li>修复保护状态、不可用开关和白名单显示逻辑。</li>
+          </ul>
+          <a class="about-link" href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.5" target="_blank" rel="noopener noreferrer">完整更新说明<Icon name="right" :size="15" /></a>
+        </section>
+        <details class="about-details">
+          <summary><span>开源许可</span><Icon name="down" :size="15" /></summary>
+          <p class="about-license">数字字体 Nunito · SIL Open Font License 1.1<br />Lucide 图标 · ISC License<br />许可文件随项目源码提供。</p>
+        </details>
       </div></Sheet
     >
   </div>
@@ -273,43 +289,49 @@ async function enableNotifications() {
 .profile {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 13px 0 25px;
+  gap: 12px;
+  padding: 0 0 4px;
 }
 .profile-icon {
-  width: 70px;
-  height: 70px;
-  border-radius: 24px;
+  width: 48px;
+  height: 48px;
+  border-radius: 18px;
   background: var(--surface);
   display: grid;
   place-items: center;
 }
 .profile h2 {
-  font-size: 22px;
+  font-size: 20px;
 }
 .profile p {
   font-size: 12px;
   color: var(--muted);
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .settings-section-label {
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
-  margin: 24px 0 12px 4px;
+  margin: 16px 0 8px 4px;
 }
 .settings-group {
   background: var(--surface);
   border-radius: 20px;
   padding: 0 17px;
 }
-.sound-settings { padding-top: 17px; padding-bottom: 17px; }
+.notification-preferences { display: grid; gap: 16px; }
+.notification-preferences > section + section { border-top: 1px solid var(--line); padding-top: 12px; }
+.settings-section-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.settings-section-heading .settings-section-label { margin-block: 0; }
+.settings-help-links { display: flex; justify-content: center; gap: 24px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+.settings-help-links > * { display: inline-flex; min-height: 44px; align-items: center; }
 .settings-row {
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 63px;
+  min-height: 50px;
   width: 100%;
   font-size: 14px;
   border-bottom: 1px solid #e9e9eb;
@@ -328,18 +350,6 @@ async function enableNotifications() {
 .settings-row > svg {
   color: var(--muted);
 }
-.settings-footnote {
-  font-size: 11px;
-  color: var(--muted);
-  margin: 11px 5px 0;
-  line-height: 1.8;
-}
-.version-note {
-  font-size: 11px;
-  color: #929297;
-  text-align: center;
-  margin-top: 40px;
-}
 .file-input {
   display: none;
 }
@@ -349,21 +359,42 @@ async function enableNotifications() {
   gap: 8px;
 }
 .about {
-  text-align: center;
-  padding: 15px 0 5px;
+  text-align: left;
+  display: grid;
+  gap: 18px;
 }
-.about > svg {
-  margin: 0 auto 18px;
-}
-.about h2 {
-  margin-bottom: 15px;
-}
-.about > p {
-  font-size: 14px;
-  color: var(--muted);
-  margin-bottom: 20px;
-}
-.about .divider {
-  margin: 28px 0;
+.about-identity { display: flex; align-items: center; gap: 12px; }
+.about-mark { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 16px; background: var(--surface); flex-shrink: 0; }
+.about h2 { font-size: 20px; }
+.about-version { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.about-badge { margin-left: auto; padding: 4px 8px; border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 11px; flex-shrink: 0; }
+.about-description { font-size: 13px; color: var(--muted); line-height: 1.8; }
+.about-destinations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.about-destinations a { display: flex; align-items: center; gap: 8px; min-height: 72px; padding: 10px; border: 1px solid var(--line); border-radius: 14px; }
+.destination-icon { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; }
+.destination-icon img { mix-blend-mode: multiply; }
+.destination-copy { min-width: 0; }
+.destination-copy strong { display: block; font-size: 13px; font-weight: 600; }
+.destination-copy small { display: block; font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
+.about-destinations a > svg { margin-left: auto; color: var(--muted); }
+.about-release { padding: 16px; border-radius: 16px; background: var(--surface); }
+.about-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.about-section-heading h3 { font-size: 14px; }
+.about-section-heading time { font-size: 11px; color: var(--muted); }
+.release-name { font-size: 14px; font-weight: 650; margin-top: 12px; }
+.release-name span { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.release-changes { padding-left: 17px; margin: 12px 0 0; display: grid; gap: 8px; font-size: 13px; line-height: 1.7; }
+.release-changes li::marker { color: #a0a0a5; }
+.about-link { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; font-size: 12px; color: var(--muted); }
+.about-release .about-link { margin-top: 6px; }
+.about-details { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.about-details > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 13px; cursor: pointer; list-style: none; }
+.about-details > summary::-webkit-details-marker { display: none; }
+.about-details > summary > svg { margin-left: auto; color: var(--muted); }
+.about-details .release-changes { margin-top: 4px; margin-bottom: 12px; }
+.about-license { font-size: 12px; color: var(--muted); margin: 4px 0 12px; }
+@media (max-width: 480px) {
+  .about-destinations { grid-template-columns: 1fr; }
+  .about-destinations a { min-height: 64px; padding-inline: 12px; }
 }
 </style>

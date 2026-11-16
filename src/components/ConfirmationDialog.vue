@@ -1,0 +1,20 @@
+<script setup lang="ts">
+import Sheet from './Sheet.vue'
+import type { ConfirmationRequest } from './useConfirmation'
+defineProps<{ request: ConfirmationRequest | null }>()
+const emit = defineEmits<{ resolve: [accepted: boolean] }>()
+</script>
+<template>
+  <Sheet :open="!!request" :title="request?.title || ''" @close="emit('resolve', false)">
+    <div v-if="request" class="stack">
+      <p class="confirmation-message">{{ request.message }}</p>
+      <div class="form-footer">
+        <button class="secondary" @click="emit('resolve', false)">{{ request.cancelLabel }}</button>
+        <button :class="request.danger ? 'danger-button' : 'primary'" @click="emit('resolve', true)">{{ request.confirmLabel }}</button>
+      </div>
+    </div>
+  </Sheet>
+</template>
+<style scoped>
+.confirmation-message { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+</style>

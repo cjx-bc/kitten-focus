@@ -15,7 +15,10 @@ import {
 import type { FocusRecord } from '../domain/model'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
+import ConfirmationDialog from '../components/ConfirmationDialog.vue'
+import { useConfirmation } from '../components/useConfirmation'
 import Chart from '../components/Chart.vue'
+const { confirmation, confirm, resolveConfirmation } = useConfirmation()
 const app = useApp(),
   period = ref('day'),
   anchor = ref(dateKey()),
@@ -161,7 +164,7 @@ function showRecord(record: FocusRecord) {
   showRecords.value = false
 }
 async function remove(record: FocusRecord) {
-  if (!confirm('删除这条专注记录？对应统计也会更新。')) return
+  if (!(await confirm('删除这条专注记录？对应统计也会更新。'))) return
   await app.deleteRecord(record.id)
   selected.value = null
   app.notify('记录已删除')
@@ -169,6 +172,7 @@ async function remove(record: FocusRecord) {
 </script>
 <template>
   <div class="page stats-page">
+    <ConfirmationDialog :request="confirmation" @resolve="resolveConfirmation" />
     <header class="page-header">
       <h1>统计</h1>
       <button class="icon-button" aria-label="查看专注记录" @click="showRecords = true">
@@ -283,9 +287,6 @@ async function remove(record: FocusRecord) {
     <button class="secondary wide" @click="showRecords = true">
       <Icon name="clock" :size="18" />查看专注记录
     </button>
-    <p class="stats-note">
-      实际时长不含暂停，提前结束也记录投入。<br />跨天时长按日期分配，次数归开始当天。
-    </p>
     <Sheet v-if="showRecords" title="专注记录" @close="showRecords = false"
       ><div v-if="!records.length" class="empty">
         <Icon name="clock" :size="32" />
@@ -349,7 +350,7 @@ async function remove(record: FocusRecord) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 22px;
+  margin-bottom: 12px;
 }
 .period-selector > label {
   position: relative;
@@ -371,9 +372,9 @@ async function remove(record: FocusRecord) {
   cursor: pointer;
 }
 .stats-overview {
-  padding: 23px;
+  padding: 16px;
   background: #f7f7f7;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 .stats-overview h2,
 .stats-card h2 {
@@ -382,8 +383,8 @@ async function remove(record: FocusRecord) {
 .overview-grid {
   display: grid;
   grid-template-columns: 1.25fr 1fr;
-  gap: 26px 14px;
-  margin-top: 23px;
+  gap: 16px 14px;
+  margin-top: 16px;
 }
 .overview-grid > div > span {
   display: block;
@@ -408,7 +409,7 @@ async function remove(record: FocusRecord) {
   margin-left: 4px;
 }
 .stats-card {
-  padding: 23px 0;
+  padding: 16px 0;
   border-top: 1px solid var(--line);
 }
 .chart-caption {
@@ -483,13 +484,6 @@ async function remove(record: FocusRecord) {
   height: 112px;
   border: 18px solid #f1f1f1;
   border-radius: 50%;
-}
-.stats-note {
-  font-size: 11px;
-  text-align: center;
-  color: var(--muted);
-  margin-top: 22px;
-  line-height: 1.8;
 }
 .result-summary {
   text-align: center;

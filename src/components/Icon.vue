@@ -32,6 +32,8 @@ import {
   Info,
   Search,
   RefreshCw,
+  Globe,
+  ExternalLink,
 } from '@lucide/vue'
 withDefaults(defineProps<{ name: string; size?: number }>(), { size: 22 })
 const icons: Record<string, unknown> = {
@@ -67,6 +69,8 @@ const icons: Record<string, unknown> = {
   info: Info,
   search: Search,
   refresh: RefreshCw,
+  globe: Globe,
+  external: ExternalLink,
 }
 </script>
 <template>

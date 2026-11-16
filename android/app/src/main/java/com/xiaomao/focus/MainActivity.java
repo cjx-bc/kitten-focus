@@ -15,6 +15,8 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         // Android stretches the entire WebView at scroll edges, including fixed navigation.
         getBridge().getWebView().setOverScrollMode(View.OVER_SCROLL_NEVER);
+        getBridge().getWebView().setVerticalScrollBarEnabled(false);
+        getBridge().getWebView().setHorizontalScrollBarEnabled(false);
     }
     @Override protected void onNewIntent(Intent intent) {
         restrictOrdinaryEntry(intent);
