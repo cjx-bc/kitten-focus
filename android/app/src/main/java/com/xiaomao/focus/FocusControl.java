@@ -174,6 +174,14 @@ final class FocusControl {
         });
     }
 
+    private void synchronizeEffects(JSONObject active) throws JSONException {
+        dnd.synchronize(active);
+        notifications.synchronize(active);
+        recentTasks.synchronize(active);
+        launcher.synchronize(active);
+        wallpaper.synchronize(active);
+    }
+
     JSONObject startFocus(JSONObject session) throws JSONException { return startFocus(session, false); }
     JSONObject startFocus(JSONObject session, boolean strictModeConfirmed) throws JSONException {
         synchronized (store) {
@@ -207,11 +215,7 @@ final class FocusControl {
             recovery.prepare(started);
             JSONObject result = focus.start(started);
             FocusProtection.executionSucceeded();
-            dnd.synchronize(store.read("active"));
-            notifications.synchronize(store.read("active"));
-            recentTasks.synchronize(store.read("active"));
-            launcher.synchronize(store.read("active"));
-            wallpaper.synchronize(store.read("active"));
+            synchronizeEffects(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -231,11 +235,7 @@ final class FocusControl {
             JSONObject remaining = result.optJSONObject("session");
             recovery.releaseFinished(remaining == null ? null : remaining.optString("id"));
             if (remaining == null) { navigation.release(); antiClose.release(); }
-            dnd.synchronize(store.read("active"));
-            notifications.synchronize(store.read("active"));
-            recentTasks.synchronize(store.read("active"));
-            launcher.synchronize(store.read("active"));
-            wallpaper.synchronize(store.read("active"));
+            synchronizeEffects(store.read("active"));
             return projectTemporary(result);
         }
     }
@@ -255,11 +255,7 @@ final class FocusControl {
                 : FocusProtection.captureLock(context, store, configuration, accessibility));
             navigation.checkStart(session);
             antiClose.checkStart(session);
-            JSONArray selected = new JSONArray(session.getJSONObject("protection").getJSONArray("enhancements").toString());
-            JSONArray preferred = FocusProtection.preferences(store).optJSONArray("enhancements");
-            if (preferred != null) for (int i = 0; i < preferred.length(); i++)
-                if (FocusRecovery.MAIN_ENTRY.equals(preferred.optString(i))) { selected.put(FocusRecovery.MAIN_ENTRY); break; }
-            session.put("originalEnhancedProtectionSettings", selected);
+            session.put("originalEnhancedProtectionSettings", FocusProtection.lockEnhancements(store, configuration));
             session.put("dndRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("dnd")));
             session.put("notificationsRequested", Boolean.TRUE.equals(FocusProtection.preferences(store).opt("interceptNotifications")));
             dnd.checkStart(session);
@@ -271,11 +267,7 @@ final class FocusControl {
             rest.exit();
             JSONObject result = lock.start(session);
             FocusProtection.executionSucceeded();
-            dnd.synchronize(store.read("active"));
-            notifications.synchronize(store.read("active"));
-            recentTasks.synchronize(store.read("active"));
-            launcher.synchronize(store.read("active"));
-            wallpaper.synchronize(store.read("active"));
+            synchronizeEffects(store.read("active"));
             return result;
         }
     }
@@ -285,22 +277,14 @@ final class FocusControl {
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
             if (active == null) { navigation.release(); antiClose.release(); }
-            dnd.synchronize(active);
-            notifications.synchronize(active);
-            recentTasks.synchronize(active);
-            launcher.synchronize(active);
-            wallpaper.synchronize(active);
+            synchronizeEffects(active);
             return result;
         }
     }
     JSONObject startRest(String recordId) throws JSONException {
         synchronized (store) {
             JSONObject result = rest.start(recordId);
-            dnd.synchronize(store.read("active"));
-            notifications.synchronize(store.read("active"));
-            recentTasks.synchronize(store.read("active"));
-            launcher.synchronize(store.read("active"));
-            wallpaper.synchronize(store.read("active"));
+            synchronizeEffects(store.read("active"));
             return result;
         }
     }
@@ -320,11 +304,7 @@ final class FocusControl {
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
             if (active == null) { navigation.release(); antiClose.release(); }
-            dnd.synchronize(store.read("active"));
-            notifications.synchronize(store.read("active"));
-            recentTasks.synchronize(store.read("active"));
-            launcher.synchronize(store.read("active"));
-            wallpaper.synchronize(store.read("active"));
+            synchronizeEffects(store.read("active"));
             return observeControl();
         }
     }

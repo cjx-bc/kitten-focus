@@ -39,7 +39,7 @@ function businessData(data: AppData): AppData {
     courses:
       'id semesterId title weekday firstPeriod lastPeriod firstWeek lastWeek parity room teacher color reminderMinutes',
     courseExceptions: 'courseId date cancelled start end',
-    lockConfigurations: 'id name minutes strict',
+    lockConfigurations: 'id name minutes strict enhancements',
   } as const
   const whitelist = (value: NonNullable<AppData['items'][number]['whitelist']>) =>
     value.source === 'global'
@@ -132,6 +132,7 @@ export function readBackup(text: string): Backup {
         !Number.isInteger(lock.minutes) ||
         lock.minutes < 1 ||
         (lock.strict !== undefined && typeof lock.strict !== 'boolean') ||
+        (lock.enhancements !== undefined && !validStrings(lock.enhancements)) ||
         !validWhitelist(lock.whitelist)
       )
         throw new Error('锁机配置损坏')

@@ -12,8 +12,9 @@ import type {
   Course,
   Occurrence,
   LockSnapshot,
+  ProtectionPreferences,
 } from '../domain/model'
-import { emptyData, uid, effectiveWhitelist } from '../domain/model'
+import { emptyData, uid, effectiveWhitelist, defaultProtection } from '../domain/model'
 import {
   focusDriver,
   restDriver,
@@ -44,6 +45,7 @@ export const useApp = defineStore('app', () => {
     study: boolean
     whitelistCount: number
     whitelistSource: 'global' | 'custom'
+    protections: ProtectionPreferences
   } | null>(null)
   let resolveStartConfirmation: ((accepted: boolean) => void) | undefined
   function confirmStart(accepted: boolean) {
@@ -164,7 +166,7 @@ export const useApp = defineStore('app', () => {
       await writeQueue
       let strictModeConfirmed = false
       const protection = data.value.preferences.protection
-      if (protection?.strict || protection?.study) {
+      if (protection?.strict || protection?.study || protection?.interceptNotifications || protection?.dnd || protection?.enhancements?.length) {
         const accepted = await new Promise<boolean>((resolve) => {
           resolveStartConfirmation = resolve
           startConfirmation.value = {
@@ -173,6 +175,7 @@ export const useApp = defineStore('app', () => {
             minutes,
             strict: !!protection.strict,
             study: !!protection.study,
+            protections: JSON.parse(JSON.stringify({ ...defaultProtection(), ...protection })),
             whitelistCount: effectiveWhitelist(data.value, item?.id ?? null).whitelist.length,
             whitelistSource: effectiveWhitelist(data.value, item?.id ?? null).source,
           }

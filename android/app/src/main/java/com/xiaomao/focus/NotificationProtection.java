@@ -49,8 +49,12 @@ final class NotificationProtection {
         return false;
     }
     void checkStart(JSONObject active) throws JSONException {
-        if (active.optBoolean("notificationsRequested") && pendingCount(read()) > 0)
+        if (!active.optBoolean("notificationsRequested")) return;
+        if (pendingCount(read()) > 0)
             throw new IllegalStateException("上一轮原通知仍待系统释放，请先进入故障恢复核实或重试");
+        if (!system.supported()) throw new IllegalStateException("本机不支持通知拦截，请在设置中明确关闭该选项后再开始");
+        if (!system.authorized()) throw new IllegalStateException("通知拦截尚未授权，请完成通知访问授权，或在设置中明确关闭该选项后再开始");
+        if (!system.connected()) throw new IllegalStateException("通知拦截服务尚未连接，请返回权限页重新检查，或在设置中明确关闭该选项后再开始");
     }
     private boolean ready() { return system.supported() && system.authorized() && system.connected(); }
     private static String groupIdentity(NotificationSystem.Notice notice) {

@@ -50,7 +50,7 @@ public class FocusNotificationTest {
                 system.connected = !unavailable.equals("disconnected");
                 JSONObject data = control.loadData(); data.getJSONObject("preferences").getJSONObject("protection").put("strict", false);
                 data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "readiness-lock")
-                    .put("name", "??").put("minutes", 1).put("strict", kind.equals("strictLock"))));
+                    .put("name", "Readiness").put("minutes", 1).put("strict", kind.equals("strictLock"))));
                 store.saveData(data, false);
                 control = new FocusControl(context, store, clock, new FocusRecovery(context, store), new FocusProtection.AccessibilityState() {
                     public boolean authorized() { return true; } public boolean connected() { return true; }
@@ -58,7 +58,7 @@ public class FocusNotificationTest {
                 try {
                     if (kind.equals("focus")) control.startFocus(session()); else control.startLock("readiness-lock", kind.equals("strictLock"));
                     fail("Selected unavailable notifications must reject " + kind + ": " + unavailable);
-                } catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("??")); }
+                } catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("通知")); }
                 assertTrue(control.observeControl().isNull("owner"));
                 assertTrue(control.loadData().getJSONObject("preferences").getJSONObject("protection").getBoolean("interceptNotifications"));
                 assertEquals(0, system.calls); assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
@@ -178,9 +178,9 @@ public class FocusNotificationTest {
         assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
     }
     @Test public void authorizationConnectionAndProcessingAreSeparateAndObservationDoesNotApply() throws Exception {
+        control.startFocus(session(), true);
         system.granted = false; system.connected = false;
         system.active.add(notice("waiting", "other.app", false));
-        control.startFocus(session(), true);
         assertEquals("permission_required", control.getNotificationStatus().getString("phase"));
         system.granted = true;
         assertEquals("disconnected", control.getNotificationStatus().getString("phase"));

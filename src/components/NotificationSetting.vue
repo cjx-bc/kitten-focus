@@ -92,6 +92,6 @@ onBeforeUnmount(() => {
 .notification-setting { gap: 10px; text-align: left; }
 .notification-setting strong { font-size: 13px; font-weight: 500; }
 .notification-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.notification-actions button { min-height: 44px; flex: 1 1 140px; font-size: 13px; }
+.notification-actions button { min-height: 48px; flex: 1 1 140px; font-size: 13px; }
 .notification-error { color: var(--danger, #c13a25); }
 </style>

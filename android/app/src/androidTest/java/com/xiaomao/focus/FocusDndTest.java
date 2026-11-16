@@ -131,12 +131,12 @@ public class FocusDndTest {
                 system.supported = !unavailable.equals("unsupported"); system.permission = !unavailable.equals("permission");
                 JSONObject data = control.loadData();
                 data.put("lockConfigurations", new JSONArray().put(new JSONObject().put("id", "readiness-lock")
-                    .put("name", "??").put("minutes", 1).put("strict", kind.equals("strictLock"))));
+                    .put("name", "Readiness").put("minutes", 1).put("strict", kind.equals("strictLock"))));
                 store.saveData(data, false); control = lockControl();
                 try {
                     if (kind.equals("focus")) control.startFocus(session()); else control.startLock("readiness-lock", kind.equals("strictLock"));
                     fail("Selected unavailable sound must reject " + kind + ": " + unavailable);
-                } catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("??")); }
+                } catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("声音")); }
                 assertTrue(control.observeControl().isNull("owner"));
                 assertTrue(control.loadData().getJSONObject("preferences").getJSONObject("protection").getBoolean("dnd"));
                 assertTrue(system.rules.isEmpty()); assertFalse(control.getDndStatus().getBoolean("recoveryPending"));

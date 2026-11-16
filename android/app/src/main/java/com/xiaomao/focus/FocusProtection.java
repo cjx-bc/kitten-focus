@@ -78,7 +78,12 @@ final class FocusProtection {
         addPackages(selected, custom ? whitelist.optJSONArray("packages") : preferences(store).optJSONArray("globalWhitelist"));
         selected.add(context.getPackageName());
         return new JSONObject().put("study", true).put("source", custom ? "custom" : "global").put("whitelist", new JSONArray(selected))
-            .put("enhancements", selectedEnhancements(preferences(store)));
+            .put("enhancements", lockEnhancements(store, configuration));
+    }
+    static JSONArray lockEnhancements(LocalStore store, JSONObject configuration) throws JSONException {
+        JSONObject source = configuration.has("enhancements") ? configuration : preferences(store);
+        if (source.has("enhancements")) source.getJSONArray("enhancements");
+        return selectedEnhancements(source);
     }
     static JSONObject capture(Context context, LocalStore store, JSONObject session, AccessibilityState accessibility) throws JSONException {
         JSONObject prefs = preferences(store);
@@ -114,7 +119,8 @@ final class FocusProtection {
         if (enhancements != null) for (int i = 0; i < enhancements.length(); i++) {
             String value = enhancements.optString(i);
             if ("navigationHomeRecents".equals(value) || RecentTasksProtection.KEY.equals(value)
-                || LauncherProtection.KEY.equals(value) || FocusAntiClose.OPTION.equals(value) || WallpaperProtection.KEY.equals(value)) selected.put(value);
+                || LauncherProtection.KEY.equals(value) || FocusAntiClose.OPTION.equals(value) || WallpaperProtection.KEY.equals(value)
+                || FocusRecovery.MAIN_ENTRY.equals(value)) selected.put(value);
         }
         return selected;
     }
@@ -152,9 +158,14 @@ final class FocusProtection {
     }
 
     static void openSettings(Context context) {
-        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        openAuthorizationSettings(context, new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+    }
+    static void openAuthorizationSettings(Context context, Intent intent) {
         ResolveInfo target = context.getPackageManager().resolveActivity(intent, 0);
-        allowSettingsForAuthorization(context, target == null ? "" : target.activityInfo.packageName);
+        if (target == null) throw new IllegalStateException("系统没有此授权设置入口，请从系统设置进入");
+        intent.setComponent(new ComponentName(target.activityInfo.packageName, target.activityInfo.name));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        allowSettingsForAuthorization(context, target.activityInfo.packageName);
         context.startActivity(intent);
     }
     static void allowSettingsForAuthorization(Context context, String pkg) {
