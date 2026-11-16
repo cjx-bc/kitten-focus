@@ -1,6 +1,6 @@
 # 应用内更新
 
-2026-11-16 准备 0.2.5 / versionCode 11：响应式布局、统一弹窗与开关、保护状态及白名单显示修正、设置与休息页优化。66 项宿主测试、TypeScript/Vite、Android assembleDebug 和 1 项安卓 JVM 单元测试通过；包名、原签名及 APK 完整性通过 `prepare-update.py` 校验。浏览器巡检覆盖 9 页与 27 组视口。本轮不启动模拟器，也不将旧版的系统效果测试当作本轮复测。发布状态见 [0.2.5 发布记录](../releases/publication-0.2.5.json)。
+2026-11-16 GitHub 已发布 0.2.5 / versionCode 11：响应式布局、统一弹窗与开关、保护状态及白名单显示修正、设置与休息页优化。66 项宿主测试、TypeScript/Vite、Android assembleDebug 和 1 项安卓 JVM 单元测试通过；包名、原签名及 APK 完整性通过 `prepare-update.py` 校验。浏览器巡检覆盖 9 页与 27 组视口。本轮不启动模拟器，也不将旧版的系统效果测试当作本轮复测。服务器 SSH 在握手前断开，官网及应用内清单仍为 0.2.4，尚待同步；当前可从 GitHub 下载 APK 覆盖安装。逐项状态见 [0.2.5 发布记录](../releases/publication-0.2.5.json)。
 
 2026-11-16 按用户“提交推送，然后发布”的指令准备 0.2.4 / versionCode 10，沿用 `com.xiaomao.focus` 与原内测签名。分发构建通过58项宿主测试、TypeScript/Vite、Android打包及签名/包名校验；D盘API36模拟器正式包冷启动、五栏图标、十项诊断及版本读取通过。此前隔离QA的140项去重原生结果和平台限制见[最终验收报告](focus-control-final-acceptance.md)。0.2.4发布说明明确保留图标缓存、壁纸恢复及OEM/其他API缺口，不声明完整平台矩阵通过。发布结果见[0.2.4发布记录](../releases/publication-0.2.4.json)。
 

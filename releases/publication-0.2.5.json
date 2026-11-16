@@ -1,7 +1,7 @@
 {
   "version": "0.2.5",
   "versionCode": 11,
-  "status": "validated-awaiting-publication",
+  "status": "github-published-server-sync-blocked",
   "applicationId": "com.xiaomao.focus",
   "apk": {
     "name": "xiaomao-focus-0.2.5-debug.apk",
@@ -22,6 +22,20 @@
     "productionDeviceSmoke": false,
     "fullDeviceMatrixPassed": false
   },
-  "serverPublication": "pending",
-  "publicVerification": {}
+  "serverPublication": "blocked: SSH connection closes before key exchange; no server files or update channels changed",
+  "publicVerification": {
+    "anonymousGitHubRelease": true,
+    "githubAssetDigestsMatch": true,
+    "anonymousApkDownloadHashMatches": true,
+    "websiteAndUpdateChannelSynced": false
+  },
+  "releaseSourceCommit": "d30079727421b9435f672bc9fee67236a2a07227",
+  "publishedAt": "2026-11-16T20:12:35Z",
+  "sourceArchive": {
+    "name": "xiaomao-focus-0.2.5-source.zip",
+    "size": 10447313,
+    "sha256": "629fcc9b47895d698379cc7e70bee366bf51f72d75c3f3d972e11319176ca511"
+  },
+  "onlineUpdateVersion": "0.2.4",
+  "onlineUpdateVersionCode": 10
 }
