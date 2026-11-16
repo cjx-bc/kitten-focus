@@ -1,4 +1,5 @@
 import type { ProtectionPreferences } from '../domain/model'
+import { defaultProtection } from '../domain/model'
 import { controlDriver, native, protectionDriver, recoveryDriver } from './bridge'
 import { dndDriver } from './dnd'
 import { notificationDriver } from './notifications'
@@ -43,7 +44,8 @@ function entryState(row: CapabilityDiagnostic): ProtectionEntryState {
 }
 
 /** Read-only aggregation: a failing OS module must not hide results from other capabilities. */
-export async function readProtectionDiagnostics(preferences: ProtectionPreferences): Promise<ProtectionDiagnostics> {
+export async function readProtectionDiagnostics(saved: Partial<ProtectionPreferences>): Promise<ProtectionDiagnostics> {
+  const preferences = { ...defaultProtection(), ...saved }
   const [protection, control, notifications, dnd, recentTasks, launcher, recovery, wallpaper] = await Promise.allSettled([
     protectionDriver.status(), controlDriver.observe(), notificationDriver.read(), dndDriver.read(),
     protectionDriver.recentTasks(), protectionDriver.launcher(), recoveryDriver.preview(),

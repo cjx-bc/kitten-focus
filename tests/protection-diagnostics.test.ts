@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { defaultProtection } from '../src/domain/model'
+import type { ProtectionPreferences } from '../src/domain/model'
 
 // CatFocus is the agreed OS boundary: real diagnostics aggregate native observations.
 const device = vi.hoisted(() => ({ values: {} as Record<string, unknown> }))
@@ -29,6 +30,17 @@ it('reports pending adapter recovery from the existing shared recovery journal',
   device.values.previewRecovery = { supported: true, revision: '2', pending: true, steps: [{ capability: 'applicationRestriction', status: 'failed', reason: '本轮撤销失败', retryable: true }] }
   const result = await readProtectionDiagnostics(defaultProtection())
   expect(result.capabilities.find(row => row.id === 'applications')).toMatchObject({ state: 'failed', recoveryPending: true, reason: expect.stringContaining('本轮撤销失败') })
+})
+
+it('shows all capability rows for valid legacy protection with absent newer fields', async () => {
+  const { readProtectionDiagnostics } = await import('../src/platform/protectionDiagnostics')
+  const legacy = { study: true, globalWhitelist: ['legacy.reader'] } as ProtectionPreferences
+  const result = await readProtectionDiagnostics(legacy)
+  expect(result.capabilities).toHaveLength(10)
+  expect(result.capabilities.find(row => row.id === 'applications')).toMatchObject({ selected: true })
+  expect(result.capabilities.find(row => row.id === 'navigation')).toMatchObject({ selected: false })
+  expect(result.capabilities.find(row => row.id === 'dnd')).toMatchObject({ selected: false })
+  expect(legacy).toEqual({ study: true, globalWhitelist: ['legacy.reader'] })
 })
 
 it('keeps authorized idle protection off and reports native wallpaper support without claiming selection', async () => {
