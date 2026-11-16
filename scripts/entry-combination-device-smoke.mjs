@@ -50,11 +50,12 @@ try {
   await qa.screenshot('01-three-protections-active-strict-lock')
   qa.close(); command('shell', 'am', 'force-stop', qa.appId)
   qa = await connectQa({ port: 9264, output }); await rebind()
+  await until(() => qa.evaluate('!document.querySelector(".boot") && document.body.innerText.includes("严格锁机进行中") && [...document.querySelectorAll("a")].some(a => a.getAttribute("href") === "#/recovery")'), 'recreated app finishes strict-lock routing and mounts the real safety link')
   await until(async () => (await native('getLauncherStatus')).verified && (await native('getRecentTasksStatus')).verified, 'same-boot process recreation restores only this round protections')
   const rebuilt = (await native('observeControl')).lock.session
   for (const key of ['id', 'startedAt', 'targetMs', 'strictMode']) assert.equal(rebuilt[key], started[key], 'same-boot process recreation keeps ' + key)
   assert.equal(queryAlias(), false)
-  await qa.evaluate("location.hash = '#/recovery'")
+  await click('帮助与故障恢复')
   await until(() => qa.evaluate('[...document.querySelectorAll("dialog[open] button")].some(button => button.textContent.trim() === "确认撤销以上本轮保护" && !button.disabled)'), 'combined actual recovery confirmation')
   const preview = await native('previewRecovery')
   for (const capability of ['lockMainInterfaceRestricted', 'launcherIconHidden', 'recentTasksHidden']) assert(preview.steps.some(step => step.capability === capability && step.status !== 'restored'))
@@ -103,10 +104,11 @@ try {
     qa = await connectQa({ port: 9264, output, launch: false })
     const settled = await until(async () => { const state = await native('lockAction', { action: 'read' }); return !state.session && state }, 'reboot interrupts combined strict lock')
     const ownRecords = settled.records.filter(record => record.id === started.id)
+    qa.save('reboot-settled-before-assertions.json', { settled, bootCount: command('shell', 'settings', 'get', 'global', 'boot_count').trim() })
     assert.equal(ownRecords.length, 1, 'Reboot settles the lock once')
     assert.equal(ownRecords[0].status, 'interrupted')
     assert(ownRecords[0].durationMs >= checkpoint.elapsedMs && ownRecords[0].durationMs <= checkpoint.elapsedMs + 15000, 'Only checkpointed time counts; boot downtime is excluded')
-    assert(ownRecords[0].endedAt <= beforeReboot + 1000, 'Interrupted end precedes reboot downtime')
+    assert.equal(ownRecords[0].endedAt, checkpoint.anchorEpoch, 'Interrupted end is the last native checkpoint, excluding reboot downtime')
     const observed = await native('observeControl')
     assert.equal(observed.owner, null, 'No automatic rest or strong lock after boot')
     assert.equal(observed.mainEntry.active, false)
@@ -123,7 +125,7 @@ try {
   qa.save('results.json', { passed: true, results, rebootExecuted: reboot || rebootOnly, limits: ['This representative combination does not cover wallpaper, notification interception or real OEM behavior', 'Single-capability Launcher3 drawer/overview evidence is recorded by their separate device scripts'] })
   console.log(JSON.stringify({ passed: true, results }))
 } catch (error) {
-  qa.save('failure.json', { message: error.stack }); throw error
+  qa.save('failure.json', { message: error.stack, ui: await qa.evaluate('({hash:location.hash,text:document.body.innerText})') }); await qa.screenshot('failure'); throw error
 } finally {
   if (qa.closed) qa = await connectQa({ port: 9264, output })
   if ((await native('observeControl')).lock.session) await until(async () => !(await native('lockAction', { action: 'read' })).session, 'cleanup natural strict expiry', 75000)

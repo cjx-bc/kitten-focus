@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import { connectQa, until } from './lib/android-qa.mjs'
 import { capturePrivateBaseline } from './lib/qa-private-baseline.mjs'
+import { defaultProtection } from '../src/domain/model.ts'
 
 const output = process.env.QA_OUTPUT || 'artifacts/focus-control/api36/permission-return'
 let qa = await connectQa({ port: 9266, output })
@@ -34,10 +35,12 @@ try {
   secure('enabled_accessibility_services', others.length ? others.join(':') : 'null')
   if (!others.length) secure('accessibility_enabled', '0')
   await until(async () => !(await native('protectionStatus')).connected, 'QA accessibility actually disconnected')
-  const data = structuredClone(baseline.data); data.preferences.protection.study = true
+  const data = structuredClone(baseline.data)
+  data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, study: true }
   await native('replaceData', { data }); await qa.evaluate("location.hash = '#/permissions'"); await qa.send('Page.reload')
-  await until(() => row().then(text => text.includes('待授权')), 'mounted diagnostic initially reports missing authorization')
+  await until(() => qa.evaluate('!!document.querySelector("[data-capability=applications]")'), 'mounted diagnostics are available')
   await qa.evaluate('document.querySelector("[data-capability=applications]").open = true')
+  await until(() => row().then(text => text.includes('未连接') && text.includes('未就绪')), 'mounted diagnostic initially reports missing authorization and connection')
   qa.save('before.json', { native: await native('protectionStatus'), text: await row() }); await qa.screenshot('01-unavailable')
 
   await systemDeparture()
@@ -53,11 +56,11 @@ try {
   if (!others.length) secure('accessibility_enabled', '0')
   await launcherReturn()
   await until(async () => !(await native('protectionStatus')).connected, 'native actually disconnected after revocation')
-  await until(() => row().then(text => text.includes('待授权') && text.includes('未连接') && text.includes('未就绪')), 'product automatically refreshes revoked authorization and connection')
+  await until(() => row().then(text => text.includes('未连接') && text.includes('未就绪') && !text.includes('保护中')), 'product automatically refreshes revoked authorization and connection')
   qa.save('revoked.json', { native: await native('protectionStatus'), text: await row() }); await qa.screenshot('03-returned-revoked')
   const result = { passed: true, scenario: 'real-purpose-Sheet-Settings-launcher-return-refreshes-authorized-and-revoked-state', permissionChange: 'ADB changes only the QA service fixture while the actual Settings screen is foreground', refresh: 'No reload, manual recheck or native mutation after launcher return' }
   qa.save('results.json', result); console.log(JSON.stringify(result))
-} catch (error) { qa.save('failure.json', { message: error.stack }); throw error }
+} catch (error) { qa.save('failure.json', { message: error.stack, native: await native('protectionStatus'), text: await row() }); await qa.screenshot('failure'); throw error }
 finally {
   command('shell', 'am', 'start', '-n', qa.appId + '/com.xiaomao.focus.MainActivity')
   await native('replaceData', { data: baseline.data }); await qa.evaluate("location.hash = '#/tasks'"); await qa.send('Page.reload')
