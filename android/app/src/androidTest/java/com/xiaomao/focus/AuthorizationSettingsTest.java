@@ -55,12 +55,16 @@ public class AuthorizationSettingsTest {
         FocusProtection.clearSettingsAuthorization();
         if (store != null) { Reminders.cancelFocus(context); store.close(); context.deleteDatabase(database); }
     }
+    private JSONObject focus(String id) throws Exception {
+        return new JSONObject().put("id", id).put("itemId", JSONObject.NULL).put("themeId", JSONObject.NULL)
+            .put("title", "Authorization repair").put("themeName", "Free focus").put("color", "#222222")
+            .put("mode", "countdown").put("targetMs", 60000).put("startedAt", 1794729600000L)
+            .put("timeZone", "UTC").put("segments", new JSONArray());
+    }
     @Test public void notificationDndAndExactAlarmPluginRoutesAllowOnlyTheResolvedTargetDuringStudyAndLock() throws Exception {
         for (boolean lock : new boolean[]{false, true}) {
             if (lock) control.startLock("repair");
-            else control.startFocus(new JSONObject().put("id", "repair-focus").put("title", "Repair")
-                .put("mode", "countdown").put("targetMs", 60000).put("startedAt", 1794729600000L)
-                .put("timeZone", "UTC").put("segments", new JSONArray()));
+            else control.startFocus(focus("repair-focus"));
             for (String action : new String[]{Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
                     Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS, Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM}) {
                 FocusProtection.clearSettingsAuthorization(); launched = null;
@@ -91,9 +95,7 @@ public class AuthorizationSettingsTest {
         java.util.regex.Matcher mode = java.util.regex.Pattern.compile("REQUEST_INSTALL_PACKAGES: (allow|deny|ignore|default)").matcher(original);
         String originalMode = mode.find() ? mode.group(1) : "default";
         LocalStore shared = LocalStore.get(real);
-        FocusControl active = new FocusControl(real, shared, new SessionClock() {
-            public long epoch() { return 1794729600000L; } public long mono() { return 1000000L; } public int boot() { return 1; }
-        }, new FocusRecovery(real, shared), new FocusProtection.AccessibilityState() {
+        FocusControl active = new FocusControl(real, shared, SessionClock.system(real), new FocusRecovery(real, shared), new FocusProtection.AccessibilityState() {
             public boolean authorized() { return true; } public boolean connected() { return true; }
         });
         try {
@@ -103,8 +105,7 @@ public class AuthorizationSettingsTest {
             updates.load();
             for (boolean lock : new boolean[]{false, true}) {
                 if (lock) active.startLock("repair");
-                else active.startFocus(new JSONObject().put("id", "install-focus").put("title", "Install")
-                    .put("mode", "countdown").put("targetMs", 60000).put("startedAt", 1794729600000L).put("timeZone", "UTC"));
+                else active.startFocus(focus("install-focus"));
                 FocusProtection.clearSettingsAuthorization(); launched = null;
                 updates.installPermission(new Call());
                 assertNotNull("Unknown-sources permission must actually launch", launched);
@@ -118,12 +119,15 @@ public class AuthorizationSettingsTest {
                 if (lock) active.lockAction("finish", true); else active.focusAction("finish");
             }
         } finally {
-            JSONObject owner = active.observeControl();
-            if ("lock".equals(owner.optString("owner"))) active.lockAction("finish", true);
-            else if ("focus".equals(owner.optString("owner"))) active.focusAction("finish");
-            active.restAction("exit");
-            shell("appops set " + pkg + " REQUEST_INSTALL_PACKAGES " + originalMode);
-            baseline.restore();
+            try {
+                JSONObject owner = active.observeControl();
+                if ("lock".equals(owner.optString("owner"))) active.lockAction("finish", true);
+                else if ("focus".equals(owner.optString("owner"))) active.focusAction("finish");
+                active.restAction("exit");
+            } finally {
+                try { shell("appops set " + pkg + " REQUEST_INSTALL_PACKAGES " + originalMode); }
+                finally { baseline.restore(); }
+            }
         }
     }
     private String shell(String command) throws Exception {
