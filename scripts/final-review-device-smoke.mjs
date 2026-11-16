@@ -34,6 +34,13 @@ const foreground = () => command('shell', 'dumpsys', 'activity', 'activities')
 try {
   assert.equal((await native('observeControl')).owner, null)
   assert.equal((await native('previewRecovery')).pending, false)
+  const legacy = emptyData()
+  legacy.preferences.protection = { study: true, globalWhitelist: ['legacy.reader'] }
+  await seed(legacy, '/permissions')
+  await until(() => evaluate("document.querySelectorAll('.diagnostics [data-capability]').length === 10"), 'legacy partial preferences show all ten diagnostics')
+  assert(!(await text()).includes("Cannot read properties"))
+  await qa.screenshot('legacy-partial-protection-diagnostics')
+  results.push({ scenario: 'legacy-partial-protection-renders-all-ten-capability-diagnostics', passed: true })
   for (const [id, values] of [
     ['notifications', { interceptNotifications: true }],
     ['dnd', { dnd: true }],
