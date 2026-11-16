@@ -19,15 +19,21 @@ def main():
     parser.add_argument('--app-apk', type=Path, default=root / 'android/app/build/outputs/apk/debug/app-debug.apk')
     parser.add_argument('--test-apk', type=Path, default=root / 'android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--expected-tests', type=int,
+                        help='Require this exact number of executed tests in addition to zero skips')
+    parser.add_argument('--aapt', type=Path,
+                        help='Explicit aapt path when the worktree does not contain the build SDK')
     parser.add_argument('--timeout', type=int, default=180,
                         help='Maximum instrumentation duration in seconds')
     args = parser.parse_args()
     if not 1 <= args.timeout <= 900:
         parser.error('--timeout must be between 1 and 900 seconds')
+    if args.expected_tests is not None and args.expected_tests < 1:
+        parser.error('--expected-tests must be positive')
     if not args.serial or not re.fullmatch(r'(?:emulator-\d+|127\.0\.0\.1:\d+)', args.serial):
         parser.error('Specify an emulator serial using --serial or ANDROID_SERIAL')
     adb = Path(os.environ.get('ADB') or configured.get('adb') or root / '.tools/android-sdk/platform-tools/adb.exe')
-    aapt = root / '.tools/android-sdk/build-tools/36.0.0/aapt.exe'
+    aapt = args.aapt or root / '.tools/android-sdk/build-tools/36.0.0/aapt.exe'
 
     def run(command, timeout=90):
         return subprocess.run([str(x) for x in command], capture_output=True, text=True,
@@ -57,9 +63,13 @@ def main():
     result = run([*device, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
                   args.class_name, package + '.test/androidx.test.runner.AndroidJUnitRunner'], timeout=args.timeout)
     (args.output / 'instrumentation.txt').write_text(result, encoding='utf-8')
-    metadata['skipped'] = len(re.findall(r'INSTRUMENTATION_STATUS_CODE: -4\b', result))
-    metadata['passed'] = bool(re.search(r'OK \(\d+ tests?\)', result)) \
-        and 'FAILURES!!!' not in result and metadata['skipped'] == 0
+    completed = re.search(r'OK \((\d+) tests?\)', result)
+    metadata['testsRun'] = int(completed[1]) if completed else 0
+    metadata['expectedTests'] = args.expected_tests
+    # AndroidJUnitRunner reports ignored tests as -3 and failed assumptions as -4.
+    metadata['skipped'] = len(re.findall(r'INSTRUMENTATION_STATUS_CODE: -[34]\b', result))
+    metadata['passed'] = bool(completed) and 'FAILURES!!!' not in result and metadata['skipped'] == 0 \
+        and (args.expected_tests is None or metadata['testsRun'] == args.expected_tests)
     metadata['finishedAtUtc'] = datetime.now(timezone.utc).isoformat()
     (args.output / 'result.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     print(result[-2200:])
