@@ -8,7 +8,7 @@ import { connectQa } from './lib/android-qa.mjs'
 import { capturePrivateBaseline } from './lib/qa-private-baseline.mjs'
 
 const phase = process.argv[2]
-assert(['study', 'original', 'lifecycle'].includes(phase), 'Choose study, original or lifecycle')
+assert(['study', 'legacy', 'original', 'lifecycle'].includes(phase), 'Choose study, legacy, original or lifecycle')
 const project = 'E:/codexseeson/fanqiezhong'
 const output = process.env.QA_EVIDENCE_ROOT || join(project, 'artifacts/focus-control/final-leaf', phase)
 const port = 9276
@@ -37,8 +37,8 @@ try {
   const fixture = emptyData(); fixture.preferences.sound = false; fixture.preferences.vibration = false; fixture.preferences.protection = defaultProtection()
   await qa.native('replaceData', { data: fixture })
   await qa.send('Page.reload'); qa.close()
-  if (phase === 'study') {
-    for (const group of ['study-policy', 'study-denied', 'study-enabled', 'legacy-ui']) {
+  if (phase === 'study' || phase === 'legacy') {
+    for (const group of phase === 'legacy' ? ['legacy-ui'] : ['study-policy', 'study-denied', 'study-enabled', 'legacy-ui']) {
       groups.push(await plan(group))
       await command('python', ['scripts/run-final-study-tests.py', '--group', group, '--output', join(output, group)])
     }
