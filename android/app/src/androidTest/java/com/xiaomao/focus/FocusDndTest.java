@@ -152,12 +152,13 @@ public class FocusDndTest {
         system.permission = false;
         control.reconcile();
         assertEquals("permission_required", control.getDndStatus().getString("phase"));
-        assertTrue(system.rules.isEmpty());
+        assertEquals("Revocation must retain the existing owned rule responsibility", 1, system.rules.size());
+        assertEquals("focus", control.observeControl().getString("owner"));
         FocusControl rebuilt = new FocusControl(context, store, clock, system);
         system.permission = true;
         rebuilt.observeControl();
         rebuilt.getDndStatus();
-        assertTrue("Observation must not apply protection", system.rules.isEmpty());
+        assertEquals("Observation must not create another rule", 1, system.rules.size());
         rebuilt.reconcile();
         assertEquals("active", rebuilt.getDndStatus().getString("phase"));
         assertNotNull(rebuilt.observeControl().getJSONObject("focus").optJSONObject("session"));
