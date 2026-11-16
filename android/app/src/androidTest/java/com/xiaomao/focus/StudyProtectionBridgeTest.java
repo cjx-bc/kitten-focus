@@ -23,6 +23,7 @@ import static org.junit.Assume.assumeTrue;
 public class StudyProtectionBridgeTest {
     private CatFocusPlugin plugin;
     private Context context;
+    private QaBusinessBaseline baseline;
     private static final class Call extends PluginCall {
         JSONObject result;
         String rejection;
@@ -40,10 +41,18 @@ public class StudyProtectionBridgeTest {
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         assertTrue("Requires isolated QA application", context.getPackageName().endsWith(".qa"));
+        baseline = QaBusinessBaseline.captureIdle(context);
         plugin = new CatFocusPlugin() { @Override public Context getContext() { return context; } };
         plugin.load(); reset();
     }
-    @After public void cleanup() throws Exception { if (plugin != null) reset(); }
+    @After public void cleanup() throws Exception {
+        if (baseline == null) return;
+        if (plugin != null) {
+            plugin.focusAction(new Call(new JSObject().put("action", "finish")));
+            plugin.restAction(new Call(new JSObject().put("action", "exit")));
+        }
+        baseline.restore();
+    }
     private void reset() throws Exception {
         plugin.focusAction(new Call(new JSObject().put("action", "finish")));
         plugin.restAction(new Call(new JSObject().put("action", "exit")));

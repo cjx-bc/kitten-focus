@@ -20,12 +20,14 @@ public class UpdateProtectionTest {
     private LocalStore store;
     private Map<String, byte[]> retained;
     private File directory;
-    private JSONObject original;
+    private QaBusinessBaseline baseline;
+    private Map<String, ?> upgradePreferences;
 
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        baseline = QaBusinessBaseline.captureIdle(context);
         store = LocalStore.get(context);
-        original = store.snapshot();
+        upgradePreferences = new HashMap<>(context.getSharedPreferences("upgrade-protection", Context.MODE_PRIVATE).getAll());
         directory = new File(context.getFilesDir(), "upgrade-backups");
         directory.mkdirs();
         retained = new HashMap<>();
@@ -34,28 +36,28 @@ public class UpdateProtectionTest {
             retained.put(file.getName(), java.nio.file.Files.readAllBytes(file.toPath()));
             assertTrue(file.delete());
         }
-        store.write("active", null);
     }
 
     @After public void cleanup() throws Exception {
-        store.getWritableDatabase().beginTransaction();
-        try {
-            store.getWritableDatabase().delete("documents", null, null);
-            store.getWritableDatabase().delete("focus_records", null, null);
-            JSONObject docs = original.getJSONObject("documents");
-            java.util.Iterator<String> keys = docs.keys();
-            while (keys.hasNext()) { String key = keys.next(); store.write(key, docs.getJSONObject(key)); }
-            JSONArray records = original.getJSONArray("records");
-            if (records.length() > 0) {
-                JSONObject data = docs.optJSONObject("data");
-                if (data != null) { data.put("records", records); store.saveData(data, false); }
-            }
-            store.getWritableDatabase().setTransactionSuccessful();
-        } finally { store.getWritableDatabase().endTransaction(); }
+        if (baseline == null) return;
+        // The paused-focus test intentionally writes an incomplete synthetic active document.
+        // Raw baseline restoration does not attempt to settle that malformed fixture as a real focus.
+        store.write("active", null);
+        baseline.restore();
         File[] files = directory.listFiles();
         if (files != null) for (File file : files) file.delete();
         for (Map.Entry<String, byte[]> item : retained.entrySet())
             java.nio.file.Files.write(new File(directory, item.getKey()).toPath(), item.getValue());
+        android.content.SharedPreferences.Editor editor = context.getSharedPreferences("upgrade-protection", Context.MODE_PRIVATE).edit().clear();
+        for (Map.Entry<String, ?> item : upgradePreferences.entrySet()) {
+            Object value = item.getValue();
+            if (value instanceof String) editor.putString(item.getKey(), (String)value);
+            else if (value instanceof Integer) editor.putInt(item.getKey(), (Integer)value);
+            else if (value instanceof Long) editor.putLong(item.getKey(), (Long)value);
+            else if (value instanceof Boolean) editor.putBoolean(item.getKey(), (Boolean)value);
+            else if (value instanceof Float) editor.putFloat(item.getKey(), (Float)value);
+        }
+        assertTrue(editor.commit());
     }
 
     private JSONObject release() throws Exception {
