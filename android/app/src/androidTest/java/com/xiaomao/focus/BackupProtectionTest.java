@@ -30,6 +30,7 @@ public class BackupProtectionTest {
     }
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        QaBusinessBaseline.assertIdle(context);
         assertTrue(context.getPackageName().endsWith(".qa"));
         database = "backup-protection-" + System.nanoTime() + ".db";
         store = new LocalStore(context, database);

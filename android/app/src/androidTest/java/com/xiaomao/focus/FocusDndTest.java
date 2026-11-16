@@ -35,6 +35,7 @@ public class FocusDndTest {
 
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        QaBusinessBaseline.assertIdle(context);
         assertTrue("Use the isolated QA application", context.getPackageName().endsWith(".qa"));
         database = "focus-dnd-" + System.nanoTime() + ".db";
         store = new LocalStore(context, database);

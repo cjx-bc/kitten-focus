@@ -17,6 +17,7 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class CatFocusControlBridgeTest {
     private CatFocusPlugin plugin;
+    private QaBusinessBaseline baseline;
 
     // Capture only the transport reply; all plugin/session/database code is real.
     private static final class Call extends PluginCall {
@@ -29,6 +30,7 @@ public class CatFocusControlBridgeTest {
     @Before public void setup() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         assertTrue("Run on the isolated QA application", context.getPackageName().endsWith(".qa"));
+        baseline = QaBusinessBaseline.captureIdle(context);
         plugin = new CatFocusPlugin() { @Override public Context getContext() { return context; } };
         plugin.load();
         reset();
@@ -40,7 +42,14 @@ public class CatFocusControlBridgeTest {
         plugin.replaceData(new Call(new JSObject().put("data", new JSONObject("{\"schemaVersion\":1,\"records\":[],\"deletedRecordIds\":[],\"preferences\":{\"sound\":false,\"vibration\":false}}"))));
     }
 
-    @After public void cleanup() throws Exception { if (plugin != null) reset(); }
+    @After public void cleanup() throws Exception {
+        if (baseline == null) return;
+        if (plugin != null) {
+            plugin.focusAction(new Call(new JSObject().put("action", "finish")));
+            plugin.restAction(new Call(new JSObject().put("action", "exit")));
+        }
+        baseline.restore();
+    }
 
     @Test public void legacyBridgeCommandsAndObservationShareFocusAndRestOwnership() throws Exception {
         JSONObject session = new JSONObject().put("id", "bridge-focus").put("itemId", JSONObject.NULL)

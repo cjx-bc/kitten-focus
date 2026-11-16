@@ -31,6 +31,7 @@ public class FocusControlTest {
 
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        QaBusinessBaseline.assertIdle(context);
         assertTrue("Run on the isolated QA application", context.getPackageName().endsWith(".qa"));
         databaseName = "focus-control-" + System.nanoTime() + ".db";
         store = new LocalStore(context, databaseName);

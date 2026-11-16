@@ -33,6 +33,7 @@ public class RecoveryControlTest {
     }
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        QaBusinessBaseline.assertIdle(context);
         assertTrue("Requires isolated QA application", context.getPackageName().endsWith(".qa"));
         databaseName = "recovery-test-" + System.nanoTime() + ".db";
         store = new LocalStore(context, databaseName); clock = new TestClock();
