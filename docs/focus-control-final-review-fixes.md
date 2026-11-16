@@ -20,4 +20,12 @@ The test-only combined wallpaper/recent-task/launcher/main-entry recovery failur
 
 Stable final product APK: SHA-256 `6d3427a07519bf06eeac229856337e56f2eb0641a2b547f7a8b1390b5af51e6a` (product source `e28f3f2`). Corrected instrumentation APK: `1dc510b2545b815104b548e79c5941528a6ae04855b9d2a721eb5626c00ecd83` (test source `3c66802`). Local RED/GREEN evidence is under `C:/Users/33428/orca/notes/final-review-*`.
 
-The final native source inventory is **121 tests**, including AuthorizationSettingsTest and the added combined wallpaper case. This is an inventory, not an execution claim. Final targeted GREEN, the entire 121-test batch, and `scripts/final-review-device-smoke.mjs` remain pending until the shared QA device is granted. OEM, actual calls, sound acoustics, wallpaper crop/provider fidelity and launcher-cache limits retain their separately documented evidence boundaries.
+## Final execution
+
+On November 15, 2026 (America/New_York), QA Android 16/API 36 `emulator-5580` executed targeted **13/13** and the full source-derived **121/121** native tests, both with **zero skips**. Full batch instrumentation time was 33.742 seconds. Metadata and raw instrumentation are in `C:/Users/33428/orca/notes/final-review-green/{targeted,final121}` and identify the stable app/test SHA-256 values above.
+
+`scripts/final-review-device-smoke.mjs` then passed all five real WebView/system scenarios: notification-only, sound-only and enhancement-only focus confirmations before ownership; independent lock editor save/edit with explicit-empty semantics and frozen start; and an actual notification-access Settings page reachable during ordinary lock with anti-close off. Settings was first observed blocked outside the whitelist, then remained foreground after the app-initiated authorization launch and rendered its real permission list. The owner remained lock. Screenshots were visually inspected.
+
+Evidence is in `artifacts/focus-control/api36/final-review/`. The final result has `complete=true`, `cleanupCompleted=true`, and matching raw private-file baseline/restoration digests `269b8c1b18cde5856997e696f8614e5bdde28fafa2834db814a1f12bdbb39bbd`; the entire idle QA databases/shared-preferences baseline, system authorization and wallpaper identifiers were preserved. Product sources are unchanged since the compiled `e28f3f2`; subsequent commits change test fixtures, scripts, evidence and documentation only.
+
+OEM, actual calls, sound acoustics, wallpaper crop/provider fidelity and launcher-cache limits retain their separately documented evidence boundaries.
