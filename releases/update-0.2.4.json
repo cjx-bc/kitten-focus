@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 10,
+    "versionName": "0.2.4",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.4/xiaomao-focus-0.2.4-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.4/xiaomao-focus-0.2.4-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.4-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.4/xiaomao-focus-0.2.4-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.4-debug.apk"
+    ],
+    "size": 5500356,
+    "sha256": "2969bcd56f4a481be06222767581f770f31c79109800f867e8355000ed9401f9",
+    "notes": "新增学霸模式、严格倒计时、独立锁机、全局与独立白名单、限时临时放行、通知拦截与原通知释放，以及六项可选增强和逐项故障恢复。所有保护默认关闭，保留原有五栏导航、配色、字体、圆形计时控制与五分钟休息。补齐离线帮助、真实授权状态和旧配置兼容。隔离 API36 测试通过58项宿主测试及去重140项原生用例。已知限制：部分启动器可能保留缓存图标，壁纸裁剪/第三方私有设置及其他系统/OEM效果未完整验证；不保证防系统强停或禁止卸载。"
+  }
+}

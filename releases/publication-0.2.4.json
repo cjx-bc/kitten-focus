@@ -1,0 +1,29 @@
+{
+  "version": "0.2.4",
+  "versionCode": 10,
+  "status": "candidate-staged-and-verified",
+  "authorizedBy": "User explicitly requested commit, push and publish on 2026-11-16",
+  "applicationId": "com.xiaomao.focus",
+  "apk": {
+    "name": "xiaomao-focus-0.2.4-debug.apk",
+    "size": 5500356,
+    "sha256": "2969bcd56f4a481be06222767581f770f31c79109800f867e8355000ed9401f9",
+    "signerSha256": "dac507ed579b5fd68cd294c91759e60bdef23da30e427070d7e69e3100123cfe"
+  },
+  "githubTag": "v0.2.4",
+  "githubRelease": "https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.4",
+  "updateChannel": "https://focus.linma.asia/updates/stable.json",
+  "verifiedBeforePublication": {
+    "hostTestsPassed": 58,
+    "frontendBuild": true,
+    "productionAndroidBuild": true,
+    "productionPackageColdStart": true,
+    "originalFiveIconTabs": true,
+    "tenDiagnostics": true,
+    "sameSigningIdentity": true,
+    "serverCandidateHash": true
+  },
+  "priorIsolatedQaUniqueInstrumentationPassed": 140,
+  "limitsReport": "docs/focus-control-final-acceptance.md",
+  "fullPlatformMatrixPassed": false
+}

@@ -1,25 +1,32 @@
 {
-  "version": "0.2.3",
-  "versionCode": 9,
+  "version": "0.2.4",
+  "versionCode": 10,
   "type": "debug internal testing build",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
-      "name": "xiaomao-focus-0.2.3-debug.apk",
-      "size": 5358719,
-      "sha256": "93ce9011ac503da4fd37cdf16c3315259c5fe3a709ba49494e7aec7ead73698b"
+      "name": "xiaomao-focus-0.2.4-debug.apk",
+      "size": 5500356,
+      "sha256": "2969bcd56f4a481be06222767581f770f31c79109800f867e8355000ed9401f9"
     }
   ],
-  "sourceArchive": "xiaomao-focus-0.2.3-source.zip",
-  "sourceTag": "v0.2.3",
+  "sourceArchive": "xiaomao-focus-0.2.4-source.zip",
+  "sourceTag": "v0.2.4",
   "verified": {
     "productionBuild": true,
     "androidApkBuild": true,
     "sameSigningIdentity": true,
-    "testsRun": false,
-    "testsSkippedAtUserRequest": true,
-    "deviceAcceptanceRun": false
+    "hostTestsPassed": 58,
+    "isolatedQaUniqueInstrumentationPassed": 140,
+    "productionDeviceSmoke": "passed: cold launch, original five icon-only tabs, native version10/0.2.4, ten diagnostics, no owner/recovery duty",
+    "fullDeviceMatrixPassed": false
   },
   "repository": "cjx-bc/kitten-focus",
-  "repositoryVisibility": "public"
+  "repositoryVisibility": "public",
+  "acceptanceReport": "docs/focus-control-final-acceptance.md",
+  "knownLimits": [
+    "Launcher cache may retain disabled icon",
+    "Static wallpaper visual/crop and live provider private settings not fully verified",
+    "Other APIs/OEM/physical calls/audio/managed profile not fully verified"
+  ]
 }
