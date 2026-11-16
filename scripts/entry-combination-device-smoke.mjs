@@ -1,10 +1,14 @@
 // Representative T22 combination, not a substitute for wallpaper/notification coverage.
 import assert from 'node:assert/strict'
+import { copyFileSync, existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { emptyData, defaultProtection } from '../src/domain/model.ts'
 import { connectQa, delay, until } from './lib/android-qa.mjs'
+import { capturePrivateBaseline } from './lib/qa-private-baseline.mjs'
 
 const output = process.env.QA_OUTPUT || 'artifacts/focus-control/api36/entry-combination'
 let qa = await connectQa({ port: 9264, output })
+const privateBaseline = await capturePrivateBaseline(qa, { port: 9264, output }); qa = privateBaseline.qa
 assert.equal(qa.serial, 'emulator-5580', 'Only the explicitly leased QA emulator may reboot')
 const reboot = process.argv.includes('--reboot'), rebootOnly = process.argv.includes('--reboot-only')
 const results = []
@@ -85,6 +89,11 @@ try {
     qa.save('reboot-before.json', { started, checkpoint, control: await native('observeControl'), launcher: await native('getLauncherStatus'), recentTasks: await native('getRecentTasksStatus') })
     await qa.screenshot('03-before-real-reboot-all-three-active')
     const beforeReboot = Date.now()
+    qa.save('reboot-request.json', { beforeReboot, note: 'If guest reboot exits the qemu host, preserve logs and restart only the exact existing AVD via D:/KittenFocus-Android/Start.ps1; record that host restart separately' })
+    for (const name of ['emulator.out.log', 'emulator.err.log']) {
+      const path = 'D:/KittenFocus-Android/logs/' + name
+      if (existsSync(path)) copyFileSync(path, resolve(output, 'before-reboot-' + name))
+    }
     qa.close(); command('reboot')
     await until(() => command('shell', 'getprop', 'sys.boot_completed').trim() === '1', 'actual emulator boot', 180000)
     command('shell', 'input', 'keyevent', 'WAKEUP'); command('shell', 'wm', 'dismiss-keyguard')
@@ -124,5 +133,8 @@ try {
   assert.deepEqual((await native('loadData')).data, baseline.data, 'Restore exact QA business data')
   secure('enabled_accessibility_services', baseline.services); secure('accessibility_enabled', baseline.enabled)
   command('shell', 'pm', baseline.notifications ? 'grant' : 'revoke', qa.appId, 'android.permission.POST_NOTIFICATIONS')
+  // Permission revocation may kill QA. Reconnect to the restored idle Activity before exact raw restoration.
+  if (!baseline.notifications) { if (!qa.closed) qa.close(); qa = await connectQa({ port: 9264, output }) }
+  qa = await privateBaseline.restore(qa)
   qa.close()
 }

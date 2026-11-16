@@ -1,8 +1,11 @@
 // Actual Android Settings departure/launcher return; diagnostic refresh remains product driven.
 import assert from 'node:assert/strict'
 import { connectQa, until } from './lib/android-qa.mjs'
+import { capturePrivateBaseline } from './lib/qa-private-baseline.mjs'
 
-const qa = await connectQa({ port: 9266, output: process.env.QA_OUTPUT || 'artifacts/focus-control/api36/permission-return' })
+const output = process.env.QA_OUTPUT || 'artifacts/focus-control/api36/permission-return'
+let qa = await connectQa({ port: 9266, output })
+const privateBaseline = await capturePrivateBaseline(qa, { port: 9266, output }); qa = privateBaseline.qa
 const native = (...args) => qa.native(...args), command = (...args) => qa.command(...args)
 const service = qa.appId + '/com.xiaomao.focus.FocusAccessibilityService'
 const baseline = { data: (await native('loadData')).data,
@@ -60,5 +63,6 @@ finally {
   await native('replaceData', { data: baseline.data }); await qa.evaluate("location.hash = '#/tasks'"); await qa.send('Page.reload')
   secure('enabled_accessibility_services', baseline.services); secure('accessibility_enabled', baseline.enabled)
   assert.deepEqual((await native('loadData')).data, baseline.data, 'Exact QA baseline restored')
+  qa = await privateBaseline.restore(qa)
   qa.close()
 }

@@ -1,18 +1,22 @@
 // Real Launcher3 icon, real notification taps, and the existing CatFocus bridge. QA APK only.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { emptyData, defaultProtection } from '../src/domain/model.ts'
 import { connectQa, delay, until } from './lib/android-qa.mjs'
 import { androidDevice } from './lib/android-device.mjs'
+import { capturePrivateBaseline } from './lib/qa-private-baseline.mjs'
 
 const output = process.env.QA_OUTPUT || 'artifacts/focus-control/api36/launcher'
 const directory = resolve(output); mkdirSync(directory, { recursive: true })
 const { adb, serial } = androidDevice(resolve(import.meta.dirname, '..'))
 assert.equal(serial, 'emulator-5580', 'Requires the explicitly leased QA emulator')
 let qa = await connectQa({ port: 9263, output })
+const privateBaseline = await capturePrivateBaseline(qa, { port: 9263, output }); qa = privateBaseline.qa
+const phase = process.argv.find(value => value.startsWith('--phase='))?.slice(8) || 'all'
+assert(['all', 'notification', 'fallback'].includes(phase), 'Use --phase=notification or --phase=fallback for bounded leaf checks')
 const appId = qa.appId, alias = appId + '/com.xiaomao.focus.LauncherAlias'
 const command = (...args) => execFileSync(adb, ['-s', serial, ...args], { encoding: 'utf8', windowsHide: true, timeout: 30000 })
 const native = (...args) => qa.native(...args)
@@ -46,8 +50,15 @@ const tapNative = text => {
   assert(bounds, 'Native control has no bounds')
   command('shell', 'input', 'tap', String(Math.round((+bounds[1] + +bounds[3]) / 2)), String(Math.round((+bounds[2] + +bounds[4]) / 2)))
 }
-const tapShade = (text, key) => {
-  const observed = process.env[key]
+const tapShade = async (text, key) => {
+  let observed = process.env[key]
+  if (process.argv.includes('--inspect-shade')) {
+    const name = key.toLowerCase(), file = resolve(directory, name + '.json')
+    assert(!existsSync(file), 'Use a fresh evidence directory for inspected coordinates')
+    screen(name + '-awaiting-inspection')
+    console.log('INSPECT ' + resolve(directory, name + '-awaiting-inspection.png') + '; write ' + file + ' as {"tap":"x,y"}')
+    observed = await until(() => existsSync(file) && JSON.parse(readFileSync(file, 'utf8')).tap, 'inspected real QA notification coordinates', 90000)
+  }
   if (!observed) return tapNative(text)
   assert(/^\d+,\d+$/.test(observed), key + ' must be an inspected x,y on this exact QA notification screenshot')
   const [x, y] = observed.split(',').map(Number)
@@ -94,6 +105,7 @@ try {
   assert(query().includes('LauncherAlias'), 'Baseline own launcher alias must resolve; do not overwrite a preexisting disabled component')
   assert.equal((await native('getLauncherStatus')).componentState, 0, 'Preserve exact existing baseline; fixture expects default')
   if (!process.argv.includes('--upgrade-only')) {
+  if (phase === 'all') {
   await configure(false); await drawer('01-original-visible', true)
   await native('startFocus', { session: session() })
   await native('focusAction', { action: 'pause' }) // Keep every UiAutomator shade/drawer read idle.
@@ -105,40 +117,47 @@ try {
   await assert.rejects(() => native('startFocus', { session: session() }), /通知/)
   assert(query().includes('LauncherAlias')); assert.equal((await native('observeControl')).owner, null)
   results.push('permission-denied-never-hides')
+  } else await configure(true)
   command('shell', 'pm', 'grant', appId, 'android.permission.POST_NOTIFICATIONS')
+  if (phase !== 'fallback') {
   await native('startFocus', { session: session() })
   await until(async () => (await native('getLauncherStatus')).verified, 'actual disabled alias and recovery notification')
   await native('focusAction', { action: 'pause' }) // Static shade permits UiAutomator to reach idle.
-  await drawer('03-enabled-hidden', false)
+  if (phase === 'all') await drawer('03-enabled-hidden', false)
   qa.save('hidden-status.json', await native('getLauncherStatus'))
   // Exercise the actual notification content and recovery action; never send PendingIntents programmatically.
   await qa.evaluate("location.hash = '#/settings'")
   command('shell', 'cmd', 'statusbar', 'expand-notifications'); await delay(1000); screen('04-control-notification')
-  tapShade('图标恢复设备验证', 'QA_OBSERVED_CONTENT_TAP')
+  await tapShade('图标恢复设备验证', 'QA_OBSERVED_CONTENT_TAP')
   await until(() => qa.evaluate("location.hash === '#/focus'"), 'actual control notification returns to focus')
   command('shell', 'cmd', 'statusbar', 'expand-notifications'); await delay(1000)
   // Expand the target card if its action is initially collapsed.
-  if (!process.env.QA_OBSERVED_RECOVERY_TAP && !dump().includes('text="帮助与故障恢复"')) {
+  if (!process.argv.includes('--inspect-shade') && !process.env.QA_OBSERVED_RECOVERY_TAP && !dump().includes('text="帮助与故障恢复"')) {
     const xml = dump(); const expand = [...xml.matchAll(/<node\b[^>]*>/g)].map(row => row[0]).find(row => row.includes('expand_button') && row.includes('clickable="true"'))
     assert(expand, 'Expand the actual QA control notification for its recovery action')
     const b = expand.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)
     command('shell', 'input', 'tap', String(Math.round((+b[1] + +b[3]) / 2)), String(Math.round((+b[2] + +b[4]) / 2)))
     await delay(400)
   }
-  screen('05-recovery-notification-action'); tapShade('帮助与故障恢复', 'QA_OBSERVED_RECOVERY_TAP')
+  screen('05-recovery-notification-action'); await tapShade('帮助与故障恢复', 'QA_OBSERVED_RECOVERY_TAP')
   await until(() => qa.evaluate('document.body.innerText.includes("自身桌面启动入口")'), 'actual notification recovery sheet')
   await qa.screenshot('06-recovery-reachable')
   await qa.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent === '确认撤销以上本轮保护'); if (!b || b.disabled) throw new Error('Recovery confirmation unavailable'); b.click() })()`)
   await until(async () => (await native('getLauncherStatus')).phase === 'withdrawn', 'confirmed original component restoration')
-  await drawer('07-recovered-visible', true)
+  assert(query().includes('LauncherAlias'), 'Actual restored alias resolves after notification recovery')
+  if (phase === 'all') await drawer('07-recovered-visible', true)
   await native('focusAction', { action: 'resume' }); await native('focusAction', { action: 'read' })
   assert.equal((await native('getLauncherStatus')).componentState, 0)
   await native('focusAction', { action: 'finish' }); await native('restAction', { action: 'exit' })
-  results.push('real-icon-hide-notification-control-and-recovery-restores-default')
+  results.push('actual-disabled-alias-notification-content-and-recovery-Sheet-restores-default')
   await native('startFocus', { session: session() }); await until(async () => (await native('getLauncherStatus')).active, 'next round hides')
   await native('focusAction', { action: 'finish' }); assert.equal((await native('observeControl')).owner, 'rest')
-  await drawer('08-normal-end-visible', true); await native('restAction', { action: 'exit' })
+  assert(query().includes('LauncherAlias'), 'Actual normal-end alias resolves')
+  if (phase === 'all') await drawer('08-normal-end-visible', true)
+  await native('restAction', { action: 'exit' })
   results.push('normal-end-and-rest-restore')
+  }
+  if (phase !== 'notification') {
   // Revoking notifications kills the process with its alias hidden. Recover through
   // the actual user-visible Accessibility list and service Settings row, with no
   // explicit app Activity launch or synthetic PendingIntent send.
@@ -162,9 +181,11 @@ try {
   await qa.screenshot('11-system-settings-recovery-sheet')
   await qa.evaluate(`(() => { const b = [...document.querySelectorAll('dialog[open] button')].find(b => b.textContent.trim() === '确认撤销以上本轮保护'); if (!b || b.disabled) throw new Error('Recovery confirmation unavailable'); b.click() })()`)
   await until(async () => (await native('getLauncherStatus')).phase === 'withdrawn', 'system Settings fallback UI restores launcher')
-  await drawer('11-process-system-settings-recovery-visible', true)
+  assert(query().includes('LauncherAlias'), 'Actual system Settings fallback restores resolvable alias')
+  if (phase === 'all') await drawer('11-process-system-settings-recovery-visible', true)
   await native('focusAction', { action: 'finish' }); await native('restAction', { action: 'exit' })
   results.push('notification-revocation-process-death-actual-system-accessibility-settings-return-and-recovery')
+  }
   }
   if (replacement) {
     if (process.argv.includes('--upgrade-only')) await configure(true)
@@ -203,7 +224,7 @@ try {
       : 'actual-same-package-install-r-package-replaced-restores-journal-and-keeps-same-paused-round-no-rehide')
   }
   const pending = ['real-reboot', ...(replacement?.higherVersionInstalled ? [] : replacement ? ['different-version-code-migration'] : ['real-package-replacement'])]
-  qa.save('results.json', { appId, serial, results, replacement, pending, cacheMismatches, passed: cacheMismatches.length === 0, launcherCacheClaim: 'Only these Launcher3 screenshots verify cache behavior on this emulator' })
+  qa.save('results.json', { appId, serial, phase, results, replacement, pending, cacheMismatches, passed: cacheMismatches.length === 0, drawerChecked: phase === 'all', retainedEarlierCacheFailure: 'final-entry/launcher-drawer-fixed/03-enabled-hidden-failed.png remains limited; leaf recovery checks do not clear it', launcherCacheClaim: 'Only actual Launcher3 screenshots verify cache behavior on this emulator' })
   console.log(JSON.stringify({ appId, results, pending, cacheMismatches, passed: cacheMismatches.length === 0 }))
 } catch (error) {
   qa.save('failure.json', { message: error.stack, results })
@@ -219,6 +240,7 @@ try {
     await qa.evaluate("location.hash = '#/tasks'"); await qa.send('Page.reload')
     assert.deepEqual((await native('loadData')).data, baseline, 'Restore the exact preexisting QA business data')
     assert.equal((await native('getLauncherStatus')).componentState, 0)
+    qa = await privateBaseline.restore(qa)
   } finally {
     command('shell', 'pm', originalPermission ? 'grant' : 'revoke', appId, 'android.permission.POST_NOTIFICATIONS')
     qa.close()
