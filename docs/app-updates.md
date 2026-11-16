@@ -1,6 +1,8 @@
 # 应用内更新
 
-2026-11-16 GitHub 已发布 0.2.5 / versionCode 11：响应式布局、统一弹窗与开关、保护状态及白名单显示修正、设置与休息页优化。66 项宿主测试、TypeScript/Vite、Android assembleDebug 和 1 项安卓 JVM 单元测试通过；包名、原签名及 APK 完整性通过 `prepare-update.py` 校验。浏览器巡检覆盖 9 页与 27 组视口。本轮不启动模拟器，也不将旧版的系统效果测试当作本轮复测。服务器 SSH 在握手前断开，官网及应用内清单仍为 0.2.4，尚待同步；当前可从 GitHub 下载 APK 覆盖安装。逐项状态见 [0.2.5 发布记录](../releases/publication-0.2.5.json)。
+2026-11-16 已完整发布 0.2.5 / versionCode 11：响应式布局、统一弹窗与开关、保护状态及白名单显示修正、设置与休息页优化。66 项宿主测试、TypeScript/Vite、Android assembleDebug 和 1 项安卓 JVM 单元测试通过；包名、原签名及 APK 完整性通过 `prepare-update.py` 校验。浏览器巡检覆盖 9 页与 27 组视口。本轮不启动模拟器，也不将旧版的系统效果测试当作本轮复测。GitHub、官网页面、下载跳转、域名 stable 与 IP domain-stable 均已同步，公网 APK 哈希一致。旧 IP stable 仍保留 0.2.0。逐项状态见 [0.2.5 发布记录](../releases/publication-0.2.5.json)。
+
+本次同步曾因本机 Meta/TUN 出站路径提前关闭 TCP/22 而受阻：服务器与 GitHub 的 22 端口都在 SSH banner 前 EOF，但代理中的 GitHub SSH/443 正常；仅为单个 socket 选择物理 WLAN 后，目标服务器 0.42 秒返回 OpenSSH banner，原有密钥成功登录。后续发布通过该单连接通道完成，未修改服务器 SSH 服务、密钥、全局代理或路由表。
 
 2026-11-16 按用户“提交推送，然后发布”的指令准备 0.2.4 / versionCode 10，沿用 `com.xiaomao.focus` 与原内测签名。分发构建通过58项宿主测试、TypeScript/Vite、Android打包及签名/包名校验；D盘API36模拟器正式包冷启动、五栏图标、十项诊断及版本读取通过。此前隔离QA的140项去重原生结果和平台限制见[最终验收报告](focus-control-final-acceptance.md)。0.2.4发布说明明确保留图标缓存、壁纸恢复及OEM/其他API缺口，不声明完整平台矩阵通过。发布结果见[0.2.4发布记录](../releases/publication-0.2.4.json)。
 

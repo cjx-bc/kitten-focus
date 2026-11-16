@@ -1,7 +1,7 @@
 {
   "version": "0.2.5",
   "versionCode": 11,
-  "status": "github-published-server-sync-blocked",
+  "status": "published-and-publicly-verified",
   "applicationId": "com.xiaomao.focus",
   "apk": {
     "name": "xiaomao-focus-0.2.5-debug.apk",
@@ -22,12 +22,20 @@
     "productionDeviceSmoke": false,
     "fullDeviceMatrixPassed": false
   },
-  "serverPublication": "blocked: SSH connection closes before key exchange; no server files or update channels changed",
+  "serverPublication": "published: stable channel, landing page and download redirect synchronized",
   "publicVerification": {
     "anonymousGitHubRelease": true,
     "githubAssetDigestsMatch": true,
     "anonymousApkDownloadHashMatches": true,
-    "websiteAndUpdateChannelSynced": false
+    "websiteAndUpdateChannelSynced": true,
+    "domainStableVersion": "0.2.5",
+    "ipFallbackVersion": "0.2.5",
+    "legacyIpStableVersion": "0.2.0",
+    "landingVersionMatches": true,
+    "downloadRedirectMatches": true,
+    "originApkHashMatches": true,
+    "nginxConfigValidated": true,
+    "nginxReloaded": true
   },
   "releaseSourceCommit": "d30079727421b9435f672bc9fee67236a2a07227",
   "publishedAt": "2026-11-16T20:12:35Z",
@@ -36,6 +44,15 @@
     "size": 10447313,
     "sha256": "629fcc9b47895d698379cc7e70bee366bf51f72d75c3f3d972e11319176ca511"
   },
-  "onlineUpdateVersion": "0.2.4",
-  "onlineUpdateVersionCode": 10
+  "onlineUpdateVersion": "0.2.5",
+  "onlineUpdateVersionCode": 11,
+  "serverSyncedAt": "2026-11-16T20:21:42.943867+00:00",
+  "configBackup": "/opt/kitten-focus/config-history/20261116T201957790837Z",
+  "sshIncident": {
+    "cause": "System and SOCKS routes through local Meta/TUN closed TCP/22 before the SSH banner",
+    "controls": "GitHub SSH/22 also closed; GitHub SSH/443 returned a banner",
+    "resolution": "Per-socket physical WLAN interface selection restored the server SSH banner and authenticated login",
+    "serverSshOrFirewallChanged": false,
+    "globalProxyOrRoutingTableChanged": false
+  }
 }
