@@ -34,6 +34,7 @@ public class LauncherControlTest {
     }
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        QaBusinessBaseline.assertIdle(context);
         assertTrue(context.getPackageName().endsWith(".qa"));
         database = "launcher-control-" + System.nanoTime() + ".db";
         store = new LocalStore(context, database); recreate();

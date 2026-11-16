@@ -16,7 +16,7 @@ export async function until(fn, label, timeout = 15000) {
 }
 
 /** Real QA WebView/native bridge. Explicit emulator and separate application required. */
-export async function connectQa({ port = 9237, output = 'artifacts/focus-control/qa', user } = {}) {
+export async function connectQa({ port = 9237, output = 'artifacts/focus-control/qa', launch = true, user } = {}) {
   const root = resolve(import.meta.dirname, '../..')
   const { adb, serial } = androidDevice(root)
   const appId = process.env.ANDROID_APP_ID || 'com.xiaomao.focus.qa'
@@ -28,7 +28,7 @@ export async function connectQa({ port = 9237, output = 'artifacts/focus-control
   })
   command('shell', 'input', 'keyevent', 'WAKEUP')
   command('shell', 'wm', 'dismiss-keyguard')
-  command('shell', 'am', 'start', ...(user === undefined ? [] : ['--user', String(user)]), '-n', appId + '/com.xiaomao.focus.MainActivity')
+  if (launch) command('shell', 'am', 'start', ...(user === undefined ? [] : ['--user', String(user)]), '-n', appId + '/com.xiaomao.focus.MainActivity')
   const processId = () => {
     if (user === undefined) return command('shell', 'pidof', appId).trim().split(' ')[0]
     // More than one Android user can run the same isolated QA package. Never
@@ -57,12 +57,28 @@ export async function connectQa({ port = 9237, output = 'artifacts/focus-control
     if (message.error) request.reject(new Error(message.error.message))
     else request.resolve(message.result)
   }
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
+  const rawSend = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++next
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('CDP timeout: ' + method)) }, 15000)
     pending.set(id, { resolve, reject, timer })
     socket.send(JSON.stringify({ id, method, params }))
   })
+  const send = async (method, params = {}) => {
+    if (method !== 'Page.reload') return rawSend(method, params)
+    const marker = 'qa-reload-' + Date.now() + '-' + next
+    await rawSend('Runtime.evaluate', {
+      expression: `window.__qaReloadDocument = ${JSON.stringify(marker)}`,
+    })
+    const result = await rawSend(method, params)
+    await until(async () => {
+      const state = await rawSend('Runtime.evaluate', {
+        expression: `window.__qaReloadDocument !== ${JSON.stringify(marker)} && document.readyState === 'complete' && !!document.querySelector('.app-shell') && !document.querySelector('.boot') && !!window.Capacitor?.nativePromise`,
+        returnByValue: true,
+      })
+      return !state.exceptionDetails && state.result?.value === true
+    }, 'new QA document and app initialization after reload', 30000)
+    return result
+  }
   const evaluate = async expression => {
     const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text)
@@ -80,5 +96,6 @@ export async function connectQa({ port = 9237, output = 'artifacts/focus-control
   const save = (name, value) => writeFileSync(resolve(evidence, name), JSON.stringify(value, null, 2))
   await until(() => evaluate('!!window.Capacitor?.nativePromise'), 'Capacitor')
   return { appId, serial, command, send, evaluate, native, screenshot, save,
+    get closed() { return socket.readyState >= 2 },
     close() { socket.close(); command('forward', '--remove', 'tcp:' + port) } }
 }

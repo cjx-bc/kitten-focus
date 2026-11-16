@@ -22,6 +22,7 @@ public class FocusNotificationTest {
     };
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        QaBusinessBaseline.assertIdle(context);
         assertTrue(context.getPackageName().endsWith(".qa"));
         database = "focus-notifications-" + System.nanoTime() + ".db";
         store = new LocalStore(context, database);

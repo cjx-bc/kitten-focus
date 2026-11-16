@@ -38,6 +38,7 @@ public class AntiCloseControlTest {
     }
     @Before public void setup() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        QaBusinessBaseline.assertIdle(context);
         assertTrue(context.getPackageName().endsWith(".qa"));
         store = new LocalStore(context, "anti-close-" + System.nanoTime() + ".db");
         clock = new TestClock(); device = new Device(); rebuild();
