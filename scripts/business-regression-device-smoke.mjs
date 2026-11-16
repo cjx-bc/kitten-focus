@@ -2,6 +2,7 @@
 // Default includes the full five-minute rest; there is deliberately no shortened-clock mode.
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { runQaUi } from './lib/qa-ui-fixture.mjs'
 import { delay, until } from './lib/android-qa.mjs'
 
@@ -35,8 +36,8 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
   // Native Android WebView confirm is exercised through its actual dialog buttons.
   // No window.confirm replacement or PendingIntent shortcut is used.
   async function finishDialog(accept, name) {
-    assert(await qa.evaluate('!!document.querySelector("[aria-label=\"结束专注\"]")'))
-    await qa.evaluate('setTimeout(() => document.querySelector("[aria-label=\"结束专注\"]").click(), 0); true')
+    assert(await qa.evaluate(`!!document.querySelector('[aria-label="结束专注"]')`))
+    await qa.evaluate(`setTimeout(() => document.querySelector('[aria-label="结束专注"]').click(), 0); true`)
     const resource = accept ? 'android:id/button1' : 'android:id/button2'
     const bounds = await until(() => {
       qa.command('shell', 'uiautomator', 'dump', '--compressed', '/data/local/tmp/qa-business-dialog.xml')
@@ -48,7 +49,10 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
     // Capture native surfaces as well as WebView screenshots.
     const local = '/data/local/tmp/qa-business-confirm.png'
     qa.command('shell', 'screencap', '-p', local)
-    qa.command('pull', local, fileURLToPath(new URL(`../artifacts/focus-control/api36/final-business-regression/${name}.png`, import.meta.url)))
+    const target = process.env.QA_EVIDENCE_ROOT
+      ? join(process.env.QA_EVIDENCE_ROOT, 'final-business-regression', name + '.png')
+      : fileURLToPath(new URL(`../artifacts/focus-control/api36/final-business-regression/${name}.png`, import.meta.url))
+    qa.command('pull', local, target)
     qa.command('shell', 'input', 'tap', String(Math.round((bounds[0] + bounds[2]) / 2)), String(Math.round((bounds[1] + bounds[3]) / 2)))
     qa.command('shell', 'rm', '-f', local, '/data/local/tmp/qa-business-dialog.xml')
   }

@@ -82,6 +82,10 @@ node scripts/business-regression-device-smoke.mjs
 
 两个脚本只接受空闲且无旧恢复责任的 QA 基线，通过既有 `android-qa.mjs` 连接真实 WebView。业务基线只留在进程内存，不写入报告或调试输出；退出前结束自己的普通会话、确认无残留责任，恢复基线并重新初始化页面，再核对业务数据。未发生断电/进程被强杀时，失败也会尝试恢复；`cleanupCompleted=false` 的报告需要协调器处理，不能直接重跑并覆盖残留。脚本本身不修改任何系统授权。
 
+实际执行前补强夹具保全：空闲检查后关闭 CDP 并 force-stop 精确 QA 包，使用 `run-as` 把 `databases`/`shared_prefs` 保存到内存及本机私有临时归档，业务正文不进入 artifacts。结束时关闭数据库用户，删除仅本轮新增的精确文件，恢复归档并等候 `adb exec-in` 远端提取完成；全部文件 SHA256 与原始清单一致后才重启，核对公开业务数据、授权集合及壁纸标识，重新同步业务提醒。成功删除私有临时归档；恢复失败保留其本机路径供协调器恢复。原始 `lastFinished`、`rest`、独立 lockHistory 与各私有 journal 因此也保留，避免只通过 `replaceData(loadData)` 丢失非便携文档。`privateBaselineDigest`/`privateBaselineRestoredDigest` 只记录摘要。
+
+工作树实际执行时设置 `QA_EVIDENCE_ROOT=E:/codexseeson/fanqiezhong/artifacts/focus-control/api36`，使 WebView 与原生确认截图都写入同一集成证据目录。`QA_EXPECTED_APK_SHA256` 可校验指定已安装 APK；`QA_INSTALLED_SOURCE_SCOPE` 明确产品构建范围，不能把 runner checkout 的提交冒充已安装产品源码。不得在此运行器中安装/构建。
+
 | 脚本/验收 | 实际操作及独立预期 | 产物 |
 | --- | --- | --- |
 | whitelist-editor / A03 | 学霸关闭时打开全局名单；真实查询安装应用；固定小猫勾选不可关闭；缺失包显示原标识与“未安装”；按真实系统应用名称/包名搜索，多选后搜索无结果/关闭系统筛选仍保留已选 3 项；取消不保存；重开确认后包集合持久、固定自身不混入可编辑名单 | `final-whitelist-editor/results.json`，3 张 PNG |
