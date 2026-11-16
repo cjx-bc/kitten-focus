@@ -43,6 +43,14 @@ public class ScrollLayoutTest {
         }
     }
 
+    private void awaitVisualCommit() throws Exception {
+        CountDownLatch rendered = new CountDownLatch(1);
+        instrumentation.runOnMainSync(() -> webView.postVisualStateCallback(SystemClock.uptimeMillis(), new WebView.VisualStateCallback() {
+            @Override public void onComplete(long requestId) { rendered.countDown(); }
+        }));
+        assertTrue("WebView did not commit the test layout", rendered.await(5, TimeUnit.SECONDS));
+    }
+
     private void openTasks(ActivityScenario<MainActivity> scenario) throws Exception {
         scenario.onActivity(activity -> webView = activity.getBridge().getWebView());
         evaluate("location.hash='/tasks'");
@@ -64,11 +72,17 @@ public class ScrollLayoutTest {
         SystemClock.sleep(350);
         JSONArray bounds = new JSONArray(evaluate("(()=>{const r=document.querySelector('.tabbar').getBoundingClientRect();return [r.left,r.top,r.width,r.height,devicePixelRatio]})()"));
         int[] origin = new int[2];
-        instrumentation.runOnMainSync(() -> webView.getLocationOnScreen(origin));
+        int[] scrollbarWidth = new int[1];
+        instrumentation.runOnMainSync(() -> {
+            webView.getLocationOnScreen(origin);
+            scrollbarWidth[0] = webView.isVerticalScrollBarEnabled() ? webView.getVerticalScrollbarWidth() : 0;
+        });
         float scale = (float) bounds.getDouble(4);
         int left = origin[0] + Math.round((float) bounds.getDouble(0) * scale) + 3;
         int top = origin[1] + Math.round((float) bounds.getDouble(1) * scale) + 3;
-        int width = Math.round((float) bounds.getDouble(2) * scale) - 6;
+        // Android's native overlay scrollbar is separate from the fixed navigation.
+        // At QA density 240 its measured 6px gutter extends beyond the old 3px inset.
+        int width = Math.round((float) bounds.getDouble(2) * scale) - 3 - Math.max(3, scrollbarWidth[0]);
         int height = Math.round((float) bounds.getDouble(3) * scale) - 6;
         Bitmap before = instrumentation.getUiAutomation().takeScreenshot();
         assertNotNull(before);
@@ -95,6 +109,8 @@ public class ScrollLayoutTest {
                 }
             }
             double fraction = (double) changed / (width * height);
+            JSONArray after = new JSONArray(evaluate("(()=>{const r=document.querySelector('.tabbar').getBoundingClientRect();return [r.left,r.top,r.width,r.height,devicePixelRatio]})()"));
+            assertEquals("Navigation geometry remains fixed during the native drag", bounds.toString(), after.toString());
             during.recycle();
             assertTrue((pullDown ? "Top" : "Bottom")
                 + " edge drag moved/stretched bottom navigation; changed pixel fraction=" + fraction,
@@ -119,6 +135,8 @@ public class ScrollLayoutTest {
             openTasks(scenario);
             // Add height only to the live DOM; never change the user's persisted data.
             evaluate("(()=>{const content=document.createElement('div');content.id='scroll-test-content';content.style.height='3000px';document.querySelector('main').append(content);window.scrollTo(0,0);document.querySelector('main').scrollTop=0})()");
+            assertEquals("Long-page fixture must be laid out before native touch", "true", evaluate("document.scrollingElement.scrollHeight-document.scrollingElement.clientHeight>1000"));
+            awaitVisualCommit();
             try {
                 int[] origin = new int[2];
                 instrumentation.runOnMainSync(() -> webView.getLocationOnScreen(origin));

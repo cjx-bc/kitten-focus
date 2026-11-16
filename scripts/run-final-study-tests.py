@@ -11,6 +11,7 @@ root = Path(__file__).resolve().parent.parent
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--group', required=True, choices=['study-policy', 'study-denied', 'study-enabled', 'legacy-ui'])
 parser.add_argument('--output', required=True, type=Path)
+parser.add_argument('--scroll-only', action='store_true')
 args = parser.parse_args()
 device = [os.environ['ADB'], '-s', os.environ['ANDROID_SERIAL']]
 assert device[-1] == 'emulator-5580'
@@ -28,6 +29,11 @@ def restore(key, value):
 
 baseline = {key: setting(key) for key in ['enabled_accessibility_services', 'accessibility_enabled']}
 plan = json.loads(subprocess.check_output(['python', str(root / 'scripts/final-native-plan.py'), '--group', args.group], encoding='utf8'))
+if args.scroll_only:
+    assert args.group == 'legacy-ui'
+    plan['entries'] = [entry for entry in plan['entries'] if entry['selector'].endswith('.ScrollLayoutTest')]
+    plan['className'] = ','.join(entry['selector'] for entry in plan['entries'])
+    plan['expectedTests'] = sum(len(entry['tests']) for entry in plan['entries'])
 metadata = {'group': args.group, 'expectedTests': plan['expectedTests'], 'baseline': baseline}
 try:
     run('shell', 'input', 'keyevent', 'WAKEUP')

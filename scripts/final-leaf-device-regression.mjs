@@ -8,7 +8,7 @@ import { connectQa } from './lib/android-qa.mjs'
 import { capturePrivateBaseline } from './lib/qa-private-baseline.mjs'
 
 const phase = process.argv[2]
-assert(['study', 'legacy', 'original', 'lifecycle'].includes(phase), 'Choose study, legacy, original or lifecycle')
+assert(['study', 'legacy', 'scroll', 'original', 'lifecycle'].includes(phase), 'Choose study, legacy, scroll, original or lifecycle')
 const project = 'E:/codexseeson/fanqiezhong'
 const output = process.env.QA_EVIDENCE_ROOT || join(project, 'artifacts/focus-control/final-leaf', phase)
 const port = 9276
@@ -37,10 +37,16 @@ try {
   const fixture = emptyData(); fixture.preferences.sound = false; fixture.preferences.vibration = false; fixture.preferences.protection = defaultProtection()
   await qa.native('replaceData', { data: fixture })
   await qa.send('Page.reload'); qa.close()
-  if (phase === 'study' || phase === 'legacy') {
-    for (const group of phase === 'legacy' ? ['legacy-ui'] : ['study-policy', 'study-denied', 'study-enabled', 'legacy-ui']) {
-      groups.push(await plan(group))
-      await command('python', ['scripts/run-final-study-tests.py', '--group', group, '--output', join(output, group)])
+  if (['study', 'legacy', 'scroll'].includes(phase)) {
+    for (const group of phase !== 'study' ? ['legacy-ui'] : ['study-policy', 'study-denied', 'study-enabled', 'legacy-ui']) {
+      const source = await plan(group)
+      if (phase === 'scroll') {
+        source.entries = source.entries.filter(entry => entry.selector.endsWith('.ScrollLayoutTest'))
+        source.className = source.entries.map(entry => entry.selector).join(',')
+        source.expectedTests = source.entries.reduce((sum, entry) => sum + entry.tests.length, 0)
+      }
+      groups.push(source)
+      await command('python', ['scripts/run-final-study-tests.py', '--group', group, '--output', join(output, group), ...(phase === 'scroll' ? ['--scroll-only'] : [])])
     }
   } else {
     const group = phase === 'original' ? 'notification-original' : 'notification-lifecycle'
