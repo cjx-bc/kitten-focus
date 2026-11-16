@@ -34,7 +34,9 @@ const dump = () => {
 const unescape = value => value.replaceAll('&amp;', '&').replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>')
 function tapText(text) {
   const nodes = [...dump().matchAll(/<node\b[^>]*>/g)].map(match => match[0])
-  const node = nodes.find(row => [...row.matchAll(/(?:text|content-desc)="([^"]*)"/g)].some(attr => unescape(attr[1]) === text))
+  const node = nodes.find(row => [...row.matchAll(/(?:text|content-desc)="([^"]*)"/g)].some(attr => {
+    const label = unescape(attr[1]); return label === text || text.endsWith('.png') && label.startsWith(text + ',')
+  }))
   if (!node) return false
   const bounds = node.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)
   if (!bounds || +bounds[3] <= +bounds[1] || +bounds[4] <= +bounds[2]) return false
@@ -69,12 +71,14 @@ try {
     await until(() => qa.evaluate('!!document.querySelector(".tabbar")'), 'initialized product with saved preferences')
   } else if (action === 'import') {
     const name = arg('--image-name'); assert(name && !name.includes('/') && !name.includes('\\'), 'Supply the actual filename already present in this user Downloads')
-    const result = native('importWallpaperOriginal', { lockSource: argv.includes('--lock-source') })
+    await qa.evaluate(`window.__t17Import = null; window.Capacitor.nativePromise('CatFocus','importWallpaperOriginal',${JSON.stringify({ lockSource: argv.includes('--lock-source') })}).then(value => window.__t17Import = { value }).catch(error => window.__t17Import = { error: String(error) }); true`)
     await delay(500)
     if (!tapText(name)) {
       await tap('Show roots'); await tap('Downloads'); await tap(name)
     }
-    await result; main()
+    main()
+    const result = await until(() => qa.evaluate('window.__t17Import'), 'actual SAF supplied-image result', 30000)
+    assert(!result.error, result.error)
   } else if (action === 'prepare') {
     // This action is the test operator's explicit acknowledgement for the saved known fixture.
     await native('prepareWallpaper', { limitsAccepted: true, originalMatches: true })

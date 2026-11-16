@@ -117,9 +117,77 @@ disposable user's process.
 | Later static choice | Native runtime RED mislabeled a preserved later static image as restored; GREEN 4/4, 7.161 seconds, no skips. It now reports `user_choice_preserved` without a write; `t17-later-static-{red,green}`. |
 | Late picker, strict failure, manual acknowledgement and reboot | Actual native lifecycle RED at orphaned late selection, then GREEN 5/5, 14.592 seconds, no skips. The same round survives pause/reconstruction; strict timing remains enforced; later unprotected timer is not replaced; `t17-late-picker-red`, `t17-coherent-green`. |
 | Picker receipt | Direct javac RED at the token-aware callback, then official API36 native GREEN 5/5, 5.186 seconds, no skips. A stale old callback leaves the new picker open; `t17-token-green`. |
-| Interrupted lock-first restore | Actual native RED at a lock write interrupted before Home; `t17-partial-lock-red`, 4.25 seconds. Minimal fix retains uncertainty whenever either owned identity changed. Final GREEN pending. |
+| Interrupted lock-first restore | Actual native RED at a lock write interrupted before Home; `t17-partial-lock-red`, 4.25 seconds. Minimal fix retains uncertainty whenever either owned identity changed. Final integrated native GREEN 5/5, 7.426 seconds, no skips; `t17-final-native-green`. |
 | Diagnostics | Existing public CatFocus aggregation RED → GREEN 7/7; latest host suite 56/56 after integration merge. Reports actual native support, preview/selection distinction, pending restoration as actionable, and withdrawn/later choice as off. |
 | UI | Vue type check/build passed. Actual browser screenshots at 375 px phone and 812 px landscape; no horizontal overflow. Root font-size scaling was requested, but existing pixel-sized component copy does not establish full Android Dynamic Type/largest-font coverage. Browser support remains unavailable truthfully. |
-| Production device matrix | Pending actual picker/SAF/restore/process-rebind acceptance. T03 probe evidence does not fill this row. |
+| Production device matrix | Actual SAF, picker cancellation/selection, native session association, supplied-image writeback and live-original restoration measured below. |
+
+## Measured production API36 result
+
+Evidence: root ignored `artifacts/focus-control/t17-product/`. Measured production
+source native tip `95e48c4` (including shared integration `87c75e4`), APK SHA256
+`a66dd97aa28a87639634f4710d59c4273fc59be4e453c6ff5b63bcf534519e0c`.
+Only newly created full secondary user **10**, name
+**KittenT17Product_20261115_Only**, was used. System user0 remained outside all
+wallpaper writes. The separate T03 fixture exported its generated known source
+through its ordinary per-user MediaStore Downloads API; production imported it
+through actual `ACTION_OPEN_DOCUMENT`, copied it privately and required the
+matching-original/limitations acknowledgement. No production URI/path bypass or
+arbitrary original-pixel backup exists.
+
+- **Actual refusal/selection:** the Android picker cancel path reported
+  `declined`, original home20/lock-1 retained, no pending duty. Actual Home
+  confirmation selected production `FocusWallpaperService` as home21 and
+  reported active. Preview remained distinct. Screenshots include the real cat
+  wallpaper picker (`09-select-picker.png`) and per-stage product evidence.
+- **Matched ordinary process death:** the 15-second unselected control killed
+  PID27500 and produced no new service, engine or Activity. The selected control
+  killed PID28912; PID29283 was first sampled at **1.672 seconds**, then logged
+  framework `service_create`, `engine_create(preview=false)` and
+  `existing_session_reconciled` for the same session
+  `wallpaper-product-1794787657404`, with elapsed60957 ms and no Activity opened
+  after the kill. This is production engine association evidence, not merely a
+  changed wallpaper or a promise of force-stop/OEM immunity. See
+  `selected/result.json`, `unselected/result.json` and before/after screenshots.
+- **Supplied static writeback:** normal end entered rest, restored a static
+  identity and retained the supplied image in private storage. Actual journal
+  `11-static-native-journal.xml` records original20, owned21, `pending=false`,
+  `phase=restored`, `restoreAttempted=false`; bridge `static/finish-after.json`
+  independently records the resulting home/lock identities. A properly settled
+  restored-green launcher screenshot was **not obtained**; transition screenshots
+  are retained and do not establish pixel/crop fidelity. Static visual acceptance
+  remains a stated gap.
+- **Boot interruption and live original:** after actual live-original capture
+  and production Home selection, `adb reboot` was issued. The host emulator
+  process exited; its cause is unverified, and old emulator stdout/stderr were
+  not preserved before the canonical `D:/KittenFocus-Android/Start.ps1` restarted
+  the same disks without snapshots/wipe. This is not a seamless guest-reboot
+  success claim. BootCount7→8 is recorded. After user10 became available, before
+  opening MainActivity, PID2559 logged service56803 ms, non-preview engine58788
+  ms and native reconciliation76631 ms, owner null. The interrupted round's
+  responsibility remained `recovery_pending`. Actual Android Home+lock
+  confirmation restored the original purple component, `pending=false`, with
+  the actual launcher visually verified in `14-live-original-restored-home.png`.
+  Third-party provider settings and exact crop remain unverified.
+- **Cleanup:** the final resolved journal and lifecycle ring, private supplied
+  image and wallpaper dumps were exported. Only created user10 was stopped and
+  removed; the otherwise-unused probe package was removed after confirming it
+  was not installed for user0. Current user0, only Owner remains. `cleanup.json`
+  verifies user0 id2, which3 and ImageWallpaper component unchanged. No arbitrary
+  original-pixel hash is claimed. Both shared device and Gradle leases released.
+
+Secondary-user first-boot SystemUI ANR/cold WebView process churn, a denied direct
+shell storage push, and zero-byte shell MediaStore setup were fixture failures;
+they are retained as limitations and never counted as successful imports. The
+successful source was exported by the independent test fixture and selected in
+the real SAF UI. Host CDP helpers now reselect the current selected-user process
+while waiting for its WebView; image import waits by observing the real async
+result rather than leaving a 15-second awaited CDP expression open behind SAF.
+
+Product later-home/lock preservation, partial writes, strict recovery, stale
+picker receipts and timing boot interruption have native seam coverage. Actual
+later-home/lock device combinations were not repeated for production; T03's
+matrix remains separate evidence. Actual product seamless reboot, physical/OEM,
+all API combinations and static pixel/crop visual fidelity remain unverified.
 
 Physical/OEM and unmeasured API combinations remain explicitly unverified.
