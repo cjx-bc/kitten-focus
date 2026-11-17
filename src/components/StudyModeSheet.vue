@@ -13,6 +13,7 @@ import DndSetting from './DndSetting.vue'
 import EnhancedProtectionSettings from './EnhancedProtectionSettings.vue'
 import NotificationSetting from './NotificationSetting.vue'
 import InfoHint from './InfoHint.vue'
+import { usePendingEnable } from './usePendingEnable'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const app = useApp()
@@ -22,29 +23,41 @@ const error = ref(''), busy = ref(false), permissionHelp = ref(false), editing =
 const readFailed = ref(false)
 const readError = ref(''), enhancementsOpen = ref(false)
 let revision = 0
+let timer: ReturnType<typeof setInterval> | undefined
+async function saveStudy(study: boolean) {
+  busy.value = true
+  try { await app.mutate(d => { d.preferences.protection = { ...defaultProtection(), ...d.preferences.protection, study } }) }
+  finally { busy.value = false }
+}
+const enableGate = usePendingEnable(saveStudy, refresh)
+const permissionReady = () => !!(status.value?.supported && status.value.authorized && status.value.connected)
+function cancelEnable() { enableGate.cancel(); permissionHelp.value = false }
 const display = computed(() => studyDisplay(prefs.value.study, app.focus.session?.protection?.study === true,
   app.focus.session?.protection?.applicationsWithdrawn === true, status.value, readFailed.value))
 async function refresh() {
   const request = ++revision
   try {
     const value = await protectionDriver.status()
-    if (request === revision) { status.value = value; readFailed.value = false; readError.value = '' }
+    if (request === revision) {
+      status.value = value; readFailed.value = false; readError.value = ''
+      if (await enableGate.observe(permissionReady(), value.authorized)) await refresh()
+    }
   } catch (e) {
     if (request === revision) { status.value = null; readFailed.value = true; readError.value = e instanceof Error ? e.message : String(e) }
   }
 }
 function visibility() { if (!document.hidden) void refresh() }
-onMounted(() => { void refresh(); document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh); window.addEventListener('protection-recovered', refresh) })
-onBeforeUnmount(() => { revision++; document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh); window.removeEventListener('protection-recovered', refresh) })
+onMounted(() => { void refresh(); timer = setInterval(visibility, 2000); document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh); window.addEventListener('protection-recovered', refresh) })
+onBeforeUnmount(() => { revision++; clearInterval(timer); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh); window.removeEventListener('protection-recovered', refresh) })
 function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 async function toggleStudy(event: Event) {
-  if ((event.target as HTMLInputElement).checked && !status.value?.supported) return
+  const target = event.target as HTMLInputElement, checked = target.checked
+  target.checked = prefs.value.study
+  if (busy.value || (checked && !status.value?.supported)) return
   busy.value = true; error.value = ''
   try {
-    const checked = (event.target as HTMLInputElement).checked
-    await app.mutate(d => { d.preferences.protection = { ...defaultProtection(), ...d.preferences.protection, study: checked } })
-    await refresh()
-    if (checked && (!status.value?.authorized || !status.value?.connected)) permissionHelp.value = true
+    permissionHelp.value = await enableGate.request(checked, permissionReady())
+    if (!permissionHelp.value) await refresh()
   } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
@@ -58,9 +71,11 @@ async function saveApps(packages: string[]) {
   finally { busy.value = false }
 }
 async function authorize() {
-  busy.value = true
+  if (busy.value) return
+  busy.value = true; error.value = ''
+  enableGate.launch()
   try { await protectionDriver.openSettings(); permissionHelp.value = false }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  catch (e) { cancelEnable(); error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false; await refresh() }
 }
 </script>
@@ -93,12 +108,12 @@ async function authorize() {
       <button class="primary wide" @click="emit('close')">完成</button>
     </div>
   </Sheet>
-  <Sheet :open="permissionHelp" title="无障碍权限用途" @close="permissionHelp = false">
+  <Sheet :open="permissionHelp" title="无障碍权限用途" :close-disabled="busy" @close="cancelEnable">
     <div class="study-stack">
       <p>在系统无障碍设置中开启“小猫专注”，用于识别并限制名单外应用。</p>
       <p class="field-help">不读取其他应用正文。精确防关闭仅识别系统页面中小猫自己的入口，不保存或上传内容。</p>
       <button class="primary wide" :disabled="busy || !status?.supported" @click="authorize">前往系统设置</button>
-      <button class="secondary wide" @click="permissionHelp = false">暂不开启</button>
+      <button class="secondary wide" :disabled="busy" @click="cancelEnable">暂不开启</button>
     </div>
   </Sheet>
   <AppWhitelistEditor :open="editing" title="全局白名单" :packages="prefs.globalWhitelist"

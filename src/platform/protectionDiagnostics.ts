@@ -36,9 +36,10 @@ const withdrawnPhases = ['recovered', 'withdrawn', 'restored', 'released', 'user
 function entryState(row: CapabilityDiagnostic): ProtectionEntryState {
   if (row.recoveryPending && (!row.requested || withdrawnPhases.includes(row.phase))) return 'failed'
   if (withdrawnPhases.includes(row.phase)) return 'off'
-  if (!row.selected && !row.requested) return 'off'
+  if (!row.selected && row.requested !== null && !row.requested) return 'off'
   if (!row.supported || failurePhases.includes(row.phase)) return 'failed'
   if (row.authorized === false || row.connected === false) return row.requested ? 'failed' : 'authorization'
+  if (row.requested === null) return 'failed'
   if (row.active) return 'protecting'
   return 'ready'
 }
@@ -68,7 +69,10 @@ export async function readProtectionDiagnostics(saved: Partial<ProtectionPrefere
     const value = protection.value
     add('applications', '学霸模式与锁机应用限制', preferences.study, {
       supported: value.supported, authorized: value.authorized, connected: value.connected,
-      requested: control.status === 'rejected' ? null : session?.protection?.study === true, active: value.active, phase: value.state, reason: value.reason,
+      requested: control.status === 'rejected' ? null : session?.protection?.study === true, active: value.active, phase: value.state,
+      reason: control.status === 'rejected'
+        ? `${value.reason}（控制状态检查失败，无法确认本轮是否已请求应用限制）`
+        : value.reason,
       settings: 'accessibility', effect: value.active ? '原生应用限制执行器正在运行；具体应用与厂商行为仍以实际设备为准。' : '当前没有执行应用限制。',
     })
     for (const [id, title, key, capability] of [
@@ -122,8 +126,8 @@ export async function readProtectionDiagnostics(saved: Partial<ProtectionPrefere
   if (control.status === 'fulfilled') {
     const main = observation?.mainEntry
     add('mainEntry', '锁机时限制主界面入口', enhanced('lockMainInterfaceRestricted'), {
-      supported: native && !!main, requested: main?.requested, active: main?.active,
-      phase: main?.withdrawn ? 'withdrawn' : observation?.needsReconcile ? 'failed' : main?.active ? 'active' : 'off',
+      supported: native && !!main, requested: !!main?.requested, active: !!main?.active,
+      phase: main?.withdrawn ? 'withdrawn' : main?.requested && observation?.needsReconcile ? 'failed' : main?.active ? 'active' : 'off',
       reason: '仅用于独立锁机。普通启动与业务导航进入控制页；权限、帮助、紧急及故障恢复始终可达。',
       effect: main?.active ? '原生入口策略正在限制业务路由。' : '当前普通入口未受此项限制。',
     })

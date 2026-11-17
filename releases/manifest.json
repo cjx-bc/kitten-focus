@@ -1,26 +1,27 @@
 {
-  "version": "0.2.5",
-  "versionCode": 11,
+  "version": "0.2.6",
+  "versionCode": 12,
   "type": "debug internal testing build",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
-      "name": "xiaomao-focus-0.2.5-debug.apk",
-      "size": 4781785,
-      "sha256": "966a438152794735c32fd4d79def559b8f72013464f9a55ff5a76c0946451d1e"
+      "name": "xiaomao-focus-0.2.6-debug.apk",
+      "size": 4786913,
+      "sha256": "6f560975481e86df43468f6845b640b386bbe22387e13df10548587ea6eb0437"
     }
   ],
-  "sourceArchive": "xiaomao-focus-0.2.5-source.zip",
-  "sourceTag": "v0.2.5",
+  "sourceArchive": "xiaomao-focus-0.2.6-source.zip",
+  "sourceTag": "v0.2.6",
   "verified": {
-    "hostTestsPassed": 66,
+    "hostTestsPassed": 132,
     "frontendBuild": true,
     "androidApkBuild": true,
-    "androidJvmTestsPassed": 1,
     "sameSigningIdentity": true,
-    "browserPages": 9,
-    "browserViewportChecks": 27,
-    "productionDeviceSmoke": false,
+    "qaCoreFinalInstrumentationPassed": 121,
+    "qaStudyInstrumentationPassed": 5,
+    "qaLegacyUiInstrumentationPassed": 5,
+    "qaWebViewE2eScenariosPassed": 6,
+    "qaSoftKeyboardSheetPassed": true,
     "fullDeviceMatrixPassed": false
   },
   "repository": "cjx-bc/kitten-focus",

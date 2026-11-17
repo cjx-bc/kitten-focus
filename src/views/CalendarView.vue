@@ -152,12 +152,13 @@ function newEvent() {
   clearError()
   sheet.value = 'event'
 }
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 function editEvent(o: Occurrence) {
   const event = app.data.events.find((e) => e.id === o.sourceId)
   if (!event) return
   source.value = o
   scope.value = event.repeat === 'weekly' ? 'once' : 'all'
-  Object.assign(eventForm, structuredClone(event))
+  Object.assign(eventForm, clone(event))
   if (eventForm.allDay) eventForm.end = addDays(eventForm.end.slice(0, 10), -1) + 'T23:59'
   if (scope.value === 'once') {
     eventForm.title = o.title
@@ -170,11 +171,12 @@ function editEvent(o: Occurrence) {
 function changeScope() {
   if (!source.value) return
   const event = app.data.events.find((e) => e.id === source.value!.sourceId)
-  if (scope.value === 'all' && event) Object.assign(eventForm, structuredClone(event))
+  if (scope.value === 'all' && event) Object.assign(eventForm, clone(event))
   else {
     eventForm.title = source.value.title
     eventForm.start = source.value.start
     eventForm.end = source.value.end
+    eventForm.allDay = source.value.allDay
   }
   if (eventForm.allDay) eventForm.end = addDays(eventForm.end.slice(0, 10), -1) + 'T23:59'
 }
@@ -213,7 +215,7 @@ function openSemester(semester?: Semester) {
   Object.assign(
     semesterForm,
     semester
-      ? structuredClone(semester)
+      ? clone(semester)
       : {
           id: uid(),
           name: `${new Date().getFullYear()} 学期`,
@@ -226,7 +228,7 @@ function openSemester(semester?: Semester) {
   sheet.value = 'semester'
 }
 async function saveSemester() {
-  await app.saveSemester(JSON.parse(JSON.stringify(semesterForm)) as Semester)
+  await app.saveSemester(clone(semesterForm))
   day.value = semesterForm.startDate
 }
 function openCourse(course?: Course) {
@@ -237,7 +239,7 @@ function openCourse(course?: Course) {
   Object.assign(
     courseForm,
     course
-      ? structuredClone(course)
+      ? clone(course)
       : {
           id: uid(),
           semesterId: currentSemester.value.id,
@@ -271,15 +273,20 @@ function openAdjust() {
   sheet.value = 'adjust'
 }
 async function startFromEvent() {
-  if (!selected.value?.itemId) return
+  if (busy.value || !selected.value?.itemId) return
   const item = app.items.find((i) => i.id === selected.value!.itemId)
   if (!item) return
+  busy.value = true
+  error.value = ''
   try {
     await app.start(item)
     sheet.value = null
     await router.push('/focus')
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    const message = e instanceof Error ? e.message : String(e)
+    if (message !== '已取消开始专注') error.value = message
+  } finally {
+    busy.value = false
   }
 }
 function actualDuration(r: FocusRecord) {
@@ -297,18 +304,17 @@ function timeLabel(o: Occurrence) {
 }
 function coursePosition(o: Occurrence) {
   const periods = currentSemester.value?.periods || [],
-    minutes = (text: string) => Number(text.slice(0, 2)) * 60 + Number(text.slice(3, 5)),
     first = periods.findIndex((p) => o.start.slice(11, 16) <= p.end),
     last = periods.findIndex((p) => o.end.slice(11, 16) <= p.end)
   const column = weekday(o.start.slice(0, 10)),
-    row = first < 0 ? 0 : first,
-    end = last < 0 ? row + 1 : last + 1
-  void minutes
+    row = first < 0 ? Math.max(0, periods.length - 1) : first,
+    end = last < 0 ? Math.max(row + 1, periods.length) : last + 1
   return {
     gridColumn: String(column + 1),
     gridRow: `${row + 2} / span ${Math.max(1, end - row)}`,
     background: o.color + '16',
-    color: o.color,
+    borderLeft: `3px solid ${o.color}`,
+    color: '#222',
   }
 }
 </script>
@@ -330,8 +336,8 @@ function coursePosition(o: Occurrence) {
       </div>
     </header>
     <div class="segmented calendar-tabs">
-      <button :class="{ active: tab === 'schedule' }" @click="tab = 'schedule'">日程</button
-      ><button :class="{ active: tab === 'timetable' }" @click="tab = 'timetable'">课表</button>
+      <button type="button" :class="{ active: tab === 'schedule' }" :aria-pressed="tab === 'schedule'" @click="tab = 'schedule'">日程</button
+      ><button type="button" :class="{ active: tab === 'timetable' }" :aria-pressed="tab === 'timetable'" @click="tab = 'timetable'">课表</button>
     </div>
     <template v-if="tab === 'schedule'"
       ><div class="calendar-month">
@@ -355,7 +361,10 @@ function coursePosition(o: Occurrence) {
         <button
           v-for="date in week"
           :key="date"
+          type="button"
           :class="{ selected: date === day, today: date === dateKey() }"
+          :aria-pressed="date === day"
+          :aria-current="date === dateKey() ? 'date' : undefined"
           @click="day = date"
         >
           <span>{{ weekdayName(date) }}</span><strong class="number">{{
@@ -368,7 +377,10 @@ function coursePosition(o: Occurrence) {
         <span v-for="name in weekdays" :key="name">{{ name.slice(1) }}</span><button
           v-for="date in monthDays"
           :key="date"
+          type="button"
           :class="{ active: date === day, outside: date.slice(0, 7) !== day.slice(0, 7) }"
+          :aria-pressed="date === day"
+          :aria-current="date === dateKey() ? 'date' : undefined"
           @click="selectDay(date)"
         >
           {{ Number(date.slice(8)) }}
@@ -379,8 +391,8 @@ function coursePosition(o: Occurrence) {
           {{ readableDate(day) }} <span>{{ weekdayName(day) }}</span>
         </h2>
         <div class="mini-switch">
-          <button :class="{ active: view === 'plan' }" @click="view = 'plan'">计划</button
-          ><button :class="{ active: view === 'actual' }" @click="view = 'actual'">实际</button>
+          <button type="button" :class="{ active: view === 'plan' }" :aria-pressed="view === 'plan'" @click="view = 'plan'">计划</button
+          ><button type="button" :class="{ active: view === 'actual' }" :aria-pressed="view === 'actual'" @click="view = 'actual'">实际</button>
         </div>
       </div>
       <template v-if="view === 'plan'"
@@ -525,7 +537,7 @@ function coursePosition(o: Occurrence) {
         <button class="primary" @click="openSemester()">设置学期</button>
       </div></template
     >
-    <Sheet v-if="sheet === 'event'" :title="source ? '编辑日程' : '添加日程'" @close="sheet = null"
+    <Sheet v-if="sheet === 'event'" :title="source ? '编辑日程' : '添加日程'" :close-disabled="busy" @close="!busy && (sheet = null)"
       ><form @submit.prevent="execute(saveEvent)">
         <label
           v-if="
@@ -610,7 +622,8 @@ function coursePosition(o: Occurrence) {
     <Sheet
       v-if="sheet === 'detail' && selected"
       :title="selected.kind === 'course' ? '课程详情' : '日程详情'"
-      @close="sheet = null"
+      :close-disabled="busy"
+      @close="!busy && (sheet = null)"
       ><div class="stack">
         <h2>{{ selected.title }}</h2>
         <p class="muted">
@@ -621,29 +634,33 @@ function coursePosition(o: Occurrence) {
           }}
         </p>
         <p v-if="selected.note">{{ selected.note }}</p>
-        <button v-if="selected.itemId" class="primary wide" @click="startFromEvent">
+        <button v-if="selected.itemId" type="button" class="primary wide" :disabled="busy" @click="startFromEvent">
           <Icon name="play" :size="18" />开始关联待办的专注</button
         ><template v-if="selected.kind === 'event'"
-          ><button class="secondary wide" @click="editEvent(selected)">编辑日程</button></template
+          ><button type="button" class="secondary wide" :disabled="busy" @click="editEvent(selected)">编辑日程</button></template
         ><template v-else
-          ><button class="secondary wide" @click="openAdjust">仅本次调课</button
+          ><button type="button" class="secondary wide" :disabled="busy" @click="openAdjust">仅本次调课</button
           ><button
+            type="button"
             class="secondary wide"
+            :disabled="busy"
             @click="openCourse(app.data.courses.find((c) => c.id === selected?.sourceId))"
           >
             编辑整门课程
           </button></template
         >
         <div class="form-footer">
-          <button class="text-button danger" @click="deleteSelected('once')">
+          <button type="button" class="text-button danger" :disabled="busy" @click="deleteSelected('once')">
             {{ selected.kind === 'course' ? '仅本次停课' : '删除本次' }}</button><button
+            type="button"
             class="text-button danger"
+            :disabled="busy"
             @click="deleteSelected('all')"
           >
             删除整组
           </button>
         </div>
-        <p v-if="error" class="form-error">{{ error }}</p>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       </div></Sheet
     >
     <Sheet
@@ -651,7 +668,8 @@ function coursePosition(o: Occurrence) {
       :title="
         app.data.semesters.some((s) => s.id === semesterForm.id) ? '学期与上课时间' : '新建学期'
       "
-      @close="sheet = null"
+      :close-disabled="busy"
+      @close="!busy && (sheet = null)"
       ><form @submit.prevent="execute(saveSemester)">
         <label>学期名称<input v-model="semesterForm.name" required maxlength="80" /></label
         ><label
@@ -716,7 +734,8 @@ function coursePosition(o: Occurrence) {
     <Sheet
       v-if="sheet === 'course'"
       :title="app.data.courses.some((c) => c.id === courseForm.id) ? '编辑课程' : '添加课程'"
-      @close="sheet = null"
+      :close-disabled="busy"
+      @close="!busy && (sheet = null)"
       ><form @submit.prevent="execute(() => app.saveCourse({ ...courseForm }))">
         <label
           >课程名称<input
@@ -786,13 +805,13 @@ function coursePosition(o: Occurrence) {
         <button class="primary wide" :disabled="busy">保存课程</button>
       </form></Sheet
     >
-    <Sheet v-if="sheet === 'adjust' && selected" title="仅本次调课" @close="sheet = null"
+    <Sheet v-if="sheet === 'adjust' && selected" title="仅本次调课" :close-disabled="busy" @close="!busy && (sheet = null)"
       ><form @submit.prevent="execute(() => app.adjustCourse(selected!, adjust.start, adjust.end))">
         <p>{{ selected.title }} · 原安排 {{ selected.sourceDate }}</p>
         <label>新的开始时间<input v-model="adjust.start" type="datetime-local" required /></label
         ><label>新的结束时间<input v-model="adjust.end" type="datetime-local" required /></label>
         <p class="field-help">只修改这一次课程，其他周保持不变。</p>
-        <p v-if="error" class="form-error">{{ error }}</p>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary wide" :disabled="busy">保存本次调课</button>
       </form></Sheet
     >
@@ -810,7 +829,7 @@ function coursePosition(o: Occurrence) {
   margin-bottom: 12px;
 }
 .calendar-month > .row {
-  min-height: 40px;
+  min-height: 44px;
   gap: 7px;
 }
 .week-strip {
@@ -881,7 +900,7 @@ function coursePosition(o: Occurrence) {
   color: white;
 }
 .month-grid .outside {
-  color: #bababe;
+  color: #737378;
 }
 .timeline-header {
   display: flex;
@@ -906,8 +925,9 @@ function coursePosition(o: Occurrence) {
   padding: 3px;
 }
 .mini-switch button {
-  padding: 6px 13px;
-  min-height: 30px;
+  padding: 6px 14px;
+  min-height: 44px;
+  min-width: 44px;
   border-radius: 100px;
   font-size: 11px;
   color: var(--muted);
@@ -1108,7 +1128,7 @@ function coursePosition(o: Occurrence) {
 }
 .weekday-checks label {
   position: relative;
-  min-height: 39px;
+  min-height: 44px;
 }
 .weekday-checks input {
   position: absolute;
@@ -1122,7 +1142,7 @@ function coursePosition(o: Occurrence) {
   place-items: center;
   background: var(--surface);
   border-radius: 10px;
-  min-height: 39px;
+  min-height: 44px;
 }
 .weekday-checks input:checked + span {
   background: var(--ink);

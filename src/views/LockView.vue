@@ -12,9 +12,10 @@ import NotificationSetting from '../components/NotificationSetting.vue'
 import ProtectionStartSummary from '../components/ProtectionStartSummary.vue'
 const app = useApp(), router = useRouter()
 const draft = ref<LockConfiguration | null>(null), whitelistOpen = ref(false)
-const starting = ref<LockConfiguration | null>(null), ending = ref(false), busy = ref(false), error = ref('')
+const starting = ref<LockConfiguration | null>(null), ending = ref(false), busy = ref(false), loadError = ref(''), sheetError = ref('')
 const status = ref<ProtectionStatus | null>(null)
 const mainEntry = ref<ControlSnapshot['mainEntry']>()
+let readRevision = 0
 const configurations = computed(() => app.data.lockConfigurations ?? [])
 const session = computed(() => app.lock.session)
 const result = computed(() => app.lock.records[0])
@@ -42,15 +43,16 @@ function toggleEnhancement(key: string, event: Event) {
   if ((event.target as HTMLInputElement).checked) draft.value.enhancements.push(key)
 }
 function edit(configuration?: LockConfiguration) {
-  error.value = ''
+  sheetError.value = ''
   draft.value = configuration ? JSON.parse(JSON.stringify(configuration)) as LockConfiguration : { id: uid(), name: '', minutes: 25, strict: false, whitelist: { source: 'global' } }
 }
 async function save() {
   if (!draft.value) return
   const configuration = JSON.parse(JSON.stringify(draft.value)) as LockConfiguration
-  if (!configuration.name.trim()) { error.value = '请填写锁机名称'; return }
-  if (!Number.isSafeInteger(configuration.minutes) || configuration.minutes < 1 || configuration.minutes > 1440) { error.value = '时长需要是 1–1440 之间的整数分钟'; return }
+  if (!configuration.name.trim()) { sheetError.value = '请填写锁机名称'; return }
+  if (!Number.isSafeInteger(configuration.minutes) || configuration.minutes < 1 || configuration.minutes > 1440) { sheetError.value = '时长需要是 1–1440 之间的整数分钟'; return }
   busy.value = true
+  sheetError.value = ''
   try {
     await app.mutate(d => {
       const rows = d.lockConfigurations ??= []
@@ -58,28 +60,67 @@ async function save() {
       if (index < 0) rows.push(configuration); else rows[index] = configuration
     })
     draft.value = null
-  } catch (e) { error.value = String(e) } finally { busy.value = false }
+    sheetError.value = ''
+  } catch (e) { sheetError.value = e instanceof Error ? e.message : String(e) } finally { busy.value = false }
 }
-async function refresh() { try { status.value = await protectionDriver.status(); mainEntry.value = (await controlDriver.observe()).mainEntry } catch (e) { status.value = null; mainEntry.value = undefined; error.value = String(e) } }
-async function prepare(configuration: LockConfiguration) { if (!status.value?.supported || busy.value) return; error.value = ''; starting.value = configuration; await refresh() }
+async function refresh() {
+  const revision = ++readRevision
+  try {
+    const [nextStatus, snapshot] = await Promise.all([protectionDriver.status(), controlDriver.observe()])
+    if (revision !== readRevision) return
+    status.value = nextStatus
+    mainEntry.value = snapshot.mainEntry
+    loadError.value = ''
+  } catch (e) {
+    if (revision === readRevision) {
+      status.value = null
+      mainEntry.value = undefined
+      loadError.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+}
+async function prepare(configuration: LockConfiguration) { if (!status.value?.supported || busy.value) return; sheetError.value = ''; starting.value = configuration; await refresh() }
 async function start() {
   if (!starting.value || busy.value || !status.value?.supported) return
   busy.value = true
-  try { await app.startLock(starting.value.id, starting.value.strict === true); starting.value = null; await refresh() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  sheetError.value = ''
+  try { await app.startLock(starting.value.id, starting.value.strict === true); starting.value = null; sheetError.value = ''; await refresh() }
+  catch (e) { sheetError.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
 async function finish() {
   busy.value = true
-  try { await app.finishLock(true); ending.value = false; await refresh() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  sheetError.value = ''
+  try { await app.finishLock(true); ending.value = false; sheetError.value = ''; await refresh() }
+  catch (e) { sheetError.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
+function closeDraft() { if (!busy.value) { draft.value = null; sheetError.value = '' } }
+function closeStarting() { if (!busy.value) { starting.value = null; sheetError.value = '' } }
+function closeEnding() { if (!busy.value) { ending.value = false; sheetError.value = '' } }
 function recovery() { window.dispatchEvent(new Event('open-recovery')) }
-async function settings() { await protectionDriver.openSettings(); await refresh() }
+async function settings() {
+  if (busy.value) return
+  busy.value = true
+  sheetError.value = ''
+  try { await protectionDriver.openSettings(); await refresh() }
+  catch (e) { sheetError.value = e instanceof Error ? e.message : String(e) }
+  finally { busy.value = false }
+}
+function visible() { if (!document.hidden) void refresh() }
 let statusTimer: ReturnType<typeof setInterval> | undefined
-onMounted(() => { void refresh(); statusTimer = setInterval(() => void refresh(), 2000) })
-onUnmounted(() => clearInterval(statusTimer))
+onMounted(() => {
+  void refresh()
+  statusTimer = setInterval(visible, 2000)
+  document.addEventListener('visibilitychange', visible)
+  window.addEventListener('focus', visible)
+})
+onUnmounted(() => {
+  readRevision++
+  clearInterval(statusTimer)
+  document.removeEventListener('visibilitychange', visible)
+  window.removeEventListener('focus', visible)
+})
 </script>
 <template>
   <div class="page lock-page">
@@ -87,7 +128,7 @@ onUnmounted(() => clearInterval(statusTimer))
     <template v-if="session">
       <div class="lock-center"><p class="muted">{{ session.strictMode ? '严格锁机进行中' : '普通锁机进行中' }}</p><div class="focus-clock number" :class="{ 'long-clock': app.lock.remainingMs >= 3600000 }">{{ timer(app.lock.remainingMs) }}</div><h2>{{ session.title }}</h2><p role="status">{{ status?.reason || '正在检查保护状态' }}</p><p class="muted">本轮名单已固定 · {{ session.protection.source === 'custom' ? '独立白名单' : '跟随全局' }} · 允许 {{ session.protection.whitelist.length }} 个应用</p></div>
       <p role="status">主界面入口：{{ mainEntry?.withdrawn ? '本轮已恢复普通入口' : mainEntry?.active ? '本轮只进入锁机控制' : '本轮未限制' }}</p>
-      <p v-if="session.strictMode" class="notice">严格锁机不能暂停、取消或提前解除；到期自动结束。帮助与故障恢复仍可进入，恢复后本轮严格计时继续。</p><button v-else class="secondary wide" @click="ending = true; error = ''">提前解除</button>
+      <p v-if="session.strictMode" class="notice">严格锁机不能暂停、取消或提前解除；到期自动结束。帮助与故障恢复仍可进入，恢复后本轮严格计时继续。</p><button v-else class="secondary wide" @click="ending = true; sheetError = ''">提前解除</button>
     </template>
     <template v-else>
       <p class="muted">不创建待办，也能把手机留给必要的事。锁机不会计入专注统计，结束后不会自动休息。</p>
@@ -102,11 +143,11 @@ onUnmounted(() => clearInterval(statusTimer))
     <NotificationSetting runtime-only />
     <div class="lock-help"><button class="text-button" @click="refresh">重新检查保护</button><button class="text-button" @click="recovery">帮助与故障恢复</button></div>
     <div class="lock-help"><RouterLink to="/permissions">权限与保护状态</RouterLink><RouterLink to="/help">离线保护帮助</RouterLink><RouterLink to="/emergency">紧急与必要交互</RouterLink><RouterLink to="/recovery">故障恢复入口</RouterLink></div>
-    <p v-if="error && !draft && !starting && !ending" role="alert" class="form-error">{{ error }}</p>
-    <Sheet :open="!!draft" title="锁机配置" :close-disabled="busy" @close="!busy && (draft = null)"><form v-if="draft" @submit.prevent="save"><label>锁机名称<input v-model.trim="draft.name" maxlength="80" required /></label><label>锁机时长（分钟）<input v-model.number="draft.minutes" type="number" min="1" max="1440" required /></label><label class="switch"><span>使用独立白名单</span><input type="checkbox" :checked="draft.whitelist.source === 'custom'" @change="draft.whitelist = ($event.target as HTMLInputElement).checked ? { source: 'custom', packages: [...(app.data.preferences.protection?.globalWhitelist ?? [])] } : { source: 'global' }" /></label><template v-if="draft.whitelist.source === 'custom'"><button type="button" class="secondary wide" :disabled="busy || !status?.supported" @click="whitelistOpen = true">编辑独立白名单 · {{ draft.whitelist.packages.length }} 个应用</button><p class="muted">独立名单会替代全局名单。</p></template><p v-else class="muted">开始时使用全局名单。</p><label class="switch"><span>严格锁机</span><input v-model="draft.strict" type="checkbox" /></label><p class="muted">严格锁机开始后无法提前解除。</p><label class="switch"><span>使用独立增强选项</span><input type="checkbox" :checked="draft.enhancements !== undefined" @change="independentEnhancements" /></label><template v-if="draft.enhancements !== undefined"><label v-for="option in enhancementOptions" :key="option.key" class="switch"><span>{{ option.title }}</span><input type="checkbox" :checked="draft.enhancements.includes(option.key)" @change="toggleEnhancement(option.key, $event)" /></label><p class="muted">独立增强选项替代全局设置。</p></template><p v-else class="muted">使用全局增强设置。</p><RouterLink class="secondary wide" to="/help">查看保护说明</RouterLink><p v-if="error" role="alert" class="form-error">{{ error }}</p><button class="primary wide" :disabled="busy">保存配置</button></form></Sheet>
+    <p v-if="loadError" role="alert" class="form-error">{{ loadError }}</p>
+    <Sheet :open="!!draft" title="锁机配置" :close-disabled="busy" @close="closeDraft"><form v-if="draft" @submit.prevent="save"><label>锁机名称<input v-model.trim="draft.name" maxlength="80" required /></label><label>锁机时长（分钟）<input v-model.number="draft.minutes" type="number" min="1" max="1440" required /></label><label class="switch"><span>使用独立白名单</span><input type="checkbox" :checked="draft.whitelist.source === 'custom'" @change="draft.whitelist = ($event.target as HTMLInputElement).checked ? { source: 'custom', packages: [...(app.data.preferences.protection?.globalWhitelist ?? [])] } : { source: 'global' }" /></label><template v-if="draft.whitelist.source === 'custom'"><button type="button" class="secondary wide" :disabled="busy || !status?.supported" @click="whitelistOpen = true">编辑独立白名单 · {{ draft.whitelist.packages.length }} 个应用</button><p class="muted">独立名单会替代全局名单。</p></template><p v-else class="muted">开始时使用全局名单。</p><label class="switch"><span>严格锁机</span><input v-model="draft.strict" type="checkbox" /></label><p class="muted">严格锁机开始后无法提前解除。</p><label class="switch"><span>使用独立增强选项</span><input type="checkbox" :checked="draft.enhancements !== undefined" @change="independentEnhancements" /></label><template v-if="draft.enhancements !== undefined"><label v-for="option in enhancementOptions" :key="option.key" class="switch"><span>{{ option.title }}</span><input type="checkbox" :checked="draft.enhancements.includes(option.key)" @change="toggleEnhancement(option.key, $event)" /></label><p class="muted">独立增强选项替代全局设置。</p></template><p v-else class="muted">使用全局增强设置。</p><RouterLink class="secondary wide" to="/help">查看保护说明</RouterLink><p v-if="sheetError" role="alert" class="form-error">{{ sheetError }}</p><button class="primary wide" :disabled="busy">保存配置</button></form></Sheet>
     <AppWhitelistEditor :open="whitelistOpen" title="锁机独立白名单" :packages="selectedPackages" @close="whitelistOpen = false" @confirm="draft && (draft.whitelist = { source: 'custom', packages: $event }); whitelistOpen = false" />
-    <Sheet :open="!!starting" :title="starting?.strict ? '开始严格锁机' : '开始普通锁机'" :close-disabled="busy" @close="!busy && (starting = null)"><p>{{ starting?.name }} · {{ starting?.minutes }} 分钟</p><p>仅允许白名单应用，保留电话与必要系统功能。</p><p>{{ starting?.whitelist.source === 'custom' ? '独立白名单' : '跟随全局白名单' }} · {{ startCount }} 个应用</p><p role="status">{{ status?.authorized && status?.connected ? '权限已就绪' : status?.reason }}</p><ProtectionStartSummary v-if="starting" :preferences="startPreferences" lock @settings="starting = null" /><p v-if="starting?.strict" class="notice">开始后无法提前解除，故障恢复也不会结束计时。</p><p v-else>可提前解除。</p><p v-if="error" class="form-error" role="alert">{{ error }}</p><button class="primary wide" :disabled="busy || !status?.supported || !status?.authorized || !status?.connected" @click="start">确认开始锁机</button><button v-if="status?.supported && (!status.authorized || !status.connected)" class="secondary wide" @click="settings">前往无障碍授权</button><button class="secondary wide" :disabled="busy" @click="starting = null">暂不开始</button></Sheet>
-    <Sheet :open="ending" title="提前解除本轮锁机？" :close-disabled="busy" @close="!busy && (ending = false)"><p>解除应用限制，锁机记录保留。</p><p v-if="error" class="form-error" role="alert">{{ error }}</p><button class="primary wide" :disabled="busy" @click="finish">确认解除</button><button class="secondary wide" :disabled="busy" @click="ending = false">继续锁机</button></Sheet>
+    <Sheet :open="!!starting" :title="starting?.strict ? '开始严格锁机' : '开始普通锁机'" :close-disabled="busy" @close="closeStarting"><div v-if="starting" class="stack"><p>{{ starting.name }} · {{ starting.minutes }} 分钟</p><p>仅允许白名单应用，保留电话与必要系统功能。</p><p>{{ starting.whitelist.source === 'custom' ? '独立白名单' : '跟随全局白名单' }} · {{ startCount }} 个应用</p><p role="status">{{ status?.authorized && status?.connected ? '权限已就绪' : status?.reason }}</p><ProtectionStartSummary :preferences="startPreferences" lock @settings="closeStarting" /><p v-if="starting.strict" class="notice">开始后无法提前解除，故障恢复也不会结束计时。</p><p v-else>可提前解除。</p><p v-if="sheetError" class="form-error" role="alert">{{ sheetError }}</p><button type="button" class="primary wide" :disabled="busy || !status?.supported || !status?.authorized || !status?.connected" @click="start">确认开始锁机</button><button v-if="status?.supported && (!status.authorized || !status.connected)" type="button" class="secondary wide" :disabled="busy" @click="settings">前往无障碍授权</button><button type="button" class="secondary wide" :disabled="busy" @click="closeStarting">暂不开始</button></div></Sheet>
+    <Sheet :open="ending" title="提前解除本轮锁机？" :close-disabled="busy" @close="closeEnding"><div class="stack"><p>解除应用限制，锁机记录保留。</p><p v-if="sheetError" class="form-error" role="alert">{{ sheetError }}</p><button type="button" class="primary wide" :disabled="busy" @click="finish">确认解除</button><button type="button" class="secondary wide" :disabled="busy" @click="closeEnding">继续锁机</button></div></Sheet>
   </div>
 </template>
 <style scoped>

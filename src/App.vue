@@ -11,10 +11,22 @@ import { createTabSwipe } from './navigation/tabSwipe'
 import { useUpdates } from './stores/updates'
 const app = useApp(),
   recoveryOpen = ref(false),
+  toastEl = ref<HTMLElement | null>(null),
   updates = useUpdates(),
   route = useRoute(),
   router = useRouter(),
   full = computed(() => ['/focus', '/rest', '/lock', '/permissions', '/help', '/emergency', '/recovery'].includes(route.path))
+function showToastPopover() {
+  const el = toastEl.value
+  if (!el || !app.toast) return
+  try {
+    if (el.matches?.(':popover-open')) el.hidePopover?.()
+  } catch {}
+  try {
+    el.showPopover?.()
+  } catch {}
+}
+watch([toastEl, () => app.toast], showToastPopover, { flush: 'post' })
 watch(() => app.lock.session?.id, async id => {
   if (!id) return
   const destination = await resolveMainEntry(route.path)
@@ -41,7 +53,10 @@ onMounted(async () => {
   window.addEventListener('recovery-return-request', async () => {
     if (await consumeRecoveryReturn()) recoveryOpen.value = true
   })
-  window.addEventListener('focus-return-request', () => void router.replace(app.lock.session ? '/lock' : '/focus'))
+  window.addEventListener('focus-return-request', async () => {
+    await consumeFocusReturn()
+    void router.replace(app.lock.session ? '/lock' : '/focus')
+  })
   window.addEventListener('lock-return-request', async () => { await consumeLockReturn(); void router.replace('/lock') })
   await app.init()
   if (await consumeFocusReturn()) {
@@ -104,7 +119,23 @@ onMounted(async () => {
             aria-hidden="true"
         /></RouterLink></nav></template
     ><StrictStartConfirmation /><RecoverySheet :open="recoveryOpen" @close="recoveryOpen = false" /><Transition name="toast"
-      ><div v-if="app.toast" class="toast" role="status">{{ app.toast }}</div></Transition
+      ><div v-if="app.toast" ref="toastEl" popover="manual" class="toast" role="status">{{ app.toast }}</div></Transition
     >
   </div>
 </template>
+<style scoped>
+.toast[popover] {
+  inset: auto auto 110px 50%;
+  margin: 0;
+  border: 0;
+  padding: 12px 20px;
+  width: max-content;
+  max-width: min(85%, 430px);
+  overflow: visible;
+  color: white;
+  background: #222f;
+}
+.toast[popover]::backdrop {
+  display: none;
+}
+</style>

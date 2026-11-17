@@ -10,7 +10,12 @@ const app = useApp(),
   error = ref('')
 const enabled = computed(() => app.data.preferences.protection?.strict === true)
 async function change(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
+  const target = event.target as HTMLInputElement
+  const checked = target.checked
+  if (busy.value) {
+    target.checked = enabled.value
+    return
+  }
   busy.value = true
   error.value = ''
   try {
@@ -19,6 +24,7 @@ async function change(event: Event) {
       data.preferences.protection.strict = checked
     })
   } catch (failure) {
+    target.checked = enabled.value
     error.value = failure instanceof Error ? failure.message : String(failure)
   } finally {
     busy.value = false
@@ -26,13 +32,13 @@ async function change(event: Event) {
 }
 </script>
 <template>
-  <button class="strict-setting" @click="open = true">
+  <button type="button" class="strict-setting" @click="open = true; error = ''">
     <span class="row"><Icon name="clock" :size="20" />严格模式</span>
     <span class="row strict-value"
       >{{ enabled ? '已开启' : '未开启' }}<Icon name="right" :size="16"
     /></span>
   </button>
-  <Sheet v-if="open" title="严格模式" @close="open = false">
+  <Sheet :open="open" title="严格模式" :close-disabled="busy" @close="!busy && (open = false)">
     <div class="stack">
       <label class="switch"
         ><span>严格倒计时</span
@@ -41,7 +47,7 @@ async function change(event: Event) {
       <p class="field-help">倒计时开始后不可暂停或提前结束。正计时不受影响。</p>
       <p v-if="app.focus.session" class="field-help">当前专注规则已固定，修改只影响下一轮。</p>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-      <button class="primary wide" @click="open = false">知道了</button>
+      <button type="button" class="primary wide" :disabled="busy" @click="open = false">知道了</button>
     </div>
   </Sheet>
 </template>

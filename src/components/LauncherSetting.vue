@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { capabilityToggleDisabled } from '../domain/protectionDisplay'
 import InfoHint from './InfoHint.vue'
+import Sheet from './Sheet.vue'
+import { usePendingEnable } from './usePendingEnable'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
@@ -9,11 +11,21 @@ import { protectionDriver, requestNotifications } from '../platform/bridge'
 const app = useApp(), option = 'launcherIconHidden'
 const selected = computed(() => app.data.preferences.protection?.enhancements?.includes(option) ?? false)
 const status = ref<LauncherStatus>(), busy = ref(false), error = ref('')
+const permissionOpen = ref(false)
+let readRevision = 0
+const enableGate = usePendingEnable(saveSelected, refresh)
+const permissionReady = () => !!(status.value?.supported && status.value.recoveryAvailable)
+function cancelEnable() { enableGate.cancel(); permissionOpen.value = false }
 const labels = { off: '未开启', ready: '等待执行', active: '本轮启动入口已停用', failed: '保护失效', restoration_failed: '恢复失败，可重试', withdrawn: '本轮已撤销', restored: '原启动入口状态已恢复', unsupported: '本机不支持' }
 let timer: ReturnType<typeof setInterval> | undefined
 async function refresh() {
-  try { status.value = await protectionDriver.launcher() }
-  catch (e) { status.value = undefined; error.value = e instanceof Error ? e.message : String(e) }
+  const revision = ++readRevision
+  try {
+    const value = await protectionDriver.launcher()
+    if (revision !== readRevision) return
+    status.value = value
+    if (await enableGate.observe(permissionReady(), value.recoveryAvailable)) await refresh()
+  } catch (e) { if (revision === readRevision) { status.value = undefined; error.value = e instanceof Error ? e.message : String(e) } }
 }
 function visible() { if (!document.hidden) void refresh() }
 onMounted(() => {
@@ -21,28 +33,40 @@ onMounted(() => {
   document.addEventListener('visibilitychange', visible); window.addEventListener('focus', visible); window.addEventListener('protection-recovered', visible)
 })
 onBeforeUnmount(() => {
+  readRevision++
   if (timer) clearInterval(timer)
   document.removeEventListener('visibilitychange', visible); window.removeEventListener('focus', visible); window.removeEventListener('protection-recovered', visible)
 })
-async function toggle(event: Event) {
-  busy.value = true; error.value = ''
+async function saveSelected(checked: boolean) {
+  const wasBusy = busy.value
+  busy.value = true
   try {
-    const checked = (event.target as HTMLInputElement).checked
-    if (checked && !status.value?.supported) return
     await app.mutate(data => {
       const protection = { ...defaultProtection(), ...data.preferences.protection }
       protection.enhancements = (protection.enhancements ?? []).filter(value => value !== option)
       if (checked) protection.enhancements.push(option)
       data.preferences.protection = protection
     })
-    await refresh(); app.notify('增强选项已保存，将在下一轮开始时生效')
-  } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+    app.notify('增强选项已保存，将在下一轮开始时生效')
+  } finally { if (!wasBusy) busy.value = false }
+}
+async function toggle(event: Event) {
+  const target = event.target as HTMLInputElement, checked = target.checked
+  target.checked = selected.value
+  if (busy.value || (checked && !status.value?.supported)) return
+  busy.value = true; error.value = ''
+  try { permissionOpen.value = await enableGate.request(checked, permissionReady()); if (!permissionOpen.value) await refresh() }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
 async function authorize() {
+  if (busy.value) return
   busy.value = true; error.value = ''
-  try { await requestNotifications(); await refresh() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  enableGate.launch()
+  try {
+    await requestNotifications(); permissionOpen.value = false; await refresh()
+    if (!permissionReady()) enableGate.cancel()
+  } catch (e) { cancelEnable(); error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
 function recover() { window.dispatchEvent(new Event('open-recovery')) }
@@ -69,6 +93,7 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
     <button v-if="status?.recoveryPending || status?.requested" class="secondary wide" :disabled="busy" @click="recover">查看本轮恢复项目</button>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
   </div>
+  <Sheet :open="permissionOpen" title="开启控制通知" :close-disabled="busy" @close="cancelEnable"><div class="stack"><p>隐藏后需要从小猫控制通知返回应用，请允许通知。</p><button class="primary" :disabled="busy" @click="authorize">允许通知</button><button class="secondary" :disabled="busy" @click="cancelEnable">暂不开启</button></div></Sheet>
 </template>
 <style scoped>
 .launcher-setting { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 18px; }

@@ -1,5 +1,6 @@
 package com.xiaomao.focus;
 
+import android.app.Activity;
 import android.content.Intent;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -42,11 +43,20 @@ public class AppUpdatesPlugin extends Plugin {
         worker.execute(() -> {
             try {
                 Intent intent = manager.installerIntent();
-                getActivity().runOnUiThread(() -> {
+                Activity activity = getActivity();
+                if (activity == null) {
+                    call.reject("当前页面已关闭，请重新进入后再安装更新");
+                    return;
+                }
+                activity.runOnUiThread(() -> {
                     try {
                         if (LocalStore.get(getContext()).read("active") != null)
                             throw new IllegalStateException("请先结束当前专注，再安装更新");
-                        getActivity().startActivity(intent); call.resolve();
+                        if (activity.isFinishing() || activity.isDestroyed()) {
+                            call.reject("当前页面已关闭，请重新进入后再安装更新");
+                            return;
+                        }
+                        activity.startActivity(intent); call.resolve();
                     }
                     catch (Exception error) { call.reject("无法打开系统安装界面，请重试", error); }
                 });

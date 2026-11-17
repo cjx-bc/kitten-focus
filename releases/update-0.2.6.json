@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 12,
+    "versionName": "0.2.6",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.6/xiaomao-focus-0.2.6-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.6/xiaomao-focus-0.2.6-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.6-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.6/xiaomao-focus-0.2.6-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.6-debug.apk"
+    ],
+    "size": 4786913,
+    "sha256": "6f560975481e86df43468f6845b640b386bbe22387e13df10548587ea6eb0437",
+    "notes": "全面排查并修复待办、日历课表、统计、专注及锁机流程问题；修正权限授权等待状态机、Top-layer 弹窗 Toast 定位与保护帮助页标题对齐；统一安卓端导航控制时钟同步、升级备份清理与壁纸确认关闭流程，并在 Android 16 / API 36 模拟器完成原生与 WebView 端到端实测。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

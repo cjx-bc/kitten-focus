@@ -75,6 +75,10 @@
     </application>
 
     <queries>
+        <package android:name="com.android.permissioncontroller" />
+        <package android:name="com.google.android.permissioncontroller" />
+        <package android:name="com.android.packageinstaller" />
+        <package android:name="com.google.android.packageinstaller" />
         <intent><action android:name="android.service.wallpaper.WallpaperService" /></intent>
         <intent><action android:name="android.service.wallpaper.CHANGE_LIVE_WALLPAPER" /></intent>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /></intent>

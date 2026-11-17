@@ -51,6 +51,7 @@ async function execute(action: () => Promise<unknown>) {
   }
 }
 function close() {
+  if (busy.value) return
   panel.value = null
   error.value = ''
   meteredConfirm.value = false
@@ -129,7 +130,7 @@ async function restoreRecovery() {
       <Icon name="right" :size="16" />
     </button>
   </template>
-  <Sheet v-if="panel === 'update'" title="应用更新" @close="close">
+  <Sheet v-if="panel === 'update'" title="应用更新" :close-disabled="busy" @close="close">
     <div class="stack update-content">
       <div class="update-heading">
         <span class="update-mark"><Icon name="cat" :size="32" /></span>
@@ -197,7 +198,7 @@ async function restoreRecovery() {
       </button>
     </div>
   </Sheet>
-  <Sheet v-if="panel === 'backups'" title="升级恢复副本" @close="close">
+  <Sheet v-if="panel === 'backups'" title="升级恢复副本" :close-disabled="busy" @close="close">
     <div class="stack">
       <template v-if="restoreTarget">
         <p>

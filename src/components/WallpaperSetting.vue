@@ -11,19 +11,36 @@ const app = useApp(), option = 'wallpaperProtection'
 const selected = computed(() => app.data.preferences.protection?.enhancements?.includes(option) ?? false)
 const status = ref<WallpaperStatus>(), busy = ref(false), error = ref(''), consentOpen = ref(false)
 const limitsAccepted = ref(false), originalMatches = ref(false)
+const pendingEnable = ref(false)
 const labels: Record<string, string> = { off: '未开启', baseline_ready: '原状态已保存，等待下一轮', requested: '已请求，等待系统确认',
   picker_preview: '正在预览，尚未选择',
   active: '本轮主屏壁纸已选择', declined: '系统未选择，本轮已撤销', recovery_pending: '原状态恢复待确认',
   restoration_failed: '恢复失败，可重试', failed: '状态检查失败', restored: '原壁纸已恢复，请核对显示',
   user_choice_preserved: '已保留后续选择', unsupported: '本机不支持' }
 let timer: ReturnType<typeof setInterval> | undefined
-async function refresh() { try { status.value = await protectionDriver.wallpaper() } catch (e) { status.value = undefined; error.value = String(e) } }
+let readRevision = 0
+async function refresh() {
+  const revision = ++readRevision
+  try {
+    const value = await protectionDriver.wallpaper()
+    if (revision !== readRevision) return false
+    status.value = value
+    return true
+  } catch (e) {
+    if (revision === readRevision) {
+      status.value = undefined
+      error.value = e instanceof Error ? e.message : String(e)
+    }
+    return false
+  }
+}
 function visible() { if (!document.hidden) void refresh() }
 onMounted(() => {
   void refresh(); timer = setInterval(visible, 2000)
   document.addEventListener('visibilitychange', visible); window.addEventListener('focus', visible); window.addEventListener('protection-recovered', visible)
 })
 onBeforeUnmount(() => {
+  readRevision++
   if (timer) clearInterval(timer)
   document.removeEventListener('visibilitychange', visible); window.removeEventListener('focus', visible); window.removeEventListener('protection-recovered', visible)
 })
@@ -34,8 +51,12 @@ async function perform(action: () => Promise<unknown>) {
   finally { busy.value = false }
 }
 async function toggle(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  if (checked && !status.value?.supported) return
+  const target = event.target as HTMLInputElement, checked = target.checked
+  target.checked = selected.value
+  if (busy.value || (checked && !status.value?.supported)) return
+  error.value = ''
+  if (checked && !status.value?.prepared) { pendingEnable.value = true; showConsent(); return }
+  pendingEnable.value = false
   await perform(async () => {
     await app.mutate(data => {
       const protection = { ...defaultProtection(), ...data.preferences.protection }
@@ -43,13 +64,25 @@ async function toggle(event: Event) {
       if (checked) protection.enhancements.push(option)
       data.preferences.protection = protection
     })
-    app.notify('壁纸偏好已保存，将用于下一轮；还需保存可恢复原状态及系统确认')
+    app.notify(checked ? '壁纸偏好已保存，将用于下一轮；还需保存可恢复原状态及系统确认' : '壁纸偏好已关闭，将用于下一轮')
   })
 }
-function showConsent() { limitsAccepted.value = false; originalMatches.value = false; consentOpen.value = true }
+function showConsent() { error.value = ''; limitsAccepted.value = false; originalMatches.value = false; consentOpen.value = true }
+function cancelEnable() { error.value = ''; pendingEnable.value = false; consentOpen.value = false }
 async function prepare() {
+  if (busy.value || !limitsAccepted.value || !originalMatches.value) return
   await perform(async () => {
     await protectionDriver.prepareWallpaper(limitsAccepted.value, originalMatches.value)
+    if (!(await refresh())) throw new Error(error.value || '状态检查失败')
+    if (pendingEnable.value) {
+      if (!status.value?.prepared) throw new Error('原状态未保存，壁纸辅助保持关闭')
+      await app.mutate(data => {
+        const protection = { ...defaultProtection(), ...data.preferences.protection }
+        protection.enhancements = [...new Set([...protection.enhancements, option])]
+        data.preferences.protection = protection
+      })
+      pendingEnable.value = false
+    }
     consentOpen.value = false; app.notify('本轮原状态已保存；开始后仍需 Android 确认')
   })
 }
@@ -79,16 +112,17 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
     <button v-if="['requested', 'picker_preview'].includes(status?.phase ?? '') && status?.requested" class="secondary wide" :disabled="busy" @click="perform(() => protectionDriver.wallpaperPicker())">打开 Android 壁纸确认</button>
     <button v-if="status?.recoveryPending || status?.requested" class="secondary wide" :disabled="busy" @click="recover">查看壁纸恢复责任</button>
     <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-    <Sheet :open="consentOpen" title="保存本轮原壁纸" @close="consentOpen = false">
+    <Sheet :open="consentOpen" title="保存本轮原壁纸" :close-disabled="busy" @close="cancelEnable">
       <div class="wallpaper-consent">
         <p>保存原壁纸后，下轮开始时由你在系统中确认更换。</p>
         <p>恢复动态壁纸需要再次确认；裁剪和个性设置可能无法还原。</p>
         <p>请提供与当前主屏、锁屏对应的原图，恢复后核对显示。</p>
+        <template v-if="pendingEnable"><button class="secondary wide" :disabled="busy" @click="perform(() => protectionDriver.importWallpaperOriginal(false))">提供当前主屏原图</button><button class="secondary wide" :disabled="busy" @click="perform(() => protectionDriver.importWallpaperOriginal(true))">提供独立锁屏原图（如有）</button></template>
         <label><input v-model="originalMatches" type="checkbox" /> 原图与当前壁纸一致，已保留必要设置</label>
         <label><input v-model="limitsAccepted" type="checkbox" /> 了解恢复限制，且此功能不保证防强停</label>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary wide" :disabled="busy || !originalMatches || !limitsAccepted" @click="prepare">确认保存原状态</button>
-        <button class="secondary wide" :disabled="busy" @click="consentOpen = false">取消，保持现状</button>
+        <button class="secondary wide" :disabled="busy" @click="cancelEnable">取消，保持现状</button>
       </div>
     </Sheet>
   </div>

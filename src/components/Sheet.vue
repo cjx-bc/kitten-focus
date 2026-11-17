@@ -12,7 +12,12 @@ watch(
       returnFocus.set(element, document.activeElement)
     document.documentElement.classList.add('sheet-open')
     element.showModal()
-    element.focus({ preventScroll: true })
+    const auto = element.querySelector<HTMLElement>('[autofocus]')
+    if (auto) {
+      if (document.activeElement !== auto) auto.focus({ preventScroll: true })
+    } else if (!element.contains(document.activeElement)) {
+      element.focus({ preventScroll: true })
+    }
   },
   { flush: 'post' },
 )
@@ -36,7 +41,6 @@ onBeforeUnmount(() => releaseDialog(dialog.value))
       class="sheet"
       tabindex="-1"
       :aria-label="title"
-      autofocus
       @cancel.prevent="!closeDisabled && emit('close')"
       @click="
         (e) => {

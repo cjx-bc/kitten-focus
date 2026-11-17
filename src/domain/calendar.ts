@@ -1,5 +1,5 @@
 import type { AppData, CalendarEvent, Course, Occurrence } from './model'
-import { addDays, dayDistance, localDate, weekday } from './dates'
+import { addDays, dateKey, dayDistance, localDate, weekday } from './dates'
 const overlaps = (start: string, end: string, from: string, to: string) =>
   start < `${addDays(to, 1)}T00:00` && end > `${from}T00:00`
 function eventOccurrence(event: CalendarEvent, date: string): Occurrence {
@@ -139,6 +139,13 @@ export function validateEvent(event: CalendarEvent) {
   )
     throw new Error('结束时间需要晚于开始时间')
   if (event.repeat === 'weekly' && !event.weekdays.length) throw new Error('请选择重复的星期')
+  if (
+    event.until &&
+    (!/^\d{4}-\d{2}-\d{2}$/.test(event.until) ||
+      !Number.isFinite(localDate(event.until).getTime()) ||
+      dateKey(localDate(event.until)) !== event.until)
+  )
+    throw new Error('重复截止日期不正确')
   if (event.until && localDate(event.until) < localDate(event.start.slice(0, 10)))
     throw new Error('重复截止日期不能早于开始日期')
 }

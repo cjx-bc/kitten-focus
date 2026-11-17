@@ -49,7 +49,7 @@ function confirm() {
 <template>
   <Sheet :open="open" :title="title" :close-disabled="saving" @close="!saving && emit('close')">
     <form @submit.prevent="confirm">
-      <label>搜索应用<input v-model="query" type="search" placeholder="名称或包名" /></label>
+      <label>搜索应用<input v-model="query" type="search" placeholder="名称或包名" @keydown.enter.prevent /></label>
       <label class="switch"><span>显示系统应用</span><input v-model="showSystem" type="checkbox" /></label>
       <p role="status">{{ loading ? '正在读取应用' : `已选 ${count} 个应用` }}</p>
       <div class="app-choices">

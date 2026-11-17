@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useApp } from '../stores/app'
 import { statistics } from '../domain/statistics'
 import {
@@ -32,7 +32,19 @@ const periods = [
   ['year', '年'],
   ['all', '累计'],
 ]
-const range = computed(() => periodRange(period.value, anchor.value)),
+function isValidDateKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = localDate(value)
+  return !Number.isNaN(parsed.getTime()) && dateKey(parsed) === value
+}
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!)
+}
+const safeAnchor = computed(() => (isValidDateKey(anchor.value) ? anchor.value : dateKey()))
+watch(anchor, (value) => {
+  if (!isValidDateKey(value)) anchor.value = dateKey()
+})
+const range = computed(() => periodRange(period.value, safeAnchor.value)),
   stats = computed(() => statistics(app.data.records, ...range.value, group.value)),
   records = computed(() =>
     app.data.records
@@ -43,15 +55,15 @@ const periodTitle = computed(() =>
   period.value === 'all'
     ? '全部专注'
     : period.value === 'day'
-      ? readableDate(anchor.value)
+      ? readableDate(safeAnchor.value)
       : period.value === 'month'
-        ? `${localDate(anchor.value).getFullYear()}年${localDate(anchor.value).getMonth() + 1}月`
+        ? `${localDate(safeAnchor.value).getFullYear()}年${localDate(safeAnchor.value).getMonth() + 1}月`
         : period.value === 'year'
-          ? `${anchor.value.slice(0, 4)}年`
+          ? `${safeAnchor.value.slice(0, 4)}年`
           : `${readableDate(range.value[0])} — ${readableDate(range.value[1])}`,
 )
 function changeDate(direction: number) {
-  const d = localDate(anchor.value)
+  const d = localDate(safeAnchor.value)
   if (period.value === 'month') d.setMonth(d.getMonth() + direction, 1)
   else if (period.value === 'year') d.setFullYear(d.getFullYear() + direction)
   else d.setDate(d.getDate() + direction * (period.value === 'week' ? 7 : 1))
@@ -71,7 +83,7 @@ const trend = computed(() => {
     }
     if (period.value === 'year')
       for (let m = 1; m <= 12; m++) {
-        const key = `${anchor.value.slice(0, 4)}-${String(m).padStart(2, '0')}`
+        const key = `${safeAnchor.value.slice(0, 4)}-${String(m).padStart(2, '0')}`
         if (!rows.has(key)) rows.set(key, 0)
       }
     const sorted = [...rows].sort(([a], [b]) => a.localeCompare(b))
@@ -85,7 +97,7 @@ const trend = computed(() => {
   const rows = new Map(stats.value.daily),
     labels: string[] = [],
     values: number[] = []
-  for (let day = range.value[0]; day <= range.value[1]; day = addDays(day, 1)) {
+  for (let day = range.value[0], guard = 0; day <= range.value[1] && guard < 400; day = addDays(day, 1), guard++) {
     labels.push(String(Number(day.slice(8))))
     values.push((rows.get(day) || 0) / 60000)
   }
@@ -124,7 +136,7 @@ const pieOption = computed(() => ({
     trigger: 'item',
     formatter: (p: unknown) => {
       const row = p as { name: string; value: number; percent: number }
-      return `${row.name}<br/>${duration(row.value)} · ${row.percent}%`
+      return `${escapeHtml(String(row.name ?? ''))}<br/>${duration(row.value)} · ${row.percent}%`
     },
   },
   series: [
@@ -183,7 +195,9 @@ async function remove(record: FocusRecord) {
       <button
         v-for="[key, label] in periods"
         :key="key"
+        type="button"
         :class="{ active: period === key }"
+        :aria-pressed="period === key"
         @click="period = key!"
       >
         {{ label }}
@@ -257,8 +271,8 @@ async function remove(record: FocusRecord) {
       <div class="row between">
         <h2>专注分布</h2>
         <div class="mini-distribution">
-          <button :class="{ active: group === 'theme' }" @click="group = 'theme'">主题</button
-          ><button :class="{ active: group === 'item' }" @click="group = 'item'">待办</button>
+          <button type="button" :class="{ active: group === 'theme' }" :aria-pressed="group === 'theme'" @click="group = 'theme'">主题</button
+          ><button type="button" :class="{ active: group === 'item' }" :aria-pressed="group === 'item'" @click="group = 'item'">待办</button>
         </div>
       </div>
       <div v-if="stats.totalMs" class="pie-area">
@@ -287,8 +301,8 @@ async function remove(record: FocusRecord) {
     <button class="secondary wide" @click="showRecords = true">
       <Icon name="clock" :size="18" />查看专注记录
     </button>
-    <Sheet v-if="showRecords" title="专注记录" @close="showRecords = false"
-      ><div v-if="!records.length" class="empty">
+    <Sheet :open="showRecords" title="专注记录" @close="showRecords = false"
+      ><template v-if="showRecords"><div v-if="!records.length" class="empty">
         <Icon name="clock" :size="32" />
         <p>这个时间范围还没有专注记录。</p>
       </div>
@@ -305,10 +319,10 @@ async function remove(record: FocusRecord) {
           </div>
           <span class="number">{{ duration(record.durationMs) }}</span>
         </button>
-      </div></Sheet
+      </div></template></Sheet
     >
-    <Sheet v-if="selected" title="专注详情" @close="selected = null"
-      ><div class="stack">
+    <Sheet :open="!!selected" title="专注详情" @close="selected = null"
+      ><div v-if="selected" class="stack">
         <h2>{{ selected.title }}</h2>
         <p class="muted">{{ selected.themeName }} · {{ stateName(selected) }}</p>
         <div class="card result-summary">
@@ -332,11 +346,13 @@ async function remove(record: FocusRecord) {
 <style scoped>
 .mini-distribution {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   font-size: 11px;
 }
 .mini-distribution button {
-  min-height: 36px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 8px;
   color: var(--muted);
 }
 .mini-distribution .active {
@@ -360,8 +376,13 @@ async function remove(record: FocusRecord) {
   font-size: 14px;
   font-weight: 600;
   min-height: 45px;
+  border-radius: 12px;
   text-align: center;
   flex: 1;
+}
+.period-selector > label:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .period-selector input {
   position: absolute;

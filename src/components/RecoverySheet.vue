@@ -7,21 +7,33 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const snapshot = ref<RecoverySnapshot | null>(null), busy = ref(false), error = ref(''), confirmed = ref(false)
 const manualWallpaperChecked = ref(false)
+let previewRevision = 0
 const labels = { active: '待撤销', restored: '已恢复', failed: '恢复失败', limited: '系统受限' }
 async function returnedFromSystem() {
   if (!props.open || document.hidden || busy.value) return
-  try { snapshot.value = await recoveryDriver.preview() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  const revision = ++previewRevision
+  try {
+    const value = await recoveryDriver.preview()
+    if (revision === previewRevision && props.open) snapshot.value = value
+  } catch (e) {
+    if (revision === previewRevision && props.open) error.value = e instanceof Error ? e.message : String(e)
+  }
 }
 onMounted(() => { window.addEventListener('focus', returnedFromSystem); document.addEventListener('visibilitychange', returnedFromSystem) })
-onBeforeUnmount(() => { window.removeEventListener('focus', returnedFromSystem); document.removeEventListener('visibilitychange', returnedFromSystem) })
+onBeforeUnmount(() => { previewRevision++; window.removeEventListener('focus', returnedFromSystem); document.removeEventListener('visibilitychange', returnedFromSystem) })
 watch(() => props.open, async open => {
-  if (!open) return
+  const revision = ++previewRevision
+  if (!open) { busy.value = false; return }
   snapshot.value = null; error.value = ''; confirmed.value = false; busy.value = true
   manualWallpaperChecked.value = false
-  try { snapshot.value = await recoveryDriver.preview() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
-  finally { busy.value = false }
+  try {
+    const value = await recoveryDriver.preview()
+    if (revision === previewRevision) snapshot.value = value
+  } catch (e) {
+    if (revision === previewRevision) error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    if (revision === previewRevision) busy.value = false
+  }
 })
 async function restore() {
   if (busy.value || !snapshot.value) return
@@ -49,9 +61,14 @@ async function manualWallpaperRecovery() {
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
+async function openWallpaperSettings() {
+  error.value = ''
+  try { await protectionDriver.openWallpaperSettings() }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+}
 </script>
 <template>
-  <Sheet :open="open" title="保护帮助与故障恢复" @close="close">
+  <Sheet :open="open" title="保护帮助与故障恢复" :close-disabled="busy" @close="close">
     <div class="recovery-stack" :aria-busy="busy">
       <p class="notice">撤销下列本轮保护，计时与记录保留。严格计时仍会继续到期。</p>
       <p v-if="busy" role="status">{{ confirmed ? '正在重试恢复…' : '正在检查或执行恢复…' }}</p>
@@ -62,7 +79,7 @@ async function manualWallpaperRecovery() {
         <small v-if="step.retryable && step.status !== 'active'">尚未恢复，可重试。</small>
         <template v-if="step.capability === 'wallpaperProtection' && step.retryable">
           <button class="secondary wide" :disabled="busy" @click="restoreWallpaper">恢复原壁纸 / 确认系统步骤</button>
-          <button class="secondary wide" :disabled="busy" @click="protectionDriver.openWallpaperSettings().catch(e => error = String(e))">前往系统壁纸设置手动修复</button>
+          <button class="secondary wide" :disabled="busy" @click="openWallpaperSettings">前往系统壁纸设置手动修复</button>
           <label class="manual-wallpaper"><input v-model="manualWallpaperChecked" type="checkbox" /> 我已在系统中恢复或选择了新的主屏与锁屏，并核对显示</label>
           <button class="secondary wide" :disabled="busy || !manualWallpaperChecked" @click="manualWallpaperRecovery">确认已手动核对壁纸恢复</button>
         </template>

@@ -8,10 +8,14 @@ import { defaultProtection } from '../domain/model'
 const app = useApp(), option = 'lockMainInterfaceRestricted', busy = ref(false), error = ref('')
 const selected = computed(() => app.data.preferences.protection?.enhancements?.includes(option) ?? false)
 async function toggle(event: Event) {
+  const target = event.target as HTMLInputElement
+  const checked = target.checked
+  if (busy.value || (checked && !native)) {
+    target.checked = selected.value
+    return
+  }
   busy.value = true; error.value = ''
   try {
-    const checked = (event.target as HTMLInputElement).checked
-    if (checked && !native) return
     await app.mutate(data => {
       const protection = { ...defaultProtection(), ...data.preferences.protection }
       protection.enhancements = (protection.enhancements ?? []).filter(value => value !== option)
@@ -19,8 +23,10 @@ async function toggle(event: Event) {
       data.preferences.protection = protection
     })
     app.notify('增强选项已保存，仅用于下一轮锁机')
-  } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
-  finally { busy.value = false }
+  } catch (e) {
+    target.checked = selected.value
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally { busy.value = false }
 }
 </script>
 <template>

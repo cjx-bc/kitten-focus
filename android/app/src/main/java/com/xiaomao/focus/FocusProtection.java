@@ -31,8 +31,9 @@ import java.util.Set;
 /** Original implementation using Android APIs; no copied third-party control engine. */
 final class FocusProtection {
     interface AccessibilityState { boolean authorized(); boolean connected(); }
-    private static long settingsUntil;
-    private static String settingsPackage = "";
+    private static final Object SETTINGS_LOCK = new Object();
+    private static volatile long settingsUntil;
+    private static volatile String settingsPackage = "";
     private static volatile String executionFailure = "";
     private static long exceptionsChecked;
     private static Set<String> cachedNecessary = new HashSet<>();
@@ -166,13 +167,30 @@ final class FocusProtection {
         intent.setComponent(new ComponentName(target.activityInfo.packageName, target.activityInfo.name));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         allowSettingsForAuthorization(context, target.activityInfo.packageName);
-        context.startActivity(intent);
+        try {
+            context.startActivity(intent);
+        } catch (RuntimeException error) {
+            clearSettingsAuthorization();
+            throw error;
+        }
     }
     static void allowSettingsForAuthorization(Context context, String pkg) {
-        settingsPackage = pkg; settingsUntil = SystemClock.elapsedRealtime() + 5 * 60_000;
+        synchronized (SETTINGS_LOCK) {
+            settingsPackage = pkg == null ? "" : pkg;
+            settingsUntil = SystemClock.elapsedRealtime() + 5 * 60_000;
+        }
     }
-    static void clearSettingsAuthorization() { settingsPackage = ""; settingsUntil = 0; }
-    static boolean settingsAuthorizationAllowed(String pkg) { return pkg != null && pkg.equals(settingsPackage) && SystemClock.elapsedRealtime() < settingsUntil; }
+    static void clearSettingsAuthorization() {
+        synchronized (SETTINGS_LOCK) {
+            settingsPackage = "";
+            settingsUntil = 0;
+        }
+    }
+    static boolean settingsAuthorizationAllowed(String pkg) {
+        synchronized (SETTINGS_LOCK) {
+            return pkg != null && pkg.equals(settingsPackage) && SystemClock.elapsedRealtime() < settingsUntil;
+        }
+    }
 
     /** Uses only observeControl(), never the lifecycle read/settlement command. */
     static boolean shouldBlock(Context context, JSONObject observation, String packageName, String className) {

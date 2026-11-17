@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { settle } from '../src/domain/focus'
 import { statistics } from '../src/domain/statistics'
-import { occurrences } from '../src/domain/calendar'
+import { occurrences, validateEvent } from '../src/domain/calendar'
+import { periodRange } from '../src/domain/dates'
 import { makeBackup, readBackup } from '../src/domain/backup'
-import { emptyData, defaultPeriods, type ActiveFocus, type FocusRecord } from '../src/domain/model'
+import { emptyData, defaultPeriods, type ActiveFocus, type CalendarEvent, type FocusRecord } from '../src/domain/model'
 
 function session(overrides: Partial<ActiveFocus> = {}): ActiveFocus {
   return {
@@ -62,6 +63,15 @@ describe('focus state and recovery', () => {
     )
     expect(result.record?.status).toBe('interrupted')
     expect(result.record?.durationMs).toBe(12000)
+  })
+  it('interrupts with checkpointed time when monotonic clock moves backward', () => {
+    const result = settle(
+      session({ elapsedMs: 15000, segments: [{ start: 0, end: 15000 }], anchorMono: 20000 }),
+      { epoch: 50000, mono: 10000, boot: 1 },
+    )
+    expect(result.session).toBeNull()
+    expect(result.record?.status).toBe('interrupted')
+    expect(result.record?.durationMs).toBe(15000)
   })
   it('distinguishes an early countdown from a normal stopwatch and drops zero-length sessions', () => {
     expect(settle(session(), { epoch: 5000, mono: 5000, boot: 1 }, 'finish').record?.status).toBe(
@@ -228,5 +238,46 @@ describe('backup validation', () => {
     value.durationMs = 500
     data.records.push(value)
     expect(() => readBackup(makeBackup(data))).toThrow()
+  })
+  it('rejects null or non-object entries in record segments and semester periods cleanly', () => {
+    const data = emptyData()
+    data.records.push(record('2026-11-14T10:00:00Z', '2026-11-14T10:01:00Z'))
+    const segBackup = JSON.parse(makeBackup(data))
+    segBackup.data.records[0].segments = [null]
+    expect(() => readBackup(JSON.stringify(segBackup))).toThrow('专注时间段损坏')
+
+    const semData = emptyData()
+    semData.semesters.push({
+      id: 's1',
+      name: '秋季',
+      startDate: '2026-11-02',
+      weeks: 20,
+      periods: defaultPeriods(),
+    })
+    const semBackup = JSON.parse(makeBackup(semData))
+    semBackup.data.semesters[0].periods = [null]
+    expect(() => readBackup(JSON.stringify(semBackup))).toThrow('课表时间设置损坏')
+  })
+  it('validates calendar event until dates and guards empty periodRange anchors', () => {
+    const base: CalendarEvent = {
+      id: 'e1',
+      title: '测试日程',
+      start: '2026-11-09T20:00',
+      end: '2026-11-09T21:00',
+      allDay: false,
+      note: '',
+      repeat: 'weekly',
+      weekdays: [1],
+      until: '2026-02-30',
+      itemId: null,
+      reminderMinutes: null,
+    }
+    expect(() => validateEvent(base)).toThrow('重复截止日期不正确')
+    expect(() => validateEvent({ ...base, until: 'not-a-date' })).toThrow('重复截止日期不正确')
+    expect(() => validateEvent({ ...base, until: '' })).not.toThrow()
+    expect(() => validateEvent({ ...base, until: '2026-11-30' })).not.toThrow()
+    const [from, to] = periodRange('week', '')
+    expect(from).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(to).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })

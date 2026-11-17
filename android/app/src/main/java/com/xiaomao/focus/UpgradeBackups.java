@@ -15,6 +15,7 @@ import java.util.Comparator;
 
 /** App-private recovery snapshots. No upload; manual exports remain separate. */
 final class UpgradeBackups {
+    private static final Object FILE_LOCK = new Object();
     private final Context context;
     private final LocalStore store;
     private final File directory;
@@ -32,39 +33,43 @@ final class UpgradeBackups {
         preferences = context.getSharedPreferences("upgrade-protection", Context.MODE_PRIVATE);
     }
 
-    synchronized void prepareStartup() throws Exception {
-        int current = BuildConfig.VERSION_CODE;
-        int previous = preferences.getInt("preparedVersion", 0);
-        if (previous != current) create(previous, current);
-        JSONObject data = store.read("data");
-        // Future schema migrations must run transactionally here. Never fall back to empty data.
-        if (data != null && data.optInt("schemaVersion") != 1)
-            throw new IllegalStateException("本地数据版本暂不兼容，原数据和升级副本已保留，请联系开发者");
-        preferences.edit().putInt("preparedVersion", current).apply();
+    void prepareStartup() throws Exception {
+        synchronized (FILE_LOCK) {
+            int current = BuildConfig.VERSION_CODE;
+            int previous = preferences.getInt("preparedVersion", 0);
+            if (previous != current) create(previous, current);
+            JSONObject data = store.read("data");
+            // Future schema migrations must run transactionally here. Never fall back to empty data.
+            if (data != null && data.optInt("schemaVersion") != 1)
+                throw new IllegalStateException("本地数据版本暂不兼容，原数据和升级副本已保留，请联系开发者");
+            preferences.edit().putInt("preparedVersion", current).apply();
+        }
     }
 
-    synchronized String create(int from, int to) throws Exception {
-        if (!directory.isDirectory() && !directory.mkdirs()) throw new IllegalStateException("无法建立升级恢复副本");
-        String name = "upgrade-" + from + "-" + to + ".json";
-        File file = new File(directory, name);
-        JSONObject snapshot = BusinessBackupData.snapshot(store.snapshot());
-        JSONObject value = new JSONObject().put("format", 1).put("from", from).put("to", to)
-            .put("createdAt", System.currentTimeMillis()).put("snapshot", snapshot);
-        AtomicFile atomic = new AtomicFile(file);
-        FileOutputStream stream = null;
-        try {
-            stream = atomic.startWrite();
-            stream.write(value.toString().getBytes(StandardCharsets.UTF_8));
-            atomic.finishWrite(stream);
-        } catch (Exception error) {
-            if (stream != null) atomic.failWrite(stream);
-            throw error;
+    String create(int from, int to) throws Exception {
+        synchronized (FILE_LOCK) {
+            if (!directory.isDirectory() && !directory.mkdirs()) throw new IllegalStateException("无法建立升级恢复副本");
+            String name = "upgrade-" + from + "-" + to + ".json";
+            File file = new File(directory, name);
+            JSONObject snapshot = BusinessBackupData.snapshot(store.snapshot());
+            JSONObject value = new JSONObject().put("format", 1).put("from", from).put("to", to)
+                .put("createdAt", System.currentTimeMillis()).put("snapshot", snapshot);
+            AtomicFile atomic = new AtomicFile(file);
+            FileOutputStream stream = null;
+            try {
+                stream = atomic.startWrite();
+                stream.write(value.toString().getBytes(StandardCharsets.UTF_8));
+                atomic.finishWrite(stream);
+            } catch (Exception error) {
+                if (stream != null) atomic.failWrite(stream);
+                throw error;
+            }
+            File[] files = files();
+            for (int i = 3; i < files.length; i++) {
+                if (!files[i].delete()) throw new IllegalStateException("无法轮换升级恢复副本");
+            }
+            return name;
         }
-        File[] files = files();
-        for (int i = 3; i < files.length; i++) {
-            if (!files[i].delete()) throw new IllegalStateException("无法轮换升级恢复副本");
-        }
-        return name;
     }
 
     private File[] files() {
@@ -90,42 +95,48 @@ final class UpgradeBackups {
         }
     }
 
-    synchronized JSONArray list() throws Exception {
-        JSONArray result = new JSONArray();
-        for (File file : files()) {
-            JSONObject value = read(file.getName());
-            result.put(new JSONObject().put("id", file.getName()).put("createdAt", value.getLong("createdAt"))
-                .put("from", value.getInt("from")).put("to", value.getInt("to")));
+    JSONArray list() throws Exception {
+        synchronized (FILE_LOCK) {
+            JSONArray result = new JSONArray();
+            for (File file : files()) {
+                JSONObject value = read(file.getName());
+                result.put(new JSONObject().put("id", file.getName()).put("createdAt", value.getLong("createdAt"))
+                    .put("from", value.getInt("from")).put("to", value.getInt("to")));
+            }
+            return result;
         }
-        return result;
     }
 
-    synchronized JSONObject export(String name) throws Exception {
-        JSONObject value = read(name), snapshot = BusinessBackupData.snapshot(value.getJSONObject("snapshot"));
-        JSONObject data = snapshot.getJSONObject("documents").optJSONObject("data");
-        if (data == null) throw new IllegalStateException("此副本尚无业务数据");
-        data.put("records", snapshot.getJSONArray("records"));
-        String time = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", java.util.Locale.US)
-            .format(new java.util.Date(value.getLong("createdAt")));
-        return new JSONObject().put("app", "xiaomao-focus").put("version", 1).put("createdAt", time).put("data", data);
+    JSONObject export(String name) throws Exception {
+        synchronized (FILE_LOCK) {
+            JSONObject value = read(name), snapshot = BusinessBackupData.snapshot(value.getJSONObject("snapshot"));
+            JSONObject data = snapshot.getJSONObject("documents").optJSONObject("data");
+            if (data == null) throw new IllegalStateException("此副本尚无业务数据");
+            data.put("records", snapshot.getJSONArray("records"));
+            String time = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", java.util.Locale.US)
+                .format(new java.util.Date(value.getLong("createdAt")));
+            return new JSONObject().put("app", "xiaomao-focus").put("version", 1).put("createdAt", time).put("data", data);
+        }
     }
 
-    synchronized void restore(String name) throws Exception {
-        synchronized (store) {
-            if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注或锁机，再恢复备份");
-            JSONObject value = read(name);
-            // Older local snapshots may contain arbitrary runtime documents. Ignore them.
-            JSONObject portable = BusinessBackupData.snapshot(value.getJSONObject("snapshot"));
-            BusinessBackupData.validate(portable.getJSONObject("documents").optJSONObject("data"));
-            JSONArray records = portable.getJSONArray("records");
-            for (int i = 0; i < records.length(); i++)
-                if (records.getJSONObject(i).optString("id").isEmpty()) throw new IllegalArgumentException("恢复副本记录损坏");
-            control.prepareDataReplacement();
-            // Keep a safety snapshot of current data before replacing anything.
-            create(BuildConfig.VERSION_CODE, BuildConfig.VERSION_CODE);
-            store.restoreSnapshot(portable);
-            Reminders.cancelFocus(context);
-            Reminders.cancelRest(context);
+    void restore(String name) throws Exception {
+        synchronized (FILE_LOCK) {
+            synchronized (store) {
+                if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注或锁机，再恢复备份");
+                JSONObject value = read(name);
+                // Older local snapshots may contain arbitrary runtime documents. Ignore them.
+                JSONObject portable = BusinessBackupData.snapshot(value.getJSONObject("snapshot"));
+                BusinessBackupData.validate(portable.getJSONObject("documents").optJSONObject("data"));
+                JSONArray records = portable.getJSONArray("records");
+                for (int i = 0; i < records.length(); i++)
+                    if (records.getJSONObject(i).optString("id").isEmpty()) throw new IllegalArgumentException("恢复副本记录损坏");
+                control.prepareDataReplacement();
+                // Keep a safety snapshot of current data before replacing anything.
+                create(BuildConfig.VERSION_CODE, BuildConfig.VERSION_CODE);
+                store.restoreSnapshot(portable);
+                Reminders.cancelFocus(context);
+                Reminders.cancelRest(context);
+            }
         }
     }
 }

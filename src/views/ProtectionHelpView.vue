@@ -35,7 +35,7 @@ onMounted(() => { recoveryOpen.value = route.path === '/recovery' })
 </template>
 <style scoped>
 .protection-help-page { display: grid; gap: 24px; padding-bottom: 36px; }
-.page-header { gap: 10px; margin-bottom: 0; } .page-header h1 { font-size: 25px; }
+.page-header { gap: 10px; margin-bottom: 0; } .page-header h1 { flex: 1; font-size: 25px; }
 p { font-size: 14px; line-height: 1.9; overflow-wrap: anywhere; }
 .safety-links { display: flex; flex-wrap: wrap; gap: 4px 20px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
 .safety-links a, .help-contents a { min-height: 48px; display: flex; align-items: center; font-size: 13px; }

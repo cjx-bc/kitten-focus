@@ -32,8 +32,12 @@ final class FocusAntiClose {
         if (!eligible(observation, session)) return false;
         String id = session.optString("id"); boolean same = id.equals(runtime.getString("sessionId", ""));
         long now = clock.mono(), pending = same ? runtime.getLong("pendingUntil", 0) : 0;
-        if (context.getPackageName().equals(pkg) && "com.xiaomao.focus.MainActivity".equals(cls) && pending >= now && pending > 0) {
-            write(runtime.edit().putLong("pendingUntil", 0).putLong("returnedAt", clock.epoch()).putString("failure", "")); return false;
+        if (context.getPackageName().equals(pkg) && "com.xiaomao.focus.MainActivity".equals(cls) && pending > 0) {
+            SharedPreferences.Editor edit = runtime.edit().putLong("pendingUntil", 0).putString("failure", "");
+            if (now <= pending) edit.putLong("returnedAt", clock.epoch());
+            else edit.putLong("returnedAt", 0);
+            write(edit);
+            return false;
         }
         if (!system.systemSurface(pkg) || !AntiCloseWindow.candidateClass(cls) || FocusProtection.settingsAuthorizationAllowed(pkg)) return false;
         // Dedupe before touching a node tree. No handler retry/event loop and no global Settings block.

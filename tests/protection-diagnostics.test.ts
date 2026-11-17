@@ -100,3 +100,45 @@ it('keeps wallpaper preview unverified and restoration responsibility visible un
   Object.assign(device.values.getWallpaperStatus as object, { phase: 'user_choice_preserved', selected: false, recoveryPending: false })
   expect(await row()).toMatchObject({ state: 'off', recoveryPending: false, active: false })
 })
+
+it('gates mainEntry failure on mainEntry.requested rather than unrelated focus needsReconcile', async () => {
+  const { readProtectionDiagnostics } = await import('../src/platform/protectionDiagnostics')
+  const preferences = { ...defaultProtection(), enhancements: ['lockMainInterfaceRestricted'] }
+  device.values.observeControl = {
+    owner: 'focus',
+    focus: { session: { id: 'f1', mode: 'countdown', strictMode: false } },
+    rest: { session: null },
+    needsReconcile: true,
+    mainEntry: { requested: false, active: false, withdrawn: false },
+  }
+  const idleMain = await readProtectionDiagnostics(preferences)
+  expect(idleMain.capabilities.find(row => row.id === 'mainEntry')).toMatchObject({ state: 'ready', phase: 'off' })
+
+  device.values.observeControl = {
+    owner: 'lock',
+    lock: { session: { id: 'l1' } },
+    focus: { session: null },
+    rest: { session: null },
+    needsReconcile: true,
+    mainEntry: { requested: true, active: false, withdrawn: false },
+  }
+  const failedMain = await readProtectionDiagnostics(preferences)
+  expect(failedMain.capabilities.find(row => row.id === 'mainEntry')).toMatchObject({ state: 'failed', phase: 'failed' })
+})
+
+it('does not report applications as off when controlDriver.observe rejects', async () => {
+  const { readProtectionDiagnostics } = await import('../src/platform/protectionDiagnostics')
+  device.values.observeControl = new Error('控制通道异常')
+  const authorizedResult = await readProtectionDiagnostics(defaultProtection())
+  expect(authorizedResult.capabilities.find(row => row.id === 'applications')).toMatchObject({
+    requested: null,
+    state: 'failed',
+  })
+
+  device.values.protectionStatus = { supported: true, authorized: false, connected: false, active: false, state: 'authorization', reason: '未授权' }
+  const unauthorizedResult = await readProtectionDiagnostics(defaultProtection())
+  expect(unauthorizedResult.capabilities.find(row => row.id === 'applications')).toMatchObject({
+    requested: null,
+    state: 'authorization',
+  })
+})

@@ -144,7 +144,7 @@ final class FocusControl {
         lock = new LockEngine(context, store, clock);
         this.recovery = recovery;
         this.accessibility = accessibility;
-        navigation = new FocusNavigation(context, store, navigationDevice);
+        navigation = new FocusNavigation(context, store, clock, navigationDevice);
         antiClose = new FocusAntiClose(context, store, clock, antiCloseSystem);
         recovery.registerEffect(FocusRecovery.ANTI_CLOSE, () -> antiClose.release());
         dnd = new DndProtection(context, store.getDatabaseName(), system);
@@ -213,7 +213,15 @@ final class FocusControl {
             launcher.checkStart(started);
             wallpaper.checkStart(started);
             recovery.prepare(started);
-            JSONObject result = focus.start(started);
+            JSONObject result;
+            try {
+                result = focus.start(started);
+            } catch (Exception error) {
+                if (store.read("active") == null) {
+                    try { recovery.releaseFinished(null); } catch (Exception ignored) { }
+                }
+                throw error;
+            }
             FocusProtection.executionSucceeded();
             synchronizeEffects(store.read("active"));
             return projectTemporary(result);
@@ -264,8 +272,16 @@ final class FocusControl {
             launcher.checkStart(session);
             wallpaper.checkStart(session);
             recovery.prepare(session);
-            rest.exit();
-            JSONObject result = lock.start(session);
+            JSONObject result;
+            try {
+                rest.exit();
+                result = lock.start(session);
+            } catch (Exception error) {
+                if (store.read("active") == null) {
+                    try { recovery.releaseFinished(null); } catch (Exception ignored) { }
+                }
+                throw error;
+            }
             FocusProtection.executionSucceeded();
             synchronizeEffects(store.read("active"));
             return result;

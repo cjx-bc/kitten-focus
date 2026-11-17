@@ -42,14 +42,19 @@ async function refreshProtection() {
     if (revision === protectionRevision) { protectionState.value = null; protectionReadFailed.value = true }
   }
 }
-function refreshWhenVisible() { if (!document.hidden) void refreshProtection() }
+function syncToday() {
+  const next = dateKey()
+  if (today.value !== next) today.value = next
+}
+function refreshWhenVisible() { syncToday(); if (!document.hidden) void refreshProtection() }
 onMounted(() => { void refreshProtection(); document.addEventListener('visibilitychange', refreshWhenVisible); window.addEventListener('focus', refreshWhenVisible); window.addEventListener('protection-recovered', refreshWhenVisible) })
 onBeforeUnmount(() => { protectionRevision++; document.removeEventListener('visibilitychange', refreshWhenVisible); window.removeEventListener('focus', refreshWhenVisible); window.removeEventListener('protection-recovered', refreshWhenVisible) })
 watch([() => app.data.preferences.protection, () => app.focus.session?.id, () => studyOpen.value], refreshProtection)
-const today = dateKey(),
-  todayStats = computed(() => statistics(app.data.records, today, today)),
+watch(() => app.focus, syncToday)
+const today = ref(dateKey()),
+  todayStats = computed(() => statistics(app.data.records, today.value, today.value)),
   itemStats = computed(
-    () => new Map(app.items.map((i) => [i.id, itemToday(app.data.records, i.id, today)])),
+    () => new Map(app.items.map((i) => [i.id, itemToday(app.data.records, i.id, today.value)])),
   )
 const themeForm = reactive<Theme>({
   id: '',
@@ -119,13 +124,33 @@ async function execute(operation: () => Promise<unknown>) {
   }
 }
 async function begin(item: FocusItem | null) {
+  if (busy.value) return
+  busy.value = true
   try {
     await app.start(item)
     await router.push('/focus')
   } catch (e) {
-    app.notify(String(e instanceof Error ? e.message : e))
+    const message = e instanceof Error ? e.message : String(e)
+    if (message !== '已取消开始专注') app.notify(message)
     if (app.focus.session) await router.push('/focus')
     else if (app.rest.session) await router.push('/rest')
+  } finally {
+    busy.value = false
+  }
+}
+async function startFree() {
+  if (busy.value) return
+  busy.value = true
+  formError.value = ''
+  try {
+    await app.start(null, freeForm.mode, Number(freeForm.minutes))
+    sheet.value = null
+    await router.push('/focus')
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    formError.value = message === '已取消开始专注' ? '' : message
+  } finally {
+    busy.value = false
   }
 }
 function openFree() {
@@ -242,7 +267,7 @@ function toggleTheme(theme: Theme) {
                     }}</span
                   >
                 </p></button
-              ><button class="start-button" :aria-label="'开始' + item.title" @click="begin(item)">
+              ><button class="start-button" :aria-label="'开始' + item.title" :disabled="busy" @click="begin(item)">
                 <span class="start-icon"><Icon name="play" :size="14" /></span>
               </button>
             </article>
@@ -272,7 +297,8 @@ function toggleTheme(theme: Theme) {
     <Sheet
       :open="sheet === 'theme'"
       :title="app.themes.some((t) => t.id === themeForm.id) ? '编辑主题' : '新建主题'"
-      @close="sheet = null"
+      :close-disabled="busy"
+      @close="!busy && (sheet = null)"
       ><form
         @submit.prevent="
           execute(() => app.saveTheme({ ...themeForm, name: themeForm.name.trim() }))
@@ -336,7 +362,8 @@ function toggleTheme(theme: Theme) {
     <Sheet
       :open="sheet === 'item'"
       :title="app.items.some((i) => i.id === itemForm.id) ? '编辑待办' : '新建待办'"
-      @close="sheet = null"
+      :close-disabled="busy"
+      @close="!busy && (sheet = null)"
       ><form
         @submit.prevent="
           execute(() =>
@@ -444,14 +471,9 @@ function toggleTheme(theme: Theme) {
         </button>
       </form></Sheet
     >
-    <Sheet :open="sheet === 'free'" title="自由专注" @close="sheet = null"
+    <Sheet :open="sheet === 'free'" title="自由专注" :close-disabled="busy" @close="!busy && (sheet = null)"
       ><form
-        @submit.prevent="
-          execute(async () => {
-            await app.start(null, freeForm.mode, Number(freeForm.minutes))
-            await router.push('/focus')
-          })
-        "
+        @submit.prevent="startFree"
       >
         <div class="segmented">
           <button
@@ -494,7 +516,7 @@ function toggleTheme(theme: Theme) {
         </button>
       </form></Sheet
     >
-    <Sheet :open="sheet === 'removeTheme'" title="删除主题" @close="sheet = null"
+    <Sheet :open="sheet === 'removeTheme'" title="删除主题" :close-disabled="busy" @close="!busy && (sheet = null)"
       ><form @submit.prevent="execute(() => app.removeTheme(themeForm.id, moveTo || null))">
         <p>删除“{{ themeForm.name }}”后，历史专注记录仍会保留。</p>
         <label
@@ -509,7 +531,7 @@ function toggleTheme(theme: Theme) {
             </option>
           </select></label
         >
-        <p v-if="formError" class="form-error">{{ formError }}</p>
+        <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
         <button class="danger-button wide" :disabled="busy">确认删除主题</button>
       </form></Sheet
     >
@@ -524,18 +546,19 @@ function toggleTheme(theme: Theme) {
 .tasks-page > * {
   flex-shrink: 0;
 }
-.task-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.task-title { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
 .task-title h1 { flex-shrink: 0; }
-.study-entry { display: inline-flex; align-items: center; min-height: 44px; flex-shrink: 0; border-radius: 100px; font-size: 12px; font-weight: 500; color: var(--muted); }
-.study-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; background: var(--surface); border-radius: 100px; white-space: nowrap; line-height: 18px; }
-.study-entry-state { font-weight: 600; }
+.page-header .actions { flex-shrink: 0; }
+.study-entry { display: inline-flex; align-items: center; min-height: 44px; min-width: 0; max-width: 100%; border-radius: 100px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.study-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; overflow: hidden; padding: 5px 8px; background: var(--surface); border-radius: 100px; white-space: nowrap; line-height: 18px; }
+.study-entry-state { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .study-chip[data-tone='enabled'] { background: var(--ink); color: var(--white); }
 .study-chip[data-tone='warning'] { background: #fff1ef; color: #c13a25; }
 @media (max-width: 360px) {
   .page-header { gap: 4px; }
   .page-header .actions .icon-button { width: 44px; height: 44px; }
   .task-title { gap: 6px; }
-  .study-chip { gap: 3px; padding-inline: 6px; }
+  .study-chip { gap: 3px; padding-inline: 6px; font-size: 11px; }
   .study-chip > svg { display: none; }
 }
 .daily-line {

@@ -189,3 +189,19 @@ it('refuses launcher icon hiding outside Android and reports its unsupported rec
   expect((await controlDriver.observe()).owner).toBeNull()
   expect(await protectionDriver.launcher()).toMatchObject({ supported: false, phase: 'unsupported', verified: false, recoveryReachable: false })
 })
+
+it('refuses dnd, notification interception, and wallpaper protection outside Android', async () => {
+  const { focusDriver, repository, controlDriver } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  for (const protection of [
+    { ...defaultProtection(), dnd: true },
+    { ...defaultProtection(), interceptNotifications: true },
+    { ...defaultProtection(), enhancements: ['wallpaperProtection'] },
+  ]) {
+    const data = emptyData()
+    data.preferences.protection = protection
+    await repository.save(data)
+    await expect(focusDriver.start(session())).rejects.toThrow('Android')
+    expect((await controlDriver.observe()).owner).toBeNull()
+  }
+})

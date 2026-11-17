@@ -16,7 +16,7 @@ export function settle(
   action: 'read' | 'pause' | 'resume' | 'finish' = 'read',
 ): FocusSnapshot {
   const s = structuredClone(session)
-  if (s.bootId !== clock.boot) return complete(s, clock, 'interrupted', true)
+  if (s.bootId !== clock.boot || clock.mono < s.anchorMono) return complete(s, clock, 'interrupted', true)
   const value = elapsed(s, clock)
   if (s.mode === 'countdown' && value >= s.targetMs) return complete(s, clock, 'completed')
   if (action === 'finish') return complete(s, clock, s.mode === 'countdown' ? 'early' : 'completed')

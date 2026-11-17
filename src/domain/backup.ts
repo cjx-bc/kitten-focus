@@ -222,7 +222,13 @@ export function readBackup(text: string): Backup {
       throw new Error('专注记录损坏')
     if (
       record.segments.some(
-        (s) => !Number.isFinite(s.start) || !Number.isFinite(s.end) || s.end < s.start,
+        (s) =>
+          !s ||
+          typeof s !== 'object' ||
+          Array.isArray(s) ||
+          !Number.isFinite(s.start) ||
+          !Number.isFinite(s.end) ||
+          s.end < s.start,
       )
     )
       throw new Error('专注时间段损坏')
@@ -237,7 +243,15 @@ export function readBackup(text: string): Backup {
       semester.weeks < 1 ||
       !Array.isArray(semester.periods) ||
       semester.periods.some(
-        (p) => !/^\d{2}:\d{2}$/.test(p.start) || !/^\d{2}:\d{2}$/.test(p.end) || p.end <= p.start,
+        (p) =>
+          !p ||
+          typeof p !== 'object' ||
+          Array.isArray(p) ||
+          typeof p.start !== 'string' ||
+          typeof p.end !== 'string' ||
+          !/^\d{2}:\d{2}$/.test(p.start) ||
+          !/^\d{2}:\d{2}$/.test(p.end) ||
+          p.end <= p.start,
       )
     )
       throw new Error('课表时间设置损坏')

@@ -11,16 +11,27 @@ import RecentTasksSetting from './RecentTasksSetting.vue'
 import LauncherSetting from './LauncherSetting.vue'
 import LockMainEntrySetting from './LockMainEntrySetting.vue'
 import WallpaperSetting from './WallpaperSetting.vue'
+import Sheet from './Sheet.vue'
+import { usePendingEnable } from './usePendingEnable'
 
 const app = useApp()
 const option = 'navigationHomeRecents'
 const selected = computed(() => app.data.preferences.protection?.enhancements.includes(option) ?? false)
 const status = ref<NavigationProtectionStatus>(), busy = ref(false), error = ref(''), showPermission = ref(false)
 let refreshTimer: ReturnType<typeof setInterval> | undefined
+let readRevision = 0
+const enableGate = usePendingEnable(saveSelected, refresh)
+const permissionReady = () => !!(status.value?.supported && status.value.authorized && status.value.connected)
+function cancelEnable() { enableGate.cancel(); showPermission.value = false }
 const labels = { off: '未开启', authorization: '待授权', ready: '已就绪', armed: '待验证实际导航', protecting: '已观察到返回', failed: '保护失效', unsupported: '本机不支持', recovered: '本轮已撤销' }
 async function refresh() {
-  try { status.value = (await protectionDriver.status()).navigation }
-  catch (e) { status.value = undefined; error.value = e instanceof Error ? e.message : String(e) }
+  const revision = ++readRevision
+  try {
+    const value = (await protectionDriver.status()).navigation
+    if (revision !== readRevision) return
+    status.value = value
+    if (await enableGate.observe(permissionReady(), !!value?.authorized)) await refresh()
+  } catch (e) { if (revision === readRevision) { status.value = undefined; error.value = e instanceof Error ? e.message : String(e) } }
 }
 function visibility() { if (!document.hidden) void refresh() }
 onMounted(() => {
@@ -29,30 +40,38 @@ onMounted(() => {
   document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', refresh); window.addEventListener('protection-recovered', refresh)
 })
 onBeforeUnmount(() => {
+  readRevision++
   if (refreshTimer) clearInterval(refreshTimer)
   document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', refresh); window.removeEventListener('protection-recovered', refresh)
 })
-async function toggle(event: Event) {
-  busy.value = true; error.value = ''
+async function saveSelected(checked: boolean) {
+  const wasBusy = busy.value
+  busy.value = true
   try {
-    const checked = (event.target as HTMLInputElement).checked
-    if (checked && !status.value?.supported) return
     await app.mutate(d => {
       const protection = { ...defaultProtection(), ...d.preferences.protection }
       protection.enhancements = protection.enhancements.filter(value => value !== option)
       if (checked) protection.enhancements.push(option)
       d.preferences.protection = protection
     })
-    await refresh()
-    if (checked && (!status.value?.authorized || !status.value.connected)) showPermission.value = true
     app.notify(app.focus.session ? '增强选项已保存，将用于下一轮' : '增强选项已保存')
-  } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  } finally { if (!wasBusy) busy.value = false }
+}
+async function toggle(event: Event) {
+  const target = event.target as HTMLInputElement, checked = target.checked
+  target.checked = selected.value
+  if (busy.value || (checked && !status.value?.supported)) return
+  busy.value = true; error.value = ''
+  try { showPermission.value = await enableGate.request(checked, permissionReady()); if (!showPermission.value) await refresh() }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
 async function authorize() {
+  if (busy.value) return
   busy.value = true; error.value = ''
-  try { await protectionDriver.openSettings() }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  enableGate.launch()
+  try { await protectionDriver.openSettings(); showPermission.value = false }
+  catch (e) { cancelEnable(); error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false; await refresh() }
 }
 </script>
@@ -70,11 +89,7 @@ async function authorize() {
       <p v-if="status?.lastReturnedAt">最近返回：{{ new Date(status.lastReturnedAt).toLocaleTimeString() }} · {{ status.lastTarget === 'recents' ? '最近任务' : status.lastTarget === 'launcher' ? '桌面或最近任务窗口' : '桌面' }}</p>
     </div>
     <p class="muted">普通安装通过窗口事件返回专注，无法保证所有系统和厂商手势。启用或授权不会立即限制导航；结束、休息、重启或故障恢复撤销本轮限制。</p>
-    <button v-if="status?.supported" class="secondary wide" :disabled="busy" @click="showPermission = !showPermission">查看权限用途</button>
-    <div v-if="showPermission" class="permission-help">
-      <p>允许小猫识别前台窗口所属应用并返回计时页。精确防关闭另需短暂读取系统设置中本应用标题和按钮；其他应用正文不读取。返回后重新检查授权及服务，实际执行结果另行显示。你可暂不开启或在系统设置撤销权限。</p>
-      <button class="secondary wide" :disabled="busy" @click="authorize">前往无障碍设置</button>
-    </div>
+    <button v-if="status?.supported" class="secondary wide" :disabled="busy" @click="showPermission = true">查看权限用途</button>
       </InfoHint>
     </div>
     <p class="field-help" role="status">{{ status ? labels[status.state] : '正在检查' }}</p>
@@ -86,9 +101,10 @@ async function authorize() {
     <LockMainEntrySetting />
 
   </section>
+  <Sheet :open="showPermission" title="无障碍权限用途" :close-disabled="busy" @close="cancelEnable"><div class="stack"><p>识别桌面与最近任务窗口，用于返回专注页。不读取其他应用正文。</p><button class="primary" :disabled="busy" @click="authorize">前往系统设置</button><button class="secondary" :disabled="busy" @click="cancelEnable">暂不开启</button></div></Sheet>
 </template>
 <style scoped>
-.enhancements, .permission-help { display: grid; gap: 8px; }
+.enhancements { display: grid; gap: 8px; }
 .enhancements p { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; margin-top: 5px; }
 .navigation-status { background: var(--surface); padding: 16px; border-radius: 14px; }

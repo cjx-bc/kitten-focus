@@ -5,7 +5,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
-import android.os.SystemClock;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.HashSet;
@@ -53,10 +52,11 @@ final class FocusNavigation {
     }
     private final SharedPreferences runtime;
     private final LocalStore store;
+    private final SessionClock clock;
     private final Device device;
     private final String ownPackage;
-    FocusNavigation(Context context, LocalStore store, Device device) {
-        this.store = store; this.device = device; ownPackage = context.getPackageName();
+    FocusNavigation(Context context, LocalStore store, SessionClock clock, Device device) {
+        this.store = store; this.clock = clock; this.device = device; ownPackage = context.getPackageName();
         runtime = context.getSharedPreferences("catfocus-navigation-" + store.getDatabaseName(), Context.MODE_PRIVATE);
     }
     void checkStart(JSONObject session) throws JSONException {
@@ -74,11 +74,14 @@ final class FocusNavigation {
         JSONObject session = ControlSession.from(observation);
         if (!eligible(observation, session)) return false;
         String id = session.optString("id");
-        long now = SystemClock.elapsedRealtime();
+        long now = clock.mono();
         boolean same = id.equals(runtime.getString("sessionId", ""));
         long pending = same ? runtime.getLong("pendingUntil", 0) : 0;
-        if (ownPackage.equals(pkg) && cls != null && cls.endsWith("MainActivity") && pending > 0 && now <= pending) {
-            runtime.edit().putLong("pendingUntil", 0).putLong("returnedAt", System.currentTimeMillis()).putString("failure", "").commit();
+        if (ownPackage.equals(pkg) && cls != null && cls.endsWith("MainActivity") && pending > 0) {
+            SharedPreferences.Editor edit = runtime.edit().putLong("pendingUntil", 0).putString("failure", "");
+            if (now <= pending) edit.putLong("returnedAt", clock.epoch());
+            else edit.putLong("returnedAt", 0);
+            edit.commit();
             return false;
         }
         String target = device.target(pkg, cls);
@@ -104,7 +107,7 @@ final class FocusNavigation {
         long returned = same ? runtime.getLong("returnedAt", 0) : 0;
         long pending = same ? runtime.getLong("pendingUntil", 0) : 0;
         String failure = same ? runtime.getString("failure", "") : "";
-        if (pending > 0 && SystemClock.elapsedRealtime() > pending) failure = "已请求返回，但未观察到专注界面；请检查本机导航支持";
+        if (pending > 0 && clock.mono() > pending) failure = "已请求返回，但未观察到专注界面；请检查本机导航支持";
         boolean eligible = eligible(observation, session);
         boolean active = eligible && returned > 0 && failure.isEmpty() && pending == 0;
         String state = withdrawn ? "recovered" : !supported ? "unsupported" : requested && (!authorized || !connected) ? "failed"

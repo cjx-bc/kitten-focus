@@ -9,6 +9,7 @@ import { dndDriver, type DndStatus } from '../platform/dnd'
 import { native } from '../platform/bridge'
 import Sheet from './Sheet.vue'
 import InfoHint from './InfoHint.vue'
+import { usePendingEnable } from './usePendingEnable'
 
 const props = withDefaults(defineProps<{ runtimeOnly?: boolean; compact?: boolean }>(), { runtimeOnly: false, compact: false })
 const app = useApp(), status = ref<DndStatus>(), busy = ref(false), error = ref('')
@@ -16,7 +17,17 @@ const panel = ref<'permission' | 'restore' | null>(null), gateReady = ref(false)
 let interval: ReturnType<typeof setInterval> | undefined
 let gateTimer: ReturnType<typeof setTimeout> | undefined
 let listener: PluginListenerHandle | undefined
+let disposed = false
 const enabled = computed(() => Boolean(app.data.preferences.protection?.dnd))
+let readRevision = 0
+async function saveEnabled(dnd: boolean) {
+  busy.value = true
+  try { await app.mutate(data => { data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, dnd } }) }
+  finally { busy.value = false }
+}
+const enableGate = usePendingEnable(saveEnabled, refresh)
+const permissionReady = () => !!(status.value?.supported && status.value.permissionGranted)
+function cancelEnable() { enableGate.cancel(); panel.value = null }
 const phaseText = computed(() => {
   const phase = status.value?.phase
   return ({
@@ -30,19 +41,22 @@ const phaseText = computed(() => {
   } as Record<string, string>)[phase || ''] || '正在检查声音辅助'
 })
 async function refresh() {
-  try { status.value = await dndDriver.read() }
-  catch (failure) { status.value = undefined; error.value = failure instanceof Error ? failure.message : String(failure) }
+  const revision = ++readRevision
+  try {
+    const value = await dndDriver.read()
+    if (revision !== readRevision) return
+    status.value = value
+    if (await enableGate.observe(permissionReady(), value.permissionGranted)) await refresh()
+  } catch (failure) { if (revision === readRevision) { status.value = undefined; error.value = failure instanceof Error ? failure.message : String(failure) } }
 }
 async function toggle(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  if (checked && !status.value?.supported) return
+  const target = event.target as HTMLInputElement, checked = target.checked
+  target.checked = enabled.value
+  if (busy.value || (checked && !status.value?.supported)) return
   busy.value = true; error.value = ''
   try {
-    await app.mutate(data => {
-      data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, dnd: checked }
-    })
-    await refresh()
-    if (checked && status.value?.supported && !status.value.permissionGranted) show('permission')
+    if (await enableGate.request(checked, permissionReady())) show('permission')
+    else await refresh()
   } catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
   finally { busy.value = false }
 }
@@ -54,8 +68,9 @@ function show(value: 'permission' | 'restore') {
 async function authorize() {
   if (!gateReady.value || busy.value) return
   busy.value = true; error.value = ''
+  enableGate.launch()
   try { await dndDriver.openSettings(); panel.value = null }
-  catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
+  catch (failure) { cancelEnable(); error.value = failure instanceof Error ? failure.message : String(failure) }
   finally { busy.value = false; await refresh() }
 }
 async function restore() {
@@ -67,13 +82,18 @@ async function restore() {
 }
 function visibility() { if (!document.hidden) void refresh() }
 onMounted(async () => {
-  await refresh()
+  void refresh()
   interval = setInterval(() => { if (!document.hidden) void refresh() }, 2000)
   document.addEventListener('visibilitychange', visibility)
   window.addEventListener('protection-recovered', refresh)
-  if (native) listener = await App.addListener('appStateChange', ({ isActive }) => { if (isActive) void refresh() })
+  if (native) {
+    const handle = await App.addListener('appStateChange', ({ isActive }) => { if (isActive) void refresh() })
+    if (disposed) void handle.remove(); else listener = handle
+  }
 })
 onBeforeUnmount(() => {
+  disposed = true
+  readRevision++
   clearInterval(interval); clearTimeout(gateTimer)
   document.removeEventListener('visibilitychange', visibility)
   window.removeEventListener('protection-recovered', refresh)
@@ -104,25 +124,25 @@ onBeforeUnmount(() => {
       <strong>声音辅助：{{ phaseText }}</strong>
       <p v-if="status?.supported" class="field-help">勿扰授权：{{ status.permissionGranted ? '已授权' : '未授权' }}；本轮选择：{{ status.requested ? '开启' : '关闭' }}。</p>
       <p v-if="status?.phase === 'active'" class="field-help">其他系统或应用的勿扰规则仍可能施加更严格限制。</p>
-      <p v-if="status?.error || error" class="field-help dnd-error">{{ error || status?.error }}</p>
+      <p v-if="status?.error || error" class="field-help dnd-error" role="alert">{{ error || status?.error }}</p>
     </div>
     <div class="dnd-actions">
       <button v-if="status?.supported" class="secondary" :disabled="busy" @click="show('permission')">{{ status.permissionGranted ? '系统勿扰设置' : '检查勿扰授权' }}</button>
       <button v-if="status?.requested || status?.recoveryPending" class="secondary" :disabled="busy" @click="show('restore')">{{ status.recoveryPending ? '重试撤销声音规则' : '撤销本轮声音辅助' }}</button>
     </div>
   </section>
-  <Sheet v-if="panel === 'permission'" title="声音辅助与勿扰授权" @close="panel = null">
+  <Sheet v-if="panel === 'permission'" title="声音辅助与勿扰授权" :close-disabled="busy" @close="cancelEnable">
     <div class="stack">
       <p>允许小猫减少通知声音和振动，保留来电、闹钟与媒体。</p>
       <button class="primary" :disabled="!gateReady || busy" @click="authorize">前往系统设置</button>
-      <button class="secondary" @click="panel = null">暂不授权</button>
+      <button class="secondary" :disabled="busy" @click="cancelEnable">暂不授权</button>
     </div>
   </Sheet>
-  <Sheet v-if="panel === 'restore'" title="撤销声音辅助" @close="panel = null">
+  <Sheet v-if="panel === 'restore'" title="撤销声音辅助" :close-disabled="busy" @close="!busy && (panel = null)">
     <div class="stack">
       <p>撤销本轮声音规则，计时继续。其他勿扰设置不变。</p>
       <button class="primary" :disabled="!gateReady || busy" @click="restore">确认撤销</button>
-      <button class="secondary" @click="panel = null">取消</button>
+      <button class="secondary" :disabled="busy" @click="panel = null">取消</button>
     </div>
   </Sheet>
 </template>

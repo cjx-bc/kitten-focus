@@ -17,10 +17,18 @@ const props = defineProps<{ option: EChartsCoreOption; label: string; height?: n
   element = ref<HTMLElement>()
 let chart: ECharts | undefined, observer: ResizeObserver | undefined
 onMounted(() => {
-  chart = init(element.value!)
+  const el = element.value!
+  let lastWidth = el.clientWidth
+  let lastHeight = el.clientHeight
+  chart = init(el)
   chart.setOption(props.option)
-  observer = new ResizeObserver(() => chart?.resize())
-  observer.observe(element.value!)
+  observer = new ResizeObserver(() => {
+    if (el.clientWidth === lastWidth && el.clientHeight === lastHeight) return
+    lastWidth = el.clientWidth
+    lastHeight = el.clientHeight
+    chart?.resize()
+  })
+  observer.observe(el)
 })
 watch(
   () => props.option,

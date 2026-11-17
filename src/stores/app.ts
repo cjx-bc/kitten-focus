@@ -62,8 +62,23 @@ export const useApp = defineStore('app', () => {
   let dataLoaded = false,
     writeQueue: Promise<void> = Promise.resolve(),
     timerHandle: ReturnType<typeof setInterval> | undefined,
+    visibilityBound = false,
     toastHandle: ReturnType<typeof setTimeout>,
     ticking = false
+  function onVisibilityChange() {
+    if (!document.hidden) void tick()
+  }
+  function startTicking() {
+    if (!timerHandle) {
+      timerHandle = setInterval(() => {
+        void tick()
+      }, 750)
+    }
+    if (!visibilityBound && typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+      visibilityBound = true
+    }
+  }
   let sessionQueue: Promise<unknown> = Promise.resolve()
   function sessionOperation<T>(operation: () => Promise<T>): Promise<T> {
     const pending = sessionQueue.catch(() => {}).then(operation)
@@ -105,12 +120,17 @@ export const useApp = defineStore('app', () => {
     const had = focus.value.session
     focus.value = snapshot
     if (snapshot.record && !data.value.deletedRecordIds.includes(snapshot.record.id)) {
-      if (!data.value.records.some((r) => r.id === snapshot.record!.id))
-        await mutate((d) => d.records.push(snapshot.record!))
       if (had?.id === snapshot.record.id) {
         lastResult.value = snapshot.record
-        if (data.value.preferences.vibration && 'vibrate' in navigator) navigator.vibrate(150)
+        if (
+          data.value.preferences.vibration &&
+          typeof navigator !== 'undefined' &&
+          'vibrate' in navigator
+        )
+          navigator.vibrate(150)
       }
+      if (!data.value.records.some((r) => r.id === snapshot.record!.id))
+        await mutate((d) => d.records.push(snapshot.record!))
     }
   }
   async function tick() {
@@ -138,13 +158,11 @@ export const useApp = defineStore('app', () => {
         permissionStatus(),
       ])
       await tick()
-      await syncReminders()
       ready.value = true
-      timerHandle = setInterval(() => {
-        void tick()
-      }, 750)
-      document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) void tick()
+      startTicking()
+      await syncReminders().catch((e) => {
+        console.warn('syncReminders failed during init', e)
+        notify('提醒同步未完成，请稍后在设置中重试')
       })
     } catch (e) {
       error.value = '本地数据读取失败：' + String(e)
@@ -163,7 +181,7 @@ export const useApp = defineStore('app', () => {
       if (rest.value.session?.state === 'running') throw new Error('请先退出休息，再开始新的专注')
       if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes))
         throw new Error('请填写正整数分钟')
-      await writeQueue
+      await writeQueue.catch(() => {})
       let strictModeConfirmed = false
       const protection = data.value.preferences.protection
       if (protection?.strict || protection?.study || protection?.interceptNotifications || protection?.dnd || protection?.enhancements?.length) {
@@ -204,8 +222,9 @@ export const useApp = defineStore('app', () => {
         bootId: 0,
         segments: [],
       }
+      const snapshot = await focusDriver.start(session, strictModeConfirmed)
       lastResult.value = undefined
-      await acceptSnapshot(await focusDriver.start(session, strictModeConfirmed))
+      await acceptSnapshot(snapshot)
       rest.value = { session: null, remainingMs: 0 }
     })
   }
@@ -230,7 +249,7 @@ export const useApp = defineStore('app', () => {
   }
   async function startLock(configurationId: string, strictLockConfirmed = false) {
     return sessionOperation(async () => {
-      await writeQueue
+      await writeQueue.catch(() => {})
       lock.value = await lockDriver.start(configurationId, strictLockConfirmed)
     })
   }
@@ -416,10 +435,13 @@ export const useApp = defineStore('app', () => {
       if (lock.value.session) throw new Error('请先结束当前锁机再恢复数据')
       if (focus.value.session) throw new Error('请先结束当前专注再恢复数据')
       const restored = readBackup(makeBackup(next)).data
-      await writeQueue
+      await writeQueue.catch(() => {})
       await repository.replace(restored)
       data.value = restored
       dataLoaded = true
+      error.value = ''
+      ready.value = true
+      startTicking()
       const checks = await Promise.allSettled([
         syncReminders(),
         protectionDriver.apps(),
@@ -440,6 +462,11 @@ export const useApp = defineStore('app', () => {
   }
   function dispose() {
     clearInterval(timerHandle)
+    timerHandle = undefined
+    if (visibilityBound && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      visibilityBound = false
+    }
   }
   return {
     data,

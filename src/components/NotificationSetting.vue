@@ -7,12 +7,22 @@ import { notificationDriver, type NotificationStatus } from '../platform/notific
 import Sheet from './Sheet.vue'
 import InfoHint from './InfoHint.vue'
 import RecoverySheet from './RecoverySheet.vue'
+import { usePendingEnable } from './usePendingEnable'
 
 const props = withDefaults(defineProps<{ runtimeOnly?: boolean; compact?: boolean }>(), { runtimeOnly: false, compact: false })
 const app = useApp(), status = ref<NotificationStatus>(), busy = ref(false), error = ref('')
 const permissionOpen = ref(false), recoveryOpen = ref(false)
 let interval: ReturnType<typeof setInterval> | undefined
 const enabled = computed(() => app.data.preferences.protection?.interceptNotifications === true)
+let readRevision = 0
+async function saveEnabled(interceptNotifications: boolean) {
+  busy.value = true
+  try { await app.mutate(data => { data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, interceptNotifications } }) }
+  finally { busy.value = false }
+}
+const enableGate = usePendingEnable(saveEnabled, refresh)
+const permissionReady = () => !!(status.value?.supported && status.value.authorized && status.value.connected)
+function cancelEnable() { enableGate.cancel(); permissionOpen.value = false }
 const phaseText = computed(() => ({
   unsupported: '本机不支持通知暂缓', off: '本轮未开启', ready: '正在监听，尚无受控通知',
   holding: '系统已核实暂缓原通知', requested: '已请求暂缓，尚待系统核实', permission_required: '通知访问未授权', disconnected: '监听未连接，保护失效',
@@ -20,24 +30,31 @@ const phaseText = computed(() => ({
   release_pending: '等待系统释放并核实原通知', released: '本轮已无待释放通知', withdrawn: '本轮已停止新拦截',
 } as Record<string, string>)[status.value?.phase || ''] || '正在检查')
 async function refresh() {
-  try { status.value = await notificationDriver.read() }
-  catch (failure) { status.value = undefined; error.value = failure instanceof Error ? failure.message : String(failure) }
+  const revision = ++readRevision
+  try {
+    const value = await notificationDriver.read()
+    if (revision !== readRevision) return
+    status.value = value
+    if (await enableGate.observe(permissionReady(), value.authorized)) await refresh()
+  } catch (failure) { if (revision === readRevision) { status.value = undefined; error.value = failure instanceof Error ? failure.message : String(failure) } }
 }
 async function toggle(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  if (checked && !status.value?.supported) return
+  const target = event.target as HTMLInputElement, checked = target.checked
+  target.checked = enabled.value
+  if (busy.value || (checked && !status.value?.supported)) return
   busy.value = true; error.value = ''
   try {
-    await app.mutate(data => { data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, interceptNotifications: checked } })
-    await refresh()
-    if (checked && status.value?.supported && !status.value.authorized) permissionOpen.value = true
+    permissionOpen.value = await enableGate.request(checked, permissionReady())
+    if (!permissionOpen.value) await refresh()
   } catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
   finally { busy.value = false }
 }
 async function authorize() {
+  if (busy.value) return
   busy.value = true; error.value = ''
+  enableGate.launch()
   try { await notificationDriver.openSettings(); permissionOpen.value = false }
-  catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure) }
+  catch (failure) { cancelEnable(); error.value = failure instanceof Error ? failure.message : String(failure) }
   finally { busy.value = false; await refresh() }
 }
 async function reconnect() {
@@ -53,6 +70,7 @@ onMounted(() => {
   window.addEventListener('protection-recovered', refresh)
 })
 onBeforeUnmount(() => {
+  readRevision++
   clearInterval(interval); window.removeEventListener('focus', refresh)
   document.removeEventListener('visibilitychange', visibility); window.removeEventListener('protection-recovered', refresh)
 })
@@ -89,12 +107,12 @@ onBeforeUnmount(() => {
       <button v-if="status?.requested || status?.recoveryPending" class="secondary" :disabled="busy" @click="recoveryOpen = true">通知故障恢复</button>
     </div>
   </section>
-  <Sheet v-if="permissionOpen" title="通知拦截与通知访问" @close="permissionOpen = false">
+  <Sheet v-if="permissionOpen" title="通知拦截与通知访问" :close-disabled="busy" @close="cancelEnable">
     <div class="stack">
       <p>允许小猫在专注期间暂缓名单外应用的通知，结束后恢复。</p>
       <p class="field-help">不保存通知正文。电话、闹钟和紧急通知保留。</p>
       <button class="primary" :disabled="busy" @click="authorize">前往系统通知访问</button>
-      <button class="secondary" @click="permissionOpen = false">暂不授权</button>
+      <button class="secondary" :disabled="busy" @click="cancelEnable">暂不授权</button>
     </div>
   </Sheet>
   <RecoverySheet :open="recoveryOpen" @close="recoveryOpen = false" />

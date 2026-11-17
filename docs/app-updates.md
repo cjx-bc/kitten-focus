@@ -1,5 +1,7 @@
 # 应用内更新
 
+2026-11-17 已发布 0.2.6 / versionCode 12：全盘排查修复前端界面与流程、权限授权等待状态机（`usePendingEnable`）、Top-layer `[popover]` `.toast` 定位、`ProtectionHelpView` 标题对齐、`Chart` 重绘守卫及安卓端 `FocusNavigation` `SessionClock` 同步等多项问题。宿主机 16 个测试文件 / 132 项单元测试、TypeScript/Vite、正式 APK 构建及签名/完整性校验通过；D 盘 API 36 隔离 QA 模拟器通过 121 项核心/保护仪器测试、5 项学习模式测试、5 项滚屏/手势导航触摸测试、6 项 WebView 端到端巡检及软键盘弹窗适配检查。GitHub Release、官网下载页、下载跳转及线上 `domain-stable.json` 同步发布。
+
 2026-11-16 已完整发布 0.2.5 / versionCode 11：响应式布局、统一弹窗与开关、保护状态及白名单显示修正、设置与休息页优化。66 项宿主测试、TypeScript/Vite、Android assembleDebug 和 1 项安卓 JVM 单元测试通过；包名、原签名及 APK 完整性通过 `prepare-update.py` 校验。浏览器巡检覆盖 9 页与 27 组视口。本轮不启动模拟器，也不将旧版的系统效果测试当作本轮复测。GitHub、官网页面、下载跳转、域名 stable 与 IP domain-stable 均已同步，公网 APK 哈希一致。旧 IP stable 仍保留 0.2.0。逐项状态见 [0.2.5 发布记录](../releases/publication-0.2.5.json)。
 
 本次同步曾因本机 Meta/TUN 出站路径提前关闭 TCP/22 而受阻：服务器与 GitHub 的 22 端口都在 SSH banner 前 EOF，但代理中的 GitHub SSH/443 正常；仅为单个 socket 选择物理 WLAN 后，目标服务器 0.42 秒返回 OpenSSH banner，原有密钥成功登录。后续发布通过该单连接通道完成，未修改服务器 SSH 服务、密钥、全局代理或路由表。

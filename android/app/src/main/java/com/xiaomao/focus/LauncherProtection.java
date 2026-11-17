@@ -49,7 +49,7 @@ final class LauncherProtection {
             if (value.optLong("version") != system.installedVersion()) {
                 save(value.put("withdrawn", true).put("error", "应用已升级，已撤销本轮桌面入口隐藏")); release(value); return;
             }
-            if (!system.recoveryReachable()) {
+            if (!recoveryReachable(value)) {
                 save(value.put("withdrawn", true).put("error", "控制通知或恢复入口不可达，未继续隐藏；请核实通知权限")); release(value); return;
             }
             int state = system.componentState();
@@ -66,6 +66,18 @@ final class LauncherProtection {
         } catch (RuntimeException failure) {
             save(value.put("withdrawn", true).put("error", message(failure))); release(value);
         }
+    }
+    private boolean recoveryReachable(JSONObject value) {
+        if (system.recoveryReachable()) return true;
+        // NotificationManager.notify() enqueues asynchronously; allow a brief settle window at round start.
+        if (!value.optBoolean("pending") && !value.optBoolean("applied")
+            && system instanceof AndroidLauncherSystem && system.recoveryAvailable()) {
+            for (int i = 0; i < 10; i++) {
+                android.os.SystemClock.sleep(25);
+                if (system.recoveryReachable()) return true;
+            }
+        }
+        return false;
     }
     private boolean release(JSONObject value) throws JSONException {
         if (value.optBoolean("pending")) {

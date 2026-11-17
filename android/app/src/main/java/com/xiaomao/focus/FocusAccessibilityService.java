@@ -74,7 +74,7 @@ public class FocusAccessibilityService extends AccessibilityService {
             JSONObject observation = control.observeControl();
             JSONObject session = ControlSession.from(observation);
             JSONObject grant = session == null ? null : session.optJSONObject("temporaryAccess");
-            if (grant != null && grant.optLong("remainingMs") > 0 && foregroundPackage.equals(grant.optString("targetPackage")))
+            if (grant != null && grant.optLong("remainingMs") > 0)
                 expiry.postDelayed(enforce, Math.min(1000, grant.optLong("remainingMs")) + 20);
             if (!FocusProtection.shouldBlock(this, observation, foregroundPackage, foregroundClass)) return;
             startActivity(new Intent(this, FocusBlockActivity.class).putExtra(FocusBlockActivity.TARGET_PACKAGE, foregroundPackage)

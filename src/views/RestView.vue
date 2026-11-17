@@ -76,7 +76,7 @@ onBeforeRouteLeave(async () => {
 <template>
   <div v-if="session" class="rest-page">
     <header class="rest-header">
-      <button class="icon-button" aria-label="退出休息" :disabled="busy" @click="requestExit">
+      <button type="button" class="icon-button" aria-label="退出休息" :disabled="busy" @click="requestExit">
         <Icon name="back" />
       </button>
       <h1>{{ running ? '休息一下' : '休息结束' }}</h1>
@@ -94,19 +94,19 @@ onBeforeRouteLeave(async () => {
     </div>
     <div class="rest-actions">
       <template v-if="running">
-        <button class="secondary wide" :disabled="busy" @click="requestExit">退出休息</button>
+        <button type="button" class="secondary wide" :disabled="busy" @click="requestExit">退出休息</button>
       </template>
       <template v-else>
-        <button class="primary wide" :disabled="busy" @click="again">
+        <button type="button" class="primary wide" :disabled="busy" @click="again">
           <Icon name="play" :size="17" />再次专注
         </button>
-        <button class="text-button" :disabled="busy" @click="exit">返回待办</button>
+        <button type="button" class="text-button" :disabled="busy" @click="exit">返回待办</button>
       </template>
     </div>
-    <Sheet :open="confirmExit" title="退出休息？" @close="confirmExit = false">
+    <Sheet :open="confirmExit" title="退出休息？" :close-disabled="busy" @close="!busy && (confirmExit = false)">
       <div class="form-footer">
-        <button class="secondary" :disabled="busy" @click="confirmExit = false">继续休息</button>
-        <button class="primary" :disabled="busy" @click="exit">退出休息</button>
+        <button type="button" class="secondary" :disabled="busy" @click="confirmExit = false">继续休息</button>
+        <button type="button" class="primary" :disabled="busy" @click="exit">退出休息</button>
       </div>
     </Sheet>
   </div>

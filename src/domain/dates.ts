@@ -103,14 +103,19 @@ export function intervalBuckets(
   return [...grouped.values()]
 }
 export function periodRange(kind: string, anchor: string): [string, string] {
-  if (kind === 'day') return [anchor, anchor]
+  if (kind !== 'day' && kind !== 'week' && kind !== 'month' && kind !== 'year')
+    return ['0000-01-01', '9999-12-31']
+  const safeAnchor =
+    /^\d{4}-\d{2}-\d{2}$/.test(anchor) && Number.isFinite(localDate(anchor).getTime())
+      ? anchor
+      : dateKey()
+  if (kind === 'day') return [safeAnchor, safeAnchor]
   if (kind === 'week') {
-    const start = weekStart(anchor)
+    const start = weekStart(safeAnchor)
     return [start, addDays(start, 6)]
   }
-  const d = localDate(anchor)
+  const d = localDate(safeAnchor)
   if (kind === 'month')
-    return [`${anchor.slice(0, 7)}-01`, dateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0))]
-  if (kind === 'year') return [`${d.getFullYear()}-01-01`, `${d.getFullYear()}-12-31`]
-  return ['0000-01-01', '9999-12-31']
+    return [`${safeAnchor.slice(0, 7)}-01`, dateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0))]
+  return [`${d.getFullYear()}-01-01`, `${d.getFullYear()}-12-31`]
 }

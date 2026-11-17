@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useApp } from '../stores/app'
 import StrictModeSetting from '../components/StrictModeSetting.vue'
 import DndSetting from '../components/DndSetting.vue'
@@ -29,14 +29,32 @@ const app = useApp(),
   busy = ref(false),
   permissions = ref({ notifications: false, exactAlarms: false })
 function recovery() { window.dispatchEvent(new Event('open-recovery')) }
-onMounted(async () => {
+async function refreshPermissions() {
   try {
     permissions.value = await permissionStatus()
   } catch {}
+}
+function onVisible() {
+  if (!document.hidden) void refreshPermissions()
+}
+onMounted(() => {
+  void refreshPermissions()
+  window.addEventListener('focus', onVisible)
+  document.addEventListener('visibilitychange', onVisible)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', onVisible)
+  document.removeEventListener('visibilitychange', onVisible)
 })
 async function preference(key: 'sound' | 'vibration', event: Event) {
-  const value = (event.target as HTMLInputElement).checked
-  await app.mutate((d) => (d.preferences[key] = value))
+  const target = event.target as HTMLInputElement
+  const value = target.checked
+  try {
+    await app.mutate((d) => (d.preferences[key] = value))
+  } catch (e) {
+    target.checked = app.data.preferences[key]
+    app.notify(e instanceof Error ? e.message : String(e))
+  }
 }
 function editMinutes() {
   minutes.value = app.data.preferences.defaultMinutes
@@ -44,13 +62,22 @@ function editMinutes() {
   sheet.value = 'duration'
 }
 async function saveMinutes() {
+  if (busy.value) return
   if (!Number.isInteger(minutes.value) || minutes.value < 1) {
     error.value = '请输入正整数分钟'
     return
   }
-  await app.mutate((d) => (d.preferences.defaultMinutes = minutes.value))
-  sheet.value = null
-  app.notify('默认时长已保存')
+  busy.value = true
+  error.value = ''
+  try {
+    await app.mutate((d) => (d.preferences.defaultMinutes = minutes.value))
+    sheet.value = null
+    app.notify('默认时长已保存')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
 }
 async function exportBackup() {
   try {
@@ -111,12 +138,20 @@ async function restore() {
 async function enableNotifications() {
   try {
     await requestNotifications()
-    permissions.value = await permissionStatus()
+    await refreshPermissions()
     app.notify(
       permissions.value.notifications ? '系统通知已开启' : '通知未开启，其他功能仍可正常使用',
     )
   } catch (e) {
     app.notify(String(e))
+  }
+}
+async function openAlarms() {
+  try {
+    await openAlarmSettings()
+    await refreshPermissions()
+  } catch (e) {
+    app.notify(e instanceof Error ? e.message : String(e))
   }
 }
 </script>
@@ -170,7 +205,7 @@ async function enableNotifications() {
           ><span class="row settings-value"
             >{{ permissions.notifications ? '已开启' : '去开启' }}<Icon name="right" :size="16"
           /></span></button
-        ><button class="settings-row" @click="openAlarmSettings">
+        ><button class="settings-row" @click="openAlarms">
           <span class="row"><Icon name="clock" :size="20" />准时提醒</span
           ><span class="row settings-value"
             >{{ permissions.exactAlarms ? '已允许' : '系统设置' }}<Icon name="right" :size="16"
@@ -213,8 +248,8 @@ async function enableNotifications() {
       </button>
     </div>
     <div class="settings-help-links"><RouterLink to="/help">使用帮助</RouterLink><button @click="recovery">故障恢复</button></div>
-    <Sheet v-if="sheet === 'duration'" title="默认专注时长" @close="sheet = null"
-      ><form @submit.prevent="saveMinutes">
+    <Sheet :open="sheet === 'duration'" title="默认专注时长" :close-disabled="busy" @close="!busy && (sheet = null)"
+      ><form v-if="sheet === 'duration'" @submit.prevent="saveMinutes">
         <label
           >时长（分钟）<input
             v-model.number="minutes"
@@ -237,12 +272,12 @@ async function enableNotifications() {
           </button>
         </div>
         <p class="field-help">用于新建待办和自由专注。</p>
-        <p v-if="error" class="form-error">{{ error }}</p>
-        <button class="primary wide">保存设置</button>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <button class="primary wide" :disabled="busy">保存设置</button>
       </form></Sheet
     >
-    <Sheet v-if="sheet === 'restore' && backup" title="恢复本地备份" @close="sheet = null"
-      ><div class="stack">
+    <Sheet :open="sheet === 'restore' && !!backup" title="恢复本地备份" :close-disabled="busy" @close="!busy && (sheet = null)"
+      ><div v-if="backup" class="stack">
         <div class="card backup-summary">
           <p>备份时间：{{ new Date(backup.createdAt).toLocaleString('zh-CN') }}</p>
           <p>
@@ -254,13 +289,13 @@ async function enableNotifications() {
           <p>严格模式：{{ backup.data.preferences.protection?.strict ? '开启' : '关闭' }} · 增强保护 {{ backup.data.preferences.protection?.enhancements.length ?? 0 }} 项</p>
         </div>
         <p class="notice">当前数据将被备份替换。建议先导出当前数据。</p>
-        <button class="secondary wide" @click="exportBackup">先导出当前数据</button>
+        <button class="secondary wide" :disabled="busy" @click="exportBackup">先导出当前数据</button>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary wide" :disabled="busy" @click="restore">确认恢复此备份</button>
       </div></Sheet
     >
-    <Sheet v-if="sheet === 'about'" title="关于小猫专注" @close="sheet = null"
-      ><div class="about">
+    <Sheet :open="sheet === 'about'" title="关于小猫专注" @close="sheet = null"
+      ><div v-if="sheet === 'about'" class="about">
         <div class="about-identity"><span class="about-mark"><Icon name="clock" :size="26" /></span><div><h2>小猫专注</h2><span class="about-version">当前版本 {{ updates.state.currentVersion }}</span></div><span class="about-badge">内测版</span></div>
         <p class="about-description">面向日常学习的专注工具，连接待办、日程课表与专注统计。免登录，数据保存在当前设备。</p>
         <nav class="about-destinations" aria-label="项目与官方网站">
@@ -268,14 +303,14 @@ async function enableNotifications() {
           <a href="https://focus.linma.asia/" target="_blank" rel="noopener noreferrer"><span class="destination-icon"><Icon name="globe" :size="21" /></span><span class="destination-copy"><strong>官方网站</strong><small>focus.linma.asia</small></span><Icon name="external" :size="15" /></a>
         </nav>
         <section class="about-release" aria-labelledby="latest-release-title">
-          <div class="about-section-heading"><h3 id="latest-release-title">最近更新</h3><time datetime="2026-11-16">2026.11.16</time></div>
-          <p class="release-name">v0.2.5 <span>界面与交互优化</span></p>
+          <div class="about-section-heading"><h3 id="latest-release-title">最近更新</h3><time datetime="2026-11-17">2026.11.17</time></div>
+          <p class="release-name">v0.2.6 <span>稳定性与体验修复</span></p>
           <ul class="release-changes">
-            <li>适配不同屏幕尺寸，统一页面间距与控件对齐。</li>
-            <li>优化弹窗、开关与设置分组，精简专注和休息界面。</li>
-            <li>修复保护状态、不可用开关和白名单显示逻辑。</li>
+            <li>全面排查并修复待办、日历课表、统计、专注及锁机流程问题。</li>
+            <li>修正授权等待状态机、顶部 Toast 定位及保护帮助页标题对齐。</li>
+            <li>修复安卓端生命周期与导航时钟同步，完成 API 36 模拟器实测验证。</li>
           </ul>
-          <a class="about-link" href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.5" target="_blank" rel="noopener noreferrer">完整更新说明<Icon name="right" :size="15" /></a>
+          <a class="about-link" href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.6" target="_blank" rel="noopener noreferrer">完整更新说明<Icon name="right" :size="15" /></a>
         </section>
         <details class="about-details">
           <summary><span>开源许可</span><Icon name="down" :size="15" /></summary>

@@ -48,12 +48,16 @@ async function finish() {
 }
 async function again() {
   const previous = result.value
-  if (!previous) return
+  if (!previous || busy.value) return
+  busy.value = true
   const item = app.items.find((i) => i.id === previous.itemId) || null
   try {
     await app.start(item, previous.mode, previous.targetMs / 60000)
   } catch (e) {
-    app.notify(String(e))
+    const message = e instanceof Error ? e.message : String(e)
+    if (message !== '已取消开始专注') app.notify(message)
+  } finally {
+    busy.value = false
   }
 }
 async function rest() {
@@ -75,7 +79,7 @@ async function rest() {
     <header class="focus-header">
       <button class="icon-button" aria-label="返回待办，保持计时" @click="router.replace('/tasks')">
         <Icon name="back" /></button
-      ><span>{{ session?.themeName || '小猫专注' }}</span
+      ><span class="focus-header-title">{{ session?.themeName || '小猫专注' }}</span
       ><span class="focus-header-space" />
     </header>
     <template v-if="session"
@@ -146,7 +150,7 @@ async function rest() {
         >
           <Icon name="clock" :size="18" />休息 5 分钟
         </button>
-        <button v-else class="primary wide" @click="again">
+        <button v-else class="primary wide" :disabled="busy" @click="again">
           <Icon name="refresh" :size="18" />再次开始</button
         ><button class="text-button" @click="router.replace('/tasks')">返回待办</button>
       </div></template
@@ -164,7 +168,7 @@ async function rest() {
 <style scoped>
 .focus-page {
   padding: calc(var(--page-block) + env(safe-area-inset-top))
-    max(var(--page-inline), env(safe-area-inset-right)) 16px
+    max(var(--page-inline), env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom))
     max(var(--page-inline), env(safe-area-inset-left));
   min-height: 100dvh;
   display: flex;
@@ -174,11 +178,19 @@ async function rest() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: 13px;
 }
+.focus-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .focus-header-space {
   width: 48px;
+  flex-shrink: 0;
 }
 .focus-center {
   flex: 1;
@@ -233,7 +245,7 @@ async function rest() {
 }
 .focus-bottom > p {
   font-size: 13px;
-  color: #919196;
+  color: #6c6c72;
 }
 .focus-controls {
   display: flex;
