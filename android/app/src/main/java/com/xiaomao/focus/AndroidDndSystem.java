@@ -10,6 +10,8 @@ import android.os.Parcel;
 import android.service.notification.Condition;
 import android.service.notification.ZenPolicy;
 import android.util.Base64;
+import androidx.annotation.ChecksSdkIntAtLeast;
+import androidx.annotation.RequiresApi;
 import java.util.Map;
 
 /** Original implementation using rule-local Android APIs, never the global DND setters. */
@@ -23,10 +25,12 @@ final class AndroidDndSystem implements DndSystem {
         configuration = new ComponentName(context, DndRuleActivity.class);
     }
 
-    public boolean supported() { return Build.VERSION.SDK_INT >= 29 && manager != null; }
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.Q)
+    public boolean supported() { return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && manager != null; }
     public boolean permissionGranted() { return manager != null && manager.isNotificationPolicyAccessGranted(); }
     public int globalFilter() { return manager == null ? 0 : manager.getCurrentInterruptionFilter(); }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private ZenPolicy policy() {
         ZenPolicy.Builder builder = new ZenPolicy.Builder().disallowAllSounds()
             .allowCalls(ZenPolicy.PEOPLE_TYPE_ANYONE).allowRepeatCallers(true)
@@ -44,8 +48,13 @@ final class AndroidDndSystem implements DndSystem {
             Uri.parse(condition), policy(), NotificationManager.INTERRUPTION_FILTER_PRIORITY, true));
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private boolean matchesPolicy(ZenPolicy p) {
         if (p == null) return false;
+        if (Build.VERSION.SDK_INT >= 30 && p.getPriorityCategoryConversations() != ZenPolicy.STATE_DISALLOW)
+            return false;
+        if (Build.VERSION.SDK_INT >= 35 && p.getPriorityChannelsAllowed() != ZenPolicy.STATE_DISALLOW)
+            return false;
         return p.getPriorityCategoryCalls() == ZenPolicy.STATE_ALLOW
             && p.getPriorityCallSenders() == ZenPolicy.PEOPLE_TYPE_ANYONE
             && p.getPriorityCategoryRepeatCallers() == ZenPolicy.STATE_ALLOW
@@ -55,8 +64,6 @@ final class AndroidDndSystem implements DndSystem {
             && p.getPriorityCategoryEvents() == ZenPolicy.STATE_DISALLOW
             && p.getPriorityCategoryReminders() == ZenPolicy.STATE_DISALLOW
             && p.getPriorityCategorySystem() == ZenPolicy.STATE_DISALLOW
-            && (Build.VERSION.SDK_INT < 30 || p.getPriorityCategoryConversations() == ZenPolicy.STATE_DISALLOW)
-            && (Build.VERSION.SDK_INT < 35 || p.getPriorityChannelsAllowed() == ZenPolicy.STATE_DISALLOW)
             && p.getVisualEffectAmbient() == ZenPolicy.STATE_ALLOW
             && p.getVisualEffectBadge() == ZenPolicy.STATE_ALLOW
             && p.getVisualEffectFullScreenIntent() == ZenPolicy.STATE_ALLOW
@@ -67,12 +74,14 @@ final class AndroidDndSystem implements DndSystem {
     }
 
     public Rule find(String condition) {
+        if (!supported()) return null;
         for (Map.Entry<String, AutomaticZenRule> entry : manager.getAutomaticZenRules().entrySet())
             if (Uri.parse(condition).equals(entry.getValue().getConditionId())) return read(entry.getKey(), condition);
         return null;
     }
 
     public Rule read(String id, String condition) {
+        if (!supported()) return null;
         AutomaticZenRule rule = manager.getAutomaticZenRule(id);
         if (rule == null) return null;
         boolean original = Uri.parse(condition).equals(rule.getConditionId())
@@ -98,9 +107,10 @@ final class AndroidDndSystem implements DndSystem {
     }
 
     public void activate(String id, String condition) {
+        if (!supported()) throw new IllegalStateException("此系统不支持独立的声音规则");
         manager.setAutomaticZenRuleState(id, new Condition(Uri.parse(condition), NAME,
             Condition.STATE_TRUE));
     }
 
-    public boolean remove(String id) { return manager.removeAutomaticZenRule(id); }
+    public boolean remove(String id) { return supported() && manager.removeAutomaticZenRule(id); }
 }

@@ -11,7 +11,9 @@ import urllib.request
 
 SSH = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=yes', '-o', 'HostKeyAlgorithms=ssh-ed25519', 'myserver']
 PROXY = ['-o', 'ProxyCommand=' + os.environ['SSH_PROXY_COMMAND']] if os.environ.get('SSH_PROXY_COMMAND') else []
-SSH[1:1] = PROXY
+BIND_ADDR = os.environ.get('SSH_BIND_ADDRESS', '')
+SSH[1:1] = PROXY + (['-b', BIND_ADDR] if BIND_ADDR else [])
+SCP_OPTS = PROXY + (['-o', 'BindAddress=' + BIND_ADDR] if BIND_ADDR else []) + ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes']
 
 
 def remote(source):
@@ -36,7 +38,7 @@ def main():
     if hashlib.sha256(args.apk.read_bytes()).hexdigest() != release['sha256'] or args.apk.stat().st_size != release['size']:
         raise SystemExit('APK changed after verification')
     remote("import os; os.makedirs('/opt/kitten-focus/candidates',exist_ok=True)\n")
-    subprocess.check_call(['scp'] + PROXY + ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', str(args.apk), f'myserver:/opt/kitten-focus/candidates/{filename}.upload'])
+    subprocess.check_call(['scp'] + SCP_OPTS + [str(args.apk), f'myserver:/opt/kitten-focus/candidates/{filename}.upload'])
     encoded = base64.b64encode(json.dumps(manifest, ensure_ascii=False).encode()).decode()
     source = """
 import base64,json,hashlib,os,shutil
@@ -74,10 +76,21 @@ else:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     opener.addheaders = [('User-Agent', 'KittenFocusPublisher/1.0')]
     origin_url = 'https://download-focus.linma.asia/releases/' + filename
-    with opener.open(origin_url, timeout=45) as response:
-        data = response.read()
-    if len(data) != release['size'] or hashlib.sha256(data).hexdigest() != release['sha256']:
-        raise SystemExit('Public download verification failed; channel unchanged')
+    try:
+        with opener.open(origin_url, timeout=45) as response:
+            data = response.read()
+        if len(data) != release['size'] or hashlib.sha256(data).hexdigest() != release['sha256']:
+            raise SystemExit('Public download verification failed; channel unchanged')
+    except (urllib.error.URLError, TimeoutError):
+        source = """
+import urllib.request,hashlib,json
+release=json.loads(base64.b64decode('%s').decode('utf-8'))['release']
+request=urllib.request.Request('%s',headers={'User-Agent':'KittenFocusPublisher/1.0'})
+with urllib.request.urlopen(request,timeout=45) as response: payload=response.read(release['size']+1)
+assert len(payload)==release['size'] and hashlib.sha256(payload).hexdigest()==release['sha256'], 'Public download mismatch'
+print('Public origin download verified remotely.')
+""" % (encoded, origin_url)
+        print(remote('import base64\n'+source).strip())
     # GitHub is the canonical source. Do not advertise an asset that is missing or private.
     if release['url'] == github_url:
         source = """

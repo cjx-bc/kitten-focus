@@ -97,31 +97,37 @@ export const useApp = defineStore('app', () => {
     clearTimeout(toastHandle)
     toastHandle = setTimeout(() => (toast.value = ''), 3500)
   }
-  function persist() {
-    const snapshot = structuredClone(data.value)
-    writeQueue = writeQueue
-      .catch(() => {})
-      .then(() => repository.save(snapshot))
-      .then(() => syncReminders())
-      .catch((e) => {
-        error.value = '保存失败，请重试：' + String(e)
-        throw e
-      })
-    return writeQueue
+  function dataOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const pending = writeQueue.then(operation)
+    writeQueue = pending.then(() => {}, () => {})
+    return pending
   }
   async function mutate(update: (next: AppData) => void) {
     if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
-    const next = structuredClone(data.value)
-    update(next)
-    data.value = JSON.parse(JSON.stringify(next)) as AppData
-    await persist()
+    await dataOperation(async () => {
+      const next = structuredClone(data.value)
+      update(next)
+      const snapshot = JSON.parse(JSON.stringify(next)) as AppData
+      try {
+        await repository.save(snapshot)
+      } catch (e) {
+        error.value = '保存失败，请重试：' + String(e)
+        throw e
+      }
+      data.value = snapshot
+      if (error.value.startsWith('保存失败，请重试：')) error.value = ''
+      await syncReminders().catch(() => {
+        notify('数据已保存，提醒同步未完成')
+      })
+    })
   }
   async function acceptSnapshot(snapshot: FocusSnapshot) {
     const had = focus.value.session
     focus.value = snapshot
-    if (snapshot.record && !data.value.deletedRecordIds.includes(snapshot.record.id)) {
-      if (had?.id === snapshot.record.id) {
-        lastResult.value = snapshot.record
+    const record = snapshot.record
+    if (record && !data.value.deletedRecordIds.includes(record.id)) {
+      if (had?.id === record.id) {
+        lastResult.value = record
         if (
           data.value.preferences.vibration &&
           typeof navigator !== 'undefined' &&
@@ -129,8 +135,11 @@ export const useApp = defineStore('app', () => {
         )
           navigator.vibrate(150)
       }
-      if (!data.value.records.some((r) => r.id === snapshot.record!.id))
-        await mutate((d) => d.records.push(snapshot.record!))
+      if (!data.value.records.some((r) => r.id === record.id))
+        await mutate((d) => {
+          if (!d.deletedRecordIds.includes(record.id) && !d.records.some((r) => r.id === record.id))
+            d.records.push(record)
+        })
     }
   }
   async function tick() {
@@ -170,8 +179,8 @@ export const useApp = defineStore('app', () => {
   }
   async function start(
     item: FocusItem | null,
-    mode = item?.mode || 'countdown',
-    minutes = item?.minutes || data.value.preferences.defaultMinutes,
+    requestedMode?: ActiveFocus['mode'],
+    requestedMinutes?: number,
   ) {
     return sessionOperation(async () => {
       if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
@@ -179,35 +188,41 @@ export const useApp = defineStore('app', () => {
       if (lock.value.session) throw new Error('已有锁机正在进行，请先返回锁机处理')
       await refreshRest()
       if (rest.value.session?.state === 'running') throw new Error('请先退出休息，再开始新的专注')
+      await writeQueue
+      const startingData = data.value
+      const savedItem = item && startingData.items.find((candidate) => candidate.id === item.id && !candidate.deleted)
+      if (item && !savedItem) throw new Error('该待办已删除或尚未保存')
+      const mode = requestedMode ?? savedItem?.mode ?? 'countdown'
+      const minutes = requestedMinutes ?? savedItem?.minutes ?? startingData.preferences.defaultMinutes
       if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes))
         throw new Error('请填写正整数分钟')
-      await writeQueue.catch(() => {})
       let strictModeConfirmed = false
-      const protection = data.value.preferences.protection
+      const protection = startingData.preferences.protection
       if (protection?.strict || protection?.study || protection?.interceptNotifications || protection?.dnd || protection?.enhancements?.length) {
+        const whitelist = effectiveWhitelist(startingData, savedItem?.id ?? null)
         const accepted = await new Promise<boolean>((resolve) => {
           resolveStartConfirmation = resolve
           startConfirmation.value = {
-            title: item?.title || '自由专注',
+            title: savedItem?.title || '自由专注',
             mode,
             minutes,
             strict: !!protection.strict,
             study: !!protection.study,
             protections: JSON.parse(JSON.stringify({ ...defaultProtection(), ...protection })),
-            whitelistCount: effectiveWhitelist(data.value, item?.id ?? null).whitelist.length,
-            whitelistSource: effectiveWhitelist(data.value, item?.id ?? null).source,
+            whitelistCount: whitelist.whitelist.length,
+            whitelistSource: whitelist.source,
           }
         })
         if (!accepted) throw new Error('已取消开始专注')
         strictModeConfirmed = true
       }
-      const theme = data.value.themes.find((t) => t.id === item?.themeId),
+      const theme = startingData.themes.find((t) => t.id === savedItem?.themeId),
         now = Date.now()
       const session: ActiveFocus = {
         id: uid(),
-        itemId: item?.id || null,
+        itemId: savedItem?.id || null,
         themeId: theme?.id || null,
-        title: item?.title || '自由专注',
+        title: savedItem?.title || '自由专注',
         themeName: theme?.name || '自由专注',
         color: theme?.color || '#222222',
         mode,
@@ -222,7 +237,10 @@ export const useApp = defineStore('app', () => {
         bootId: 0,
         segments: [],
       }
-      const snapshot = await focusDriver.start(session, strictModeConfirmed)
+      const snapshot = await dataOperation(async () => {
+        if (data.value !== startingData) throw new Error('专注配置已变化，请重新开始')
+        return focusDriver.start(session, strictModeConfirmed)
+      })
       lastResult.value = undefined
       await acceptSnapshot(snapshot)
       rest.value = { session: null, remainingMs: 0 }
@@ -247,10 +265,13 @@ export const useApp = defineStore('app', () => {
       rest.value = await restDriver.exit()
     })
   }
-  async function startLock(configurationId: string, strictLockConfirmed = false) {
+  async function startLock(configurationId: string, strictLockConfirmed = false, confirmedData?: AppData) {
     return sessionOperation(async () => {
-      await writeQueue.catch(() => {})
-      lock.value = await lockDriver.start(configurationId, strictLockConfirmed)
+      if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
+      lock.value = await dataOperation(async () => {
+        if (confirmedData && confirmedData !== data.value) throw new Error('锁机配置已变化，请重新确认')
+        return lockDriver.start(configurationId, strictLockConfirmed)
+      })
     })
   }
   async function finishLock(confirmed: boolean) {
@@ -323,9 +344,13 @@ export const useApp = defineStore('app', () => {
     source?: Occurrence,
     scope: 'once' | 'all' = 'all',
   ) {
-    validateEvent(event)
+    const singleOccurrence = source && scope === 'once'
+    const payload: CalendarEvent = singleOccurrence || event.repeat === 'none'
+      ? { ...event, repeat: 'none', until: '' }
+      : event
+    validateEvent(payload)
     await mutate((d) => {
-      if (source && scope === 'once') {
+      if (singleOccurrence) {
         d.eventExceptions = d.eventExceptions.filter(
           (e) => !(e.eventId === source.sourceId && e.date === source.sourceDate),
         )
@@ -333,14 +358,17 @@ export const useApp = defineStore('app', () => {
           eventId: source.sourceId,
           date: source.sourceDate,
           cancelled: false,
-          title: event.title,
-          start: event.start,
-          end: event.end,
+          title: payload.title,
+          start: payload.start,
+          end: payload.end,
         })
       } else {
-        const i = d.events.findIndex((e) => e.id === event.id)
-        if (i < 0) d.events.push(event)
-        else d.events[i] = event
+        if (payload.repeat === 'none') {
+          d.eventExceptions = d.eventExceptions.filter((e) => e.eventId !== payload.id)
+        }
+        const i = d.events.findIndex((e) => e.id === payload.id)
+        if (i < 0) d.events.push(payload)
+        else d.events[i] = payload
       }
     })
   }
@@ -435,10 +463,11 @@ export const useApp = defineStore('app', () => {
       if (lock.value.session) throw new Error('请先结束当前锁机再恢复数据')
       if (focus.value.session) throw new Error('请先结束当前专注再恢复数据')
       const restored = readBackup(makeBackup(next)).data
-      await writeQueue.catch(() => {})
-      await repository.replace(restored)
-      data.value = restored
-      dataLoaded = true
+      await dataOperation(async () => {
+        await repository.replace(restored)
+        data.value = restored
+        dataLoaded = true
+      })
       error.value = ''
       ready.value = true
       startTicking()

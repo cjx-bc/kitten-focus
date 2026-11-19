@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { settle } from '../src/domain/focus'
 import { statistics } from '../src/domain/statistics'
-import { occurrences, validateEvent } from '../src/domain/calendar'
+import { findEventConflict, occurrences, validateEvent } from '../src/domain/calendar'
 import { periodRange } from '../src/domain/dates'
 import { makeBackup, readBackup } from '../src/domain/backup'
 import { emptyData, defaultPeriods, type ActiveFocus, type CalendarEvent, type FocusRecord } from '../src/domain/model'
@@ -174,6 +174,23 @@ describe('calendar recurrence and exceptions', () => {
     })
     expect(occurrences(data, '2026-11-18', '2026-11-18')[0]?.sourceDate).toBe('2026-11-09')
   })
+  it('finds a far-future overlap with a moved occurrence and skips cancelled occurrences', () => {
+    const data = emptyData()
+    const proposed = {
+      id: 'a', title: '复习', start: '2026-11-09T09:00', end: '2026-11-09T10:00',
+      allDay: false, note: '', repeat: 'weekly' as const, weekdays: [1], until: '',
+      itemId: null, reminderMinutes: null,
+    }
+    data.events.push({ ...proposed, id: 'b', weekdays: [3], until: '2026-11-11' })
+    const edit = {
+      eventId: 'b', date: '2026-11-11', cancelled: false,
+      start: '2050-11-07T09:30', end: '2050-11-07T10:30',
+    }
+    data.eventExceptions.push(edit)
+    expect(findEventConflict(data, proposed)?.start).toBe(edit.start)
+    edit.cancelled = true
+    expect(findEventConflict(data, proposed)).toBeUndefined()
+  })
   it('uses teaching-week parity and only cancels a selected course occurrence', () => {
     const data = emptyData()
     data.semesters.push({
@@ -204,6 +221,24 @@ describe('calendar recurrence and exceptions', () => {
       '2026-11-02',
       '2026-11-30',
     ])
+  })
+  it('checks both teaching weeks after a cross-day weekly series has started', () => {
+    const data = emptyData()
+    data.semesters.push({
+      id: 's', name: '秋季', startDate: '2026-11-02', weeks: 13, periods: defaultPeriods(),
+    })
+    data.preferences.activeSemesterId = 's'
+    data.courses.push({
+      id: 'c', semesterId: 's', title: '数学', weekday: 1, firstPeriod: 1, lastPeriod: 2,
+      firstWeek: 7, lastWeek: 13, parity: 'odd', room: '', teacher: '', color: '#222',
+      reminderMinutes: null,
+    })
+    const proposed = {
+      id: 'a', title: '复习', start: '2026-12-13T15:00', end: '2027-01-08T16:00',
+      allDay: false, note: '', repeat: 'weekly' as const, weekdays: [3, 6], until: '2026-12-25',
+      itemId: null, reminderMinutes: null,
+    }
+    expect(findEventConflict(data, proposed)?.start).toBe('2026-12-28T08:00')
   })
 })
 describe('backup validation', () => {

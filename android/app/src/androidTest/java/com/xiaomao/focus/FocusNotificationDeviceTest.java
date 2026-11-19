@@ -74,22 +74,16 @@ public class FocusNotificationDeviceTest {
             assertEquals(originalClick, restored.getNotification().contentIntent);
             assertEquals(2, restored.getNotification().extras.getInt("probe_revision"));
             assertNull(find(true));
-            control.synchronizeNotifications();
-            assertTrue("The active original must be verified restored before it is consumed",
-                control.getNotificationStatus().getInt("restoredCount") >= 1);
+            waitFor(() -> {
+                control.synchronizeNotifications();
+                return find(false) != null && find(true) == null && control.getNotificationStatus().getInt("restoredCount") >= 1;
+            }, 3000, "The active original must be verified restored before it is consumed");
             android.util.Log.i("FocusNotificationDeviceTest", "original_identity_update_and_deadline_verified");
             // This invokes a real notification-shade UI click, not PendingIntent.send().
             shell("input keyevent WAKEUP"); shell("wm dismiss-keyguard");
             shell("cmd statusbar expand-notifications");
             SystemClock.sleep(1800); // Shade animation only; never wait for a constantly updating timer UI to idle.
-            String observedTap = InstrumentationRegistry.getArguments().getString("notificationObservedTap", "");
-            if (!observedTap.isEmpty()) {
-                // Explicitly supplied only after inspecting this fixture's actual 540x960 shade screenshot.
-                assertTrue(shell("wm size").contains("540x960"));
-                assertEquals("200,420", observedTap);
-                assertNotNull("Original must still be active at the inspected location", find(false));
-                shell("input tap 200 420");
-            } else waitFor(() -> clickShadeTitle("Synthetic probe #" + ID), 5000, "Could not click synthetic original in notification shade");
+            tapObservedOrShadeTitle(ID, find(false) != null);
             waitFor(() -> senderClickObserved(epoch), 5000, "Sender did not receive its original UI click");
             control.synchronizeNotifications();
             assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
@@ -244,32 +238,69 @@ public class FocusNotificationDeviceTest {
         } catch (Exception ignored) { }
         return false;
     }
-    private static boolean clickShadeTitle(String text) {
+    static void tapObservedOrShadeTitle(int notificationId, boolean activeNotificationExists) throws Exception {
+        String observedTap = InstrumentationRegistry.getArguments().getString("notificationObservedTap", "");
+        if (!observedTap.isEmpty()) {
+            assertTrue("Invalid notificationObservedTap: " + observedTap, observedTap.matches("^\\d+,\\d+$"));
+            assertTrue("Original must still be active at the inspected location", activeNotificationExists);
+            String[] coords = observedTap.split(",");
+            shell("input tap " + coords[0] + " " + coords[1]);
+        } else {
+            waitFor(() -> clickShadeTitle("Synthetic probe #" + notificationId), 5000, "Could not click synthetic original in notification shade");
+        }
+    }
+    private static AccessibilityNodeInfo findVisibleTextNode(AccessibilityNodeInfo node, String text) {
+        if (node == null) return null;
+        CharSequence nodeText = node.getText();
+        CharSequence desc = node.getContentDescription();
+        if (node.isVisibleToUser() && ((nodeText != null && nodeText.toString().contains(text))
+            || (desc != null && desc.toString().contains(text)))) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = findVisibleTextNode(node.getChild(i), text);
+            if (found != null) return found;
+        }
+        return null;
+    }
+    static boolean clickShadeTitle(String text) {
         UiAutomation automation = InstrumentationRegistry.getInstrumentation().getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES);
         AccessibilityServiceInfo info = automation.getServiceInfo();
-        info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
-        automation.setServiceInfo(info);
+        if (info != null && (info.flags & AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS) == 0) {
+            info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+            automation.setServiceInfo(info);
+            SystemClock.sleep(150);
+        }
         java.util.ArrayList<AccessibilityNodeInfo> roots = new java.util.ArrayList<>();
         AccessibilityNodeInfo active = automation.getRootInActiveWindow();
         if (active != null) roots.add(active);
         for (AccessibilityWindowInfo window : automation.getWindows()) if (window.getRoot() != null) roots.add(window.getRoot());
+        StringBuilder rootPackages = new StringBuilder();
         for (AccessibilityNodeInfo root : roots) {
-            List<AccessibilityNodeInfo> matches = root.findAccessibilityNodeInfosByText(text);
+            rootPackages.append(root.getPackageName()).append(',');
+            List<AccessibilityNodeInfo> matches = new java.util.ArrayList<>(root.findAccessibilityNodeInfosByText(text));
+            if (matches.isEmpty()) {
+                AccessibilityNodeInfo walked = findVisibleTextNode(root, text);
+                if (walked != null) matches.add(walked);
+            }
             for (AccessibilityNodeInfo match : matches) {
                 if (!match.isVisibleToUser()) continue;
-                for (AccessibilityNodeInfo value = match; value != null; value = value.getParent())
-                    if (value.isClickable() && value.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
                 Rect bounds = new Rect(); match.getBoundsInScreen(bounds);
                 if (!bounds.isEmpty()) {
                     long time = SystemClock.uptimeMillis();
                     MotionEvent down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, bounds.centerX(), bounds.centerY(), 0);
                     MotionEvent up = MotionEvent.obtain(time, time + 60, MotionEvent.ACTION_UP, bounds.centerX(), bounds.centerY(), 0);
                     down.setSource(InputDevice.SOURCE_TOUCHSCREEN); up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-                    try { return automation.injectInputEvent(down, true) && automation.injectInputEvent(up, true); }
-                    finally { down.recycle(); up.recycle(); }
+                    try {
+                        if (automation.injectInputEvent(down, true) && automation.injectInputEvent(up, true)) {
+                            android.util.Log.i("FocusNotificationDeviceTest", "shade_tap_injected bounds=" + bounds);
+                            return true;
+                        }
+                    } finally { down.recycle(); up.recycle(); }
                 }
+                for (AccessibilityNodeInfo value = match; value != null; value = value.getParent())
+                    if (value.isClickable() && value.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
             }
         }
+        android.util.Log.i("FocusNotificationDeviceTest", "shade_title_not_found text=" + text + " roots=" + roots.size() + " pkgs=" + rootPackages);
         return false;
     }
     interface Check { boolean done() throws Exception; }

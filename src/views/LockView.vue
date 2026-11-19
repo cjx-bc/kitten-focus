@@ -3,7 +3,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import { timer, duration } from '../domain/dates'
-import { uid, defaultProtection, type LockConfiguration, type ProtectionStatus, type ControlSnapshot } from '../domain/model'
+import { uid, defaultProtection, type AppData, type LockConfiguration, type ProtectionStatus, type ControlSnapshot } from '../domain/model'
 import { protectionDriver, controlDriver } from '../platform/bridge'
 import Sheet from '../components/Sheet.vue'
 import Icon from '../components/Icon.vue'
@@ -16,14 +16,21 @@ const starting = ref<LockConfiguration | null>(null), ending = ref(false), busy 
 const status = ref<ProtectionStatus | null>(null)
 const mainEntry = ref<ControlSnapshot['mainEntry']>()
 let readRevision = 0
+let confirmedData: AppData | undefined
 const configurations = computed(() => app.data.lockConfigurations ?? [])
 const session = computed(() => app.lock.session)
 const result = computed(() => app.lock.records[0])
 const selectedPackages = computed(() => draft.value?.whitelist.source === 'custom' ? draft.value.whitelist.packages : [])
-const startCount = computed(() => starting.value?.whitelist.source === 'custom' ? starting.value.whitelist.packages.length : app.data.preferences.protection?.globalWhitelist.length ?? 0)
-const startPreferences = computed(() => ({ ...defaultProtection(), ...app.data.preferences.protection,
-  study: true, strict: starting.value?.strict === true,
-  enhancements: [...(starting.value?.enhancements ?? app.data.preferences.protection?.enhancements ?? [])] }))
+const startCount = computed(() => starting.value?.whitelist.source === 'custom'
+  ? starting.value.whitelist.packages.length
+  : confirmedData?.preferences.protection?.globalWhitelist?.length ?? 0)
+const startPreferences = computed(() => {
+  const configuration = starting.value
+  const protection = confirmedData?.preferences.protection
+  return { ...defaultProtection(), ...protection,
+    study: true, strict: configuration?.strict === true,
+    enhancements: [...(configuration?.enhancements ?? protection?.enhancements ?? [])] }
+})
 const enhancementOptions = [
   { key: 'navigationHomeRecents', title: '限制桌面与最近任务' },
   { key: 'recentTasksHidden', title: '隐藏小猫最近任务卡片' },
@@ -79,12 +86,12 @@ async function refresh() {
     }
   }
 }
-async function prepare(configuration: LockConfiguration) { if (!status.value?.supported || busy.value) return; sheetError.value = ''; starting.value = configuration; await refresh() }
+async function prepare(configuration: LockConfiguration) { if (!status.value?.supported || busy.value) return; sheetError.value = ''; confirmedData = app.data; starting.value = configuration; await refresh() }
 async function start() {
   if (!starting.value || busy.value || !status.value?.supported) return
   busy.value = true
   sheetError.value = ''
-  try { await app.startLock(starting.value.id, starting.value.strict === true); starting.value = null; sheetError.value = ''; await refresh() }
+  try { await app.startLock(starting.value.id, starting.value.strict === true, confirmedData); starting.value = null; confirmedData = undefined; sheetError.value = ''; await refresh() }
   catch (e) { sheetError.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
@@ -96,7 +103,7 @@ async function finish() {
   finally { busy.value = false }
 }
 function closeDraft() { if (!busy.value) { draft.value = null; sheetError.value = '' } }
-function closeStarting() { if (!busy.value) { starting.value = null; sheetError.value = '' } }
+function closeStarting() { if (!busy.value) { starting.value = null; confirmedData = undefined; sheetError.value = '' } }
 function closeEnding() { if (!busy.value) { ending.value = false; sheetError.value = '' } }
 function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 async function settings() {

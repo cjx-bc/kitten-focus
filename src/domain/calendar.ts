@@ -1,4 +1,4 @@
-import type { AppData, CalendarEvent, Course, Occurrence } from './model'
+import type { AppData, CalendarEvent, Course, CourseException, EventException, Occurrence } from './model'
 import { addDays, dateKey, dayDistance, localDate, weekday } from './dates'
 const overlaps = (start: string, end: string, from: string, to: string) =>
   start < `${addDays(to, 1)}T00:00` && end > `${from}T00:00`
@@ -52,58 +52,133 @@ export function courseOccurrence(data: AppData, course: Course, date: string): O
     reminderMinutes: course.reminderMinutes,
   }
 }
+function eventOccurrences(
+  event: CalendarEvent,
+  exceptions: EventException[],
+  from: string,
+  to: string,
+): Occurrence[] {
+  const first = event.start.slice(0, 10),
+    span = dayDistance(first, event.end.slice(0, 10))
+  const candidates = new Set<string>()
+  if (event.repeat === 'none') candidates.add(first)
+  else {
+    const earliest = addDays(from, -span)
+    const latest = event.until && event.until < to ? event.until : to
+    for (let day = earliest > first ? earliest : first; day <= latest; day = addDays(day, 1))
+      if (event.weekdays.includes(weekday(day))) candidates.add(day)
+  }
+  for (const exception of exceptions)
+    if (exception.start && overlaps(exception.start, exception.end || exception.start, from, to))
+      candidates.add(exception.date)
+  const result: Occurrence[] = []
+  for (const day of candidates) {
+    const occurrence = eventOccurrence(event, day)
+    const exception = exceptions.find((x) => x.date === day)
+    if (exception?.cancelled) continue
+    if (exception?.start) occurrence.start = exception.start
+    if (exception?.end) occurrence.end = exception.end
+    if (exception?.title) occurrence.title = exception.title
+    if (overlaps(occurrence.start, occurrence.end, from, to)) result.push(occurrence)
+  }
+  return result
+}
+
+function courseOccurrences(
+  data: AppData,
+  course: Course,
+  exceptions: CourseException[],
+  from: string,
+  to: string,
+): Occurrence[] {
+  const candidates = new Set<string>()
+  for (let day = from; day <= to; day = addDays(day, 1)) candidates.add(day)
+  for (const exception of exceptions)
+    if (exception.start && overlaps(exception.start, exception.end || exception.start, from, to))
+      candidates.add(exception.date)
+  const result: Occurrence[] = []
+  for (const day of candidates) {
+    const occurrence = courseOccurrence(data, course, day)
+    if (!occurrence) continue
+    const exception = exceptions.find((x) => x.date === day)
+    if (exception?.cancelled) continue
+    if (exception?.start) occurrence.start = exception.start
+    if (exception?.end) occurrence.end = exception.end
+    if (overlaps(occurrence.start, occurrence.end, from, to)) result.push(occurrence)
+  }
+  return result
+}
+
 export function occurrences(data: AppData, from: string, to: string): Occurrence[] {
   const result = new Map<string, Occurrence>()
   for (const event of data.events) {
-    const first = event.start.slice(0, 10),
-      span = dayDistance(first, event.end.slice(0, 10))
-    const candidates = new Set<string>()
-    if (event.repeat === 'none') candidates.add(first)
-    else {
-      for (let day = addDays(from, -span); day <= to; day = addDays(day, 1))
-        if (
-          day >= first &&
-          (!event.until || day <= event.until) &&
-          event.weekdays.includes(weekday(day))
-        )
-          candidates.add(day)
-    }
-    for (const exception of data.eventExceptions.filter((x) => x.eventId === event.id))
-      if (exception.start && overlaps(exception.start, exception.end || exception.start, from, to))
-        candidates.add(exception.date)
-    for (const day of candidates) {
-      const occurrence = eventOccurrence(event, day),
-        exception = data.eventExceptions.find((x) => x.eventId === event.id && x.date === day)
-      if (exception?.cancelled) continue
-      if (exception?.start) occurrence.start = exception.start
-      if (exception?.end) occurrence.end = exception.end
-      if (exception?.title) occurrence.title = exception.title
-      if (overlaps(occurrence.start, occurrence.end, from, to))
-        result.set(occurrence.id, occurrence)
-    }
+    const exceptions = data.eventExceptions.filter((x) => x.eventId === event.id)
+    for (const item of eventOccurrences(event, exceptions, from, to)) result.set(item.id, item)
   }
-  for (const course of data.courses.filter(
-    (c) => c.semesterId === data.preferences.activeSemesterId,
-  )) {
-    const candidates = new Set<string>()
-    for (let day = from; day <= to; day = addDays(day, 1)) candidates.add(day)
-    for (const exception of data.courseExceptions.filter((x) => x.courseId === course.id))
-      if (exception.start && overlaps(exception.start, exception.end || exception.start, from, to))
-        candidates.add(exception.date)
-    for (const day of candidates) {
-      const occurrence = courseOccurrence(data, course, day)
-      if (!occurrence) continue
-      const exception = data.courseExceptions.find(
-        (x) => x.courseId === course.id && x.date === day,
-      )
-      if (exception?.cancelled) continue
-      if (exception?.start) occurrence.start = exception.start
-      if (exception?.end) occurrence.end = exception.end
-      if (overlaps(occurrence.start, occurrence.end, from, to))
-        result.set(occurrence.id, occurrence)
-    }
+  for (const course of data.courses.filter((c) => c.semesterId === data.preferences.activeSemesterId)) {
+    const exceptions = data.courseExceptions.filter((x) => x.courseId === course.id)
+    for (const item of courseOccurrences(data, course, exceptions, from, to)) result.set(item.id, item)
   }
   return [...result.values()].sort((a, b) => a.start.localeCompare(b.start))
+}
+
+export function findEventConflict(
+  data: AppData,
+  proposed: CalendarEvent,
+  replacingOccurrenceId?: string,
+): Occurrence | undefined {
+  const startsOn = proposed.start.slice(0, 10)
+  if (proposed.repeat === 'none') {
+    return occurrences(data, startsOn, proposed.end.slice(0, 10)).find((item) => {
+      const replaced = item.kind === 'event' && item.sourceId === proposed.id &&
+        (replacingOccurrenceId === undefined || item.id === replacingOccurrenceId)
+      return !replaced && item.start < proposed.end && item.end > proposed.start
+    })
+  }
+
+  const edits = data.eventExceptions.filter((x) => x.eventId === proposed.id)
+  function find(
+    otherStartsOn: string,
+    otherEdits: Array<EventException | CourseException>,
+    cycle: number,
+    read: (from: string, to: string) => Occurrence[],
+  ) {
+    // Check the warm-up week and one complete cycle after each schedule begins.
+    // Also check where individual edits move a start or disrupt the regular pattern.
+    const windows = new Set([startsOn, otherStartsOn])
+    for (const edit of [...edits, ...otherEdits]) {
+      windows.add(addDays(edit.date, 1))
+      if (edit.start) windows.add(edit.start.slice(0, 10))
+    }
+    for (const from of windows) {
+      const to = addDays(from, cycle + 6)
+      const candidates = eventOccurrences(proposed, edits, from, to)
+      if (!candidates.length) continue
+      const conflict = read(from, to).find((item) =>
+        candidates.some((o) => item.start < o.end && item.end > o.start),
+      )
+      if (conflict) return conflict
+    }
+  }
+
+  for (const event of data.events) {
+    if (event.id === proposed.id) continue
+    const exceptions = data.eventExceptions.filter((x) => x.eventId === event.id)
+    const conflict = find(event.start.slice(0, 10), exceptions, 7, (from, to) =>
+      eventOccurrences(event, exceptions, from, to),
+    )
+    if (conflict) return conflict
+  }
+  const semester = data.semesters.find((s) => s.id === data.preferences.activeSemesterId)
+  if (!semester) return
+  for (const course of data.courses.filter((c) => c.semesterId === semester.id)) {
+    const exceptions = data.courseExceptions.filter((x) => x.courseId === course.id)
+    const first = dateFromWeek(semester.startDate, course.firstWeek, course.weekday)
+    const conflict = find(first, exceptions, course.parity === 'all' ? 7 : 14, (from, to) =>
+      courseOccurrences(data, course, exceptions, from, to),
+    )
+    if (conflict) return conflict
+  }
 }
 export function semesterWeek(start: string, date: string) {
   return Math.floor(dayDistance(start, date) / 7) + 1
@@ -138,7 +213,8 @@ export function validateEvent(event: CalendarEvent) {
     event.end <= event.start
   )
     throw new Error('结束时间需要晚于开始时间')
-  if (event.repeat === 'weekly' && !event.weekdays.length) throw new Error('请选择重复的星期')
+  if (event.repeat !== 'weekly') return
+  if (!event.weekdays.length) throw new Error('请选择重复的星期')
   if (
     event.until &&
     (!/^\d{4}-\d{2}-\d{2}$/.test(event.until) ||

@@ -1,7 +1,8 @@
 import { createSSRApp, defineComponent, h, reactive, type Component } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defaultPeriods, defaultProtection, type Occurrence } from '../src/domain/model'
+import { defaultPeriods, defaultProtection, type CalendarEvent, type Occurrence } from '../src/domain/model'
+import { occurrences } from '../src/domain/calendar'
 
 const mocks = vi.hoisted(() => ({
   app: null as any,
@@ -198,6 +199,72 @@ describe('UI audit fixes', () => {
     expect(state.error).toBe('')
   })
 
+  it.each(['once', 'all'] as const)('CalendarView can move a standalone edit past the series cutoff (%s)', async (scope) => {
+    const event: CalendarEvent = {
+      id: 'e1', title: '复习', start: '2026-11-17T09:00', end: '2026-11-17T10:00',
+      allDay: false, note: '', repeat: 'weekly', weekdays: [2], until: '2026-11-17', itemId: null, reminderMinutes: null,
+    }
+    mocks.app.data.events.push(event)
+    mocks.app.saveEvent = vi.fn(async () => {})
+    const source = occurrences(mocks.app.data, '2026-11-17', '2026-11-17')[0]!
+    const { state } = await mountSSR(CalendarView)
+    state.editEvent(source)
+    if (scope === 'all') {
+      state.scope = scope
+      state.changeScope()
+      state.eventForm.repeat = 'none'
+    }
+    state.eventForm.start = '2026-11-18T09:00'
+    state.eventForm.end = '2026-11-18T10:00'
+
+    await state.saveEvent()
+
+    expect(mocks.app.saveEvent).toHaveBeenCalledWith(expect.objectContaining({
+      start: '2026-11-18T09:00', repeat: 'none', until: '',
+    }), source, scope)
+  })
+
+  it('CalendarView warns about clashes with the real weekly occurrence and lets the user save', async () => {
+    mocks.app.data.events.push({
+      id: 'existing', title: '实验', start: '2026-11-18T09:30', end: '2026-11-18T10:30',
+      allDay: false, note: '', repeat: 'none', weekdays: [], until: '', itemId: null, reminderMinutes: null,
+    })
+    mocks.app.saveEvent = vi.fn(async () => {})
+    const { state } = await mountSSR(CalendarView)
+    state.day = '2026-11-16'
+    state.newEvent()
+    Object.assign(state.eventForm, { title: '复习', repeat: 'weekly', weekdays: [3] })
+
+    const saving = state.saveEvent()
+
+    expect(state.confirmation?.message).toContain('实验')
+    expect(mocks.app.saveEvent).not.toHaveBeenCalled()
+    state.resolveConfirmation(true)
+    await saving
+    expect(mocks.app.saveEvent).toHaveBeenCalledOnce()
+  })
+
+  it('CalendarView excludes only the selected occurrence from a standalone edit conflict check', async () => {
+    mocks.app.data.events.push({
+      id: 'e1', title: '复习', start: '2026-11-17T09:00', end: '2026-11-17T10:00',
+      allDay: false, note: '', repeat: 'weekly', weekdays: [2], until: '', itemId: null, reminderMinutes: null,
+    })
+    mocks.app.saveEvent = vi.fn(async () => {})
+    const source = occurrences(mocks.app.data, '2026-11-17', '2026-11-17')[0]!
+    const { state } = await mountSSR(CalendarView)
+    state.editEvent(source)
+    await state.saveEvent()
+    expect(mocks.app.saveEvent).toHaveBeenCalledOnce()
+
+    state.eventForm.start = '2026-11-24T09:00'
+    state.eventForm.end = '2026-11-24T10:00'
+    const saving = state.saveEvent()
+    expect(state.confirmation?.message).toContain('复习')
+    state.resolveConfirmation(false)
+    await expect(saving).rejects.toThrow('可以调整时间')
+    expect(mocks.app.saveEvent).toHaveBeenCalledOnce()
+  })
+
   it('reverts checkbox checked state on error across SettingsView, StrictModeSetting, and LockMainEntrySetting', async () => {
     mocks.app.mutate.mockRejectedValueOnce(new Error('保存失败'))
     const settings = (await mountSSR(SettingsView)).state
@@ -219,17 +286,16 @@ describe('UI audit fixes', () => {
     expect(lockTarget.checked).toBe(false)
   })
 
-  it('WallpaperSetting fails prepare cleanly when refresh fails and uses distinct disable toast', async () => {
+  it('WallpaperSetting fails prepare cleanly when the native action fails and uses a distinct disable toast', async () => {
     const { state } = await mountSSR(WallpaperSetting)
     await state.refresh()
     state.showConsent()
     state.limitsAccepted = true
     state.originalMatches = true
-    mocks.prepareWallpaper.mockResolvedValueOnce({})
-    mocks.wallpaper.mockRejectedValueOnce(new Error('状态读取失败'))
+    mocks.prepareWallpaper.mockRejectedValueOnce(new Error('壁纸原状态保存失败'))
     await state.prepare()
     expect(state.consentOpen).toBe(true)
-    expect(state.error).toBe('状态读取失败')
+    expect(state.error).toBe('壁纸原状态保存失败')
     expect(mocks.app.notify).not.toHaveBeenCalled()
 
     mocks.app.data.preferences.protection.enhancements = ['wallpaperProtection']

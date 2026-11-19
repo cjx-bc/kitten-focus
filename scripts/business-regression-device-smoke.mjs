@@ -1,8 +1,6 @@
 // Final A01/A18 old-business acceptance. Real QA UI, Java timer, and SQLite only.
 // Default includes the full five-minute rest; there is deliberately no shortened-clock mode.
 import assert from 'node:assert/strict'
-import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
 import { runQaUi } from './lib/qa-ui-fixture.mjs'
 import { delay, until } from './lib/android-qa.mjs'
 const detailsOnly = process.argv.includes('--details-only')
@@ -34,28 +32,14 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
   assert(item && !Object.hasOwn(item, 'completed'), 'Reusable item has no completion state')
   await qa.screenshot('02-created-theme-and-item')
 
-  // Native Android WebView confirm is exercised through its actual dialog buttons.
-  // No window.confirm replacement or PendingIntent shortcut is used.
   async function finishDialog(accept, name) {
     assert(await qa.evaluate(`!!document.querySelector('[aria-label="结束专注"]')`))
-    await qa.evaluate(`setTimeout(() => document.querySelector('[aria-label="结束专注"]').click(), 0); true`)
-    const resource = accept ? 'android:id/button1' : 'android:id/button2'
-    const bounds = await until(() => {
-      qa.command('shell', 'uiautomator', 'dump', '--compressed', '/data/local/tmp/qa-business-dialog.xml')
-      const xml = qa.command('shell', 'cat', '/data/local/tmp/qa-business-dialog.xml')
-      assert(xml.includes('结束本次专注'), 'Only the expected synthetic focus confirmation may be accepted')
-      const node = [...xml.matchAll(/<node\b[^>]*>/g)].map(m => m[0]).find(n => n.includes(`resource-id="${resource}"`))
-      return node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)?.slice(1).map(Number)
-    }, 'actual Android focus confirmation', 30000)
-    // Capture native surfaces as well as WebView screenshots.
-    const local = '/data/local/tmp/qa-business-confirm.png'
-    qa.command('shell', 'screencap', '-p', local)
-    const target = process.env.QA_EVIDENCE_ROOT
-      ? join(process.env.QA_EVIDENCE_ROOT, 'final-business-regression', name + '.png')
-      : fileURLToPath(new URL(`../artifacts/focus-control/api36/final-business-regression/${name}.png`, import.meta.url))
-    qa.command('pull', local, target)
-    qa.command('shell', 'input', 'tap', String(Math.round((bounds[0] + bounds[2]) / 2)), String(Math.round((bounds[1] + bounds[3]) / 2)))
-    qa.command('shell', 'rm', '-f', local, '/data/local/tmp/qa-business-dialog.xml')
+    await ui.click('结束专注')
+    await ui.waitText('结束本次专注？')
+    assert(await qa.evaluate(`!!document.querySelector('dialog[open]')`))
+    await qa.screenshot(name)
+    await ui.click(accept ? '结束专注' : '继续专注')
+    await ui.closedSheet()
   }
   await ui.click('开始' + title)
   await until(() => qa.evaluate('!!document.querySelector(".focus-clock")'), 'original focus screen')
@@ -95,8 +79,13 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
   const recordAtRestStart = (await load()).records
   assert.equal(recordAtRestStart.length, 1)
   assert.equal((await load()).items[0].id, item.id)
-  await ui.click('退出休息'); await ui.waitText('退出本次休息？'); await ui.click('继续休息')
-  await ui.closedSheet()
+  async function restExitDialog(accept) {
+    await ui.click('退出休息')
+    await ui.waitText('退出休息？')
+    await ui.click(accept ? '退出休息' : '继续休息')
+    if (!accept) await ui.closedSheet()
+  }
+  await restExitDialog(false)
   assert.equal((await observe()).rest.session.startedAt, rest.startedAt, 'Cancel exit preserves the same rest deadline')
   if (!detailsOnly) console.log('Waiting for the real five-minute rest deadline; no clock replacement')
   const waitStarted = Date.now()
@@ -119,7 +108,7 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
   await ui.click('返回待办'); await ui.waitText(title)
   } else {
     console.log('Details-only continuation: full rest evidence belongs to the separate timed-phase result; this run does not claim timed acceptance')
-    await ui.click('退出休息'); await ui.waitText('退出本次休息？'); await ui.click('确认退出')
+    await restExitDialog(true)
   }
   await until(() => qa.evaluate(`location.hash === '#/tasks' && !!document.querySelector('.tabbar') && !!document.querySelector('[aria-label="编辑待办${title}"]')`), 'tasks after rest exit settled')
 
@@ -132,7 +121,7 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
   assert.equal((await observe()).rest.session, null, 'Early finish requires manual rest')
   await ui.click('休息 5 分钟'); await ui.waitText('休息一下')
   assert.equal((await observe()).rest.session.endsAt - (await observe()).rest.session.startedAt, 300000)
-  await ui.click('退出休息'); await ui.waitText('退出本次休息？'); await ui.click('确认退出')
+  await restExitDialog(true)
   await until(() => qa.evaluate('location.hash === "#/tasks"'), 'confirmed manual rest exit')
   const records = (await load()).records
   assert.equal(records.length, 2)

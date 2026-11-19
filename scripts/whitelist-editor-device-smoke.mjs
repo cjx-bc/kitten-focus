@@ -52,7 +52,7 @@ await runQaUi({ port: 9244, output: 'artifacts/focus-control/api36/final-whiteli
   assert.equal((await row(system.packageName)).checked, true)
   await ui.fill('搜索应用', 'qa-no-such-app-743195')
   await ui.waitText('没有匹配的应用。已选名单仍保留。')
-  assert((await ui.text()).includes('已选 3 个应用')) // missing + selected system + fixed self
+  assert((await ui.text()).includes('已选 2 个应用')) // missing + selected system; fixed self is excluded from count
   await ui.fill('搜索应用', '')
   await qa.evaluate(`document.querySelector('${editor} .switch input').click()`)
   assert.equal((await row(system.packageName)).checked, true, 'Selected system app survives hiding system apps')

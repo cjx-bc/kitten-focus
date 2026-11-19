@@ -84,6 +84,24 @@ public class FocusNotificationTest {
         assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
         assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
     }
+    @Test public void deadlineExpiryWaitsThroughAndroidHandoffGapBeforeVerifyingRestoration() throws Exception {
+        control.startFocus(session(), true);
+        control.notificationPosted(notice("expiry-handoff", "other.app", false));
+        now += 60000;
+        system.snoozed.clear();
+        control.reconcile();
+        assertTrue("A deadline-expiry handoff gap must await system confirmation",
+            control.getNotificationStatus().getBoolean("recoveryPending"));
+        assertEquals(0, control.getNotificationStatus().getInt("absentCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("restoredCount"));
+        now += 100;
+        system.snoozed.clear();
+        system.active.add(notice("expiry-handoff", "other.app", false));
+        control.synchronizeNotifications();
+        assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+        assertEquals(0, control.getNotificationStatus().getInt("absentCount"));
+        assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
+    }
     @Test public void newPostingAfterNecessaryOriginalWithdrawalPreservesVerifiedRestorationHistory() throws Exception {
         control.startFocus(session(), true);
         NotificationSystem.Notice first = new NotificationSystem.Notice("released-reuse", "other.app", 10001, "", false, 1001);

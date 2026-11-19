@@ -15,6 +15,7 @@ import java.util.Comparator;
 
 /** App-private recovery snapshots. No upload; manual exports remain separate. */
 final class UpgradeBackups {
+    // Operations needing both locks acquire the store first. File-only readers never enter it.
     private static final Object FILE_LOCK = new Object();
     private final Context context;
     private final LocalStore store;
@@ -34,7 +35,7 @@ final class UpgradeBackups {
     }
 
     void prepareStartup() throws Exception {
-        synchronized (FILE_LOCK) {
+        synchronized (store) {
             int current = BuildConfig.VERSION_CODE;
             int previous = preferences.getInt("preparedVersion", 0);
             if (previous != current) create(previous, current);
@@ -47,29 +48,35 @@ final class UpgradeBackups {
     }
 
     String create(int from, int to) throws Exception {
-        synchronized (FILE_LOCK) {
-            if (!directory.isDirectory() && !directory.mkdirs()) throw new IllegalStateException("无法建立升级恢复副本");
-            String name = "upgrade-" + from + "-" + to + ".json";
-            File file = new File(directory, name);
+        synchronized (store) {
             JSONObject snapshot = BusinessBackupData.snapshot(store.snapshot());
-            JSONObject value = new JSONObject().put("format", 1).put("from", from).put("to", to)
-                .put("createdAt", System.currentTimeMillis()).put("snapshot", snapshot);
-            AtomicFile atomic = new AtomicFile(file);
-            FileOutputStream stream = null;
-            try {
-                stream = atomic.startWrite();
-                stream.write(value.toString().getBytes(StandardCharsets.UTF_8));
-                atomic.finishWrite(stream);
-            } catch (Exception error) {
-                if (stream != null) atomic.failWrite(stream);
-                throw error;
+            synchronized (FILE_LOCK) {
+                return write(from, to, snapshot);
             }
-            File[] files = files();
-            for (int i = 3; i < files.length; i++) {
-                if (!files[i].delete()) throw new IllegalStateException("无法轮换升级恢复副本");
-            }
-            return name;
         }
+    }
+
+    private String write(int from, int to, JSONObject snapshot) throws Exception {
+        if (!directory.isDirectory() && !directory.mkdirs()) throw new IllegalStateException("无法建立升级恢复副本");
+        String name = "upgrade-" + from + "-" + to + ".json";
+        File file = new File(directory, name);
+        JSONObject value = new JSONObject().put("format", 1).put("from", from).put("to", to)
+            .put("createdAt", System.currentTimeMillis()).put("snapshot", snapshot);
+        AtomicFile atomic = new AtomicFile(file);
+        FileOutputStream stream = null;
+        try {
+            stream = atomic.startWrite();
+            stream.write(value.toString().getBytes(StandardCharsets.UTF_8));
+            atomic.finishWrite(stream);
+        } catch (Exception error) {
+            if (stream != null) atomic.failWrite(stream);
+            throw error;
+        }
+        File[] files = files();
+        for (int i = 3; i < files.length; i++) {
+            if (!files[i].delete()) throw new IllegalStateException("无法轮换升级恢复副本");
+        }
+        return name;
     }
 
     private File[] files() {
@@ -120,8 +127,8 @@ final class UpgradeBackups {
     }
 
     void restore(String name) throws Exception {
-        synchronized (FILE_LOCK) {
-            synchronized (store) {
+        synchronized (store) {
+            synchronized (FILE_LOCK) {
                 if (store.read("active") != null) throw new IllegalStateException("请先结束当前专注或锁机，再恢复备份");
                 JSONObject value = read(name);
                 // Older local snapshots may contain arbitrary runtime documents. Ignore them.

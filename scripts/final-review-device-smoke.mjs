@@ -91,7 +91,19 @@ try {
   // Settings is blocked before opening this actual authorization route.
   command('shell', 'am', 'start', '-a', 'android.settings.SETTINGS')
   await until(() => /topResumedActivity=.*FocusBlockActivity/.test(foreground()), 'Settings initially restricted')
-  command('shell', 'am', 'start', '-n', qa.appId + '/com.xiaomao.focus.MainActivity')
+  const lockId = (await native('observeControl')).lock.session.id
+  const gestureMode = command('shell', 'settings', 'get', 'secure', 'navigation_mode').trim() === '2'
+  if (gestureMode) {
+    const size = [...command('shell', 'wm', 'size').matchAll(/(\d+)x(\d+)/g)].at(-1)
+    assert(size, 'Display dimensions are required for the Back gesture')
+    const y = String(Math.floor(Number(size[2]) / 2))
+    command('shell', 'input', 'swipe', '2', y, String(Math.floor(Number(size[1]) / 3)), y, '300')
+  } else {
+    command('shell', 'input', 'keyevent', 'BACK')
+  }
+  await until(() => /topResumedActivity=.*MainActivity/.test(foreground()), 'Back from the restricted app returns to focus')
+  assert.equal((await native('observeControl')).lock.session.id, lockId)
+  results.push({ scenario: 'back-from-restricted-window-returns-to-current-lock', input: gestureMode ? 'gesture' : 'button', passed: true })
   const ownerBeforeAuthorization = (await native('observeControl')).owner
   await evaluate("void window.Capacitor.nativePromise('CatFocus','openNotificationAccessSettings',{}).catch(error => { window.__authorizationError = String(error) })")
   await until(() => /topResumedActivity=.*com.android.settings/.test(foreground()), 'actual notification authorization remains foreground')

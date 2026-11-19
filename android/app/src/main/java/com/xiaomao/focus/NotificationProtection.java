@@ -92,10 +92,12 @@ final class NotificationProtection {
                 .put("fixedDeadline", fixedDeadline(active));
             save(journal);
         }
+        boolean wasEnded = journal.optBoolean("ended");
         if (!requested || !journal.optString("sessionId").equals(active.optString("id"))) journal.put("ended", true);
         boolean controlling = controlling(journal, active);
         if (controlling) journal.put("deadlineMono", cutoff(active)).put("deadlineEpoch", clock.epoch() + cutoff(active) - clock.mono());
-        verify(journal, controlling, posted);
+        boolean endHandoff = !controlling && !wasEnded && ready();
+        verify(journal, controlling, posted, endHandoff);
         save(journal);
         if (!controlling) { release(journal); return; }
         if (!ready()) return;
@@ -164,8 +166,8 @@ final class NotificationProtection {
         save(journal);
     }
     /** Executed on lifecycle/reconnect, never on observation. Absence does not claim restoration. */
-    private void verify(JSONObject journal, boolean controlling) throws JSONException { verify(journal, controlling, null); }
-    private void verify(JSONObject journal, boolean controlling, NotificationSystem.Notice posted) throws JSONException {
+    private void verify(JSONObject journal, boolean controlling) throws JSONException { verify(journal, controlling, null, false); }
+    private void verify(JSONObject journal, boolean controlling, NotificationSystem.Notice posted, boolean endHandoff) throws JSONException {
         if (!ready()) return;
         try {
             Map<String, NotificationSystem.Notice> active = new HashMap<>();
@@ -198,9 +200,9 @@ final class NotificationProtection {
                 } else if (active.containsKey(key)) {
                     if (controlling && !saved.optBoolean("exempt")) renew(journal, saved);
                     else saved.put("phase", saved.optBoolean("observedHeld") ? "restored" : "present").put("observedMono", clock.mono());
-                } else if (saved.optBoolean("releaseRequested") && clock.mono() - saved.optLong("releaseRequestMono") < 2000) {
+                } else if ((saved.optBoolean("releaseRequested") && clock.mono() - saved.optLong("releaseRequestMono") < 2000) || endHandoff) {
                     // Android removes a held original before publishing it again. A brief empty
-                    // snapshot during that release handoff cannot establish sender withdrawal.
+                    // snapshot during that release or deadline-expiry handoff cannot establish sender withdrawal.
                 } else if (saved.optBoolean("observedHeld") || clock.mono() - saved.optLong("requestMono") >= 2000 || journal.optInt("bootId") != clock.boot())
                     saved.put("phase", "absent");
             }

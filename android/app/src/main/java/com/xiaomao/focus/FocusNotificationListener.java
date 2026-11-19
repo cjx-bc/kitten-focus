@@ -36,9 +36,10 @@ public final class FocusNotificationListener extends NotificationListenerService
     @Override public void onDestroy() { maintenance.removeCallbacks(renewLeases); if (listener == this) listener = null; super.onDestroy(); }
     @Override public void onNotificationPosted(StatusBarNotification sbn) { update(sbn, null, false); }
     @Override public void onNotificationRemoved(StatusBarNotification sbn, RankingMap ranking, int reason) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         try { new FocusControl(this).notificationRemoved(sbn.getKey(), reason == REASON_SNOOZED, reason == REASON_CLICK); }
         catch (Exception error) { getSharedPreferences("catfocus-listener-health", MODE_PRIVATE).edit()
-            .putString("error", error.getClass().getSimpleName()).commit(); }
+            .putString("error", error.getClass().getSimpleName()).apply(); }
     }
     private void update(StatusBarNotification posted, String removed, boolean snoozed) {
         try {
@@ -46,11 +47,11 @@ public final class FocusNotificationListener extends NotificationListenerService
             if (posted != null) control.notificationPosted(metadata(posted));
             else if (removed != null) control.notificationRemoved(removed, snoozed);
             else control.synchronizeNotifications();
-            getSharedPreferences("catfocus-listener-health", MODE_PRIVATE).edit().remove("error").commit();
+            getSharedPreferences("catfocus-listener-health", MODE_PRIVATE).edit().remove("error").apply();
         } catch (Exception error) {
             // Only the class is surfaced; exception messages may contain Android notification content.
             getSharedPreferences("catfocus-listener-health", MODE_PRIVATE).edit()
-                .putString("error", error.getClass().getSimpleName()).commit();
+                .putString("error", error.getClass().getSimpleName()).apply();
         }
     }
     static NotificationSystem.Notice metadata(StatusBarNotification sbn) {
@@ -60,7 +61,10 @@ public final class FocusNotificationListener extends NotificationListenerService
             || Notification.CATEGORY_SYSTEM.equals(n.category) || Notification.CATEGORY_ERROR.equals(n.category)
             || "android".equals(sbn.getPackageName()) || "com.android.systemui".equals(sbn.getPackageName())
             || "com.android.phone".equals(sbn.getPackageName()) || "com.android.server.telecom".equals(sbn.getPackageName());
-        return new NotificationSystem.Notice(sbn.getKey(), sbn.getPackageName(), sbn.getUid(), sbn.getGroupKey(), necessary, sbn.getPostTime());
+        // On API 26–28 the package and Android user identify the source.
+        // Keep those identities separate from real app UIDs used on newer Android.
+        int identity = Build.VERSION.SDK_INT >= 29 ? sbn.getUid() : ~sbn.getUserId();
+        return new NotificationSystem.Notice(sbn.getKey(), sbn.getPackageName(), identity, sbn.getGroupKey(), necessary, sbn.getPostTime());
     }
     static List<NotificationSystem.Notice> metadata(StatusBarNotification[] notifications) {
         List<NotificationSystem.Notice> result = new ArrayList<>();

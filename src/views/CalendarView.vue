@@ -6,7 +6,7 @@ import { useConfirmation } from '../components/useConfirmation'
 import { useApp } from '../stores/app'
 import type { CalendarEvent, Semester, Course, Occurrence, FocusRecord } from '../domain/model'
 import { uid, defaultPeriods } from '../domain/model'
-import { occurrences, semesterWeek, validateEvent } from '../domain/calendar'
+import { findEventConflict, occurrences, semesterWeek, validateEvent } from '../domain/calendar'
 import {
   dateKey,
   weekStart,
@@ -183,17 +183,15 @@ function changeScope() {
 async function saveEvent() {
   const payload = structuredClone({ ...eventForm, weekdays: [...eventForm.weekdays] })
   payload.title = payload.title.trim()
+  if (scope.value === 'once') payload.repeat = 'none'
+  if (payload.repeat === 'none') payload.until = ''
   if (payload.allDay) {
     payload.start = `${payload.start.slice(0, 10)}T00:00`
     payload.end = `${addDays(payload.end.slice(0, 10), 1)}T00:00`
   }
   validateEvent(payload)
-  const conflicts = occurrences(
-    app.data,
-    payload.start.slice(0, 10),
-    payload.end.slice(0, 10),
-  ).filter((o) => o.sourceId !== payload.id && o.start < payload.end && o.end > payload.start)
-  if (conflicts.length && !(await confirm(`与“${conflicts[0]!.title}”时间重叠，仍然保存吗？`, {
+  const conflict = findEventConflict(app.data, payload, scope.value === 'once' ? source.value?.id : undefined)
+  if (conflict && !(await confirm(`与“${conflict.title}”时间重叠，仍然保存吗？`, {
     title: '时间有重叠', confirmLabel: '仍然保存', danger: false,
   }))) {
     throw new Error('可以调整时间后再保存，刚才填写的内容已保留')

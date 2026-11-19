@@ -82,9 +82,7 @@ public class FocusNotificationLifecycleDeviceTest {
         start("countdown"); StatusBarNotification original = hold(); sender("update", id, 2, "normal");
         long released = SystemClock.elapsedRealtime(); control.focusAction("finish"); verifyIdentity(original, 2); evidence("early_updated_original_verified", released);
         shell("input keyevent WAKEUP"); shell("wm dismiss-keyguard"); shell("cmd statusbar expand-notifications"); SystemClock.sleep(1800);
-        String tap = InstrumentationRegistry.getArguments().getString("notificationObservedTap", "");
-        assertEquals("Only an inspected synthetic card may use this fallback", "200,420", tap);
-        assertTrue(shell("wm size").contains("540x960")); assertNotNull(find(id, false)); shell("input tap 200 420");
+        FocusNotificationDeviceTest.tapObservedOrShadeTitle(id, find(id, false) != null);
         waitFor(() -> clickObserved(id, 2, released), 5000, "Independent sender did not receive actual shade click");
         evidence("early_original_real_shade_click_verified", released);
     }

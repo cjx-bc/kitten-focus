@@ -1,6 +1,7 @@
 package com.xiaomao.focus;
 
 import android.content.Context;
+import android.os.SystemClock;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.json.JSONArray;
@@ -12,6 +13,9 @@ import org.junit.runner.RunWith;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
@@ -143,6 +147,39 @@ public class UpdateProtectionTest {
         catch (IllegalStateException expected) { }
         assertEquals("do not lose", store.read("data").getString("notes"));
         assertEquals(1, new UpgradeBackups(context).list().length());
+    }
+
+    @Test public void startupWaitingForTheDatabaseDoesNotBlockBackupFiles() throws Exception {
+        store.write("data", new JSONObject().put("schemaVersion", 1));
+        assertTrue(context.getSharedPreferences("upgrade-protection", Context.MODE_PRIVATE)
+            .edit().putInt("preparedVersion", BuildConfig.VERSION_CODE).commit());
+        UpgradeBackups backups = new UpgradeBackups(context);
+        backups.create(1, 2);
+        FutureTask<Void> startup = new FutureTask<>(() -> {
+            backups.prepareStartup();
+            return null;
+        });
+        FutureTask<Integer> listing = new FutureTask<>(() -> backups.list().length());
+        Thread startupThread = new Thread(startup, "qa-upgrade-startup");
+        Thread listingThread = new Thread(listing, "qa-upgrade-listing");
+        boolean listedWhileStoreLocked = false;
+        synchronized (store) {
+            startupThread.start();
+            long deadline = SystemClock.elapsedRealtime() + 5000;
+            while (startupThread.getState() != Thread.State.BLOCKED && !startup.isDone()
+                && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(10);
+            if (startupThread.getState() == Thread.State.BLOCKED) {
+                listingThread.start();
+                try {
+                    listedWhileStoreLocked = listing.get(3, TimeUnit.SECONDS) == 1;
+                } catch (TimeoutException expectedOnRegression) {
+                    // Release the store below so even a regression leaves no threads blocked.
+                }
+            }
+        }
+        startup.get(5, TimeUnit.SECONDS);
+        if (listingThread.getState() != Thread.State.NEW) listing.get(5, TimeUnit.SECONDS);
+        assertTrue("Startup must wait for the database without holding the backup file lock", listedWhileStoreLocked);
     }
 
     @Test public void pausedFocusBlocksRecoveryRestore() throws Exception {

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" role="img" aria-label="方案E 桌沿探头陪伴猫">
+  <g id="background">
+    <rect width="512" height="512" rx="116" fill="#FFFFFF"/>
+  </g>
+  <g id="mascot">
+    <!-- Peeking round head & ears behind desk bar -->
+    <path d="
+      M140 352
+      C132 310, 138 266, 154 236
+      L142 158
+      C140 144, 154 136, 166 146
+      L210 184
+      C234 176, 260 174, 284 178
+      L294 155
+      C298 147, 308 150, 305 160
+      L300 180
+      L346 146
+      C358 136, 372 144, 370 158
+      L358 236
+      C374 266, 380 310, 372 352
+      Z" fill="#1E1E1E"/>
+    <!-- Giant expressive eyes -->
+    <circle cx="210" cy="266" r="36" fill="#FFFFFF"/>
+    <circle cx="302" cy="266" r="36" fill="#FFFFFF"/>
+    <circle cx="216" cy="270" r="17" fill="#1E1E1E"/>
+    <circle cx="296" cy="270" r="17" fill="#1E1E1E"/>
+    <!-- Tiny white nose -->
+    <path d="M250 298 L262 298 L256 305 Z" fill="#FFFFFF"/>
+    <!-- Clean desk line -->
+    <line x1="84" y1="354" x2="428" y2="354" stroke="#1E1E1E" stroke-width="14" stroke-linecap="round"/>
+    <!-- Two cute paws resting over the desk edge -->
+    <g>
+      <rect x="156" y="332" width="56" height="42" rx="21" fill="#1E1E1E" stroke="#FFFFFF" stroke-width="5"/>
+      <rect x="300" y="332" width="56" height="42" rx="21" fill="#1E1E1E" stroke="#FFFFFF" stroke-width="5"/>
+      <line x1="175" y1="356" x2="175" y2="369" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="193" y1="356" x2="193" y2="369" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="319" y1="356" x2="319" y2="369" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="337" y1="356" x2="337" y2="369" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+    </g>
+    <!-- Floating coral tomato focus bubble with clean breathing room -->
+    <g transform="translate(402, 132)">
+      <circle cx="0" cy="0" r="24" fill="#EF4E36"/>
+      <path d="M0 -22 C-8 -28, -16 -24, -14 -18 C-7 -17, -3 -16, 0 -13 C3 -16, 7 -17, 14 -18 C16 -24, 8 -28, 0 -22 Z" fill="#1E1E1E"/>
+    </g>
+    <!-- Two tiny focus doodle marks -->
+    <path d="M108 176 L88 166 M104 202 L82 202" stroke="#1E1E1E" stroke-width="8" stroke-linecap="round"/>
+  </g>
+</svg>

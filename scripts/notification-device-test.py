@@ -23,10 +23,12 @@ def main():
     parser.add_argument('--timeout', type=int, default=180)
     parser.add_argument('--expected-tests', type=int, default=23,
                         help='Exact seam plus opt-in device case count for this checkout')
-    parser.add_argument('--observed-tap', choices=['200,420'], help='Only after visually inspecting the synthetic original card on this 540x960 fixture')
+    parser.add_argument('--observed-tap', help='Optional x,y tap coordinates after visually inspecting the synthetic original card in the shade screenshot')
     args = parser.parse_args()
     if args.expected_tests < 1:
         parser.error('--expected-tests must be positive')
+    if args.observed_tap is not None and not re.fullmatch(r'\d+,\d+', args.observed_tap):
+        parser.error('--observed-tap must be x,y integer coordinates')
     if not re.fullmatch(r'emulator-\d+', args.serial):
         parser.error('Choose an explicit emulator serial')
     output = args.output

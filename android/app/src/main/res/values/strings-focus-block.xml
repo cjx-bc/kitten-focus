@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="focus_block_temporary_access">临时打开 %1$s · 剩余 %2$d 次</string>
+</resources>

@@ -10,7 +10,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.os.SystemClock;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import androidx.core.app.NotificationCompat;
@@ -43,10 +42,17 @@ final class Reminders {
         try{JSONObject data=LocalStore.get(c).read("data");if(data!=null){JSONObject preferences=data.optJSONObject("preferences");if(preferences!=null){sound=preferences.optBoolean("sound",true);vibration=preferences.optBoolean("vibration",true);}}}catch(Exception ignored){}
         String id="rest-done-"+sound+"-"+vibration;
         channel(c,id,"休息结束提醒",sound,vibration,false);
-        NotificationManagerCompat.from(c).notify(REST_ID,builder(c,id).setContentTitle("休息结束，准备好再开始")
+        post(c,REST_ID,builder(c,id).setContentTitle("休息结束，准备好再开始")
             .setContentText("下一段专注，由你自己开始。").setAutoCancel(true).build());
     }
     static boolean notificationsAllowed(Context c){return Build.VERSION.SDK_INT<33||ContextCompat.checkSelfPermission(c,Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED;}
+    private static void post(Context context, int id, Notification notification) {
+        try {
+            NotificationManagerCompat.from(context).notify(id, notification);
+        } catch (SecurityException ignored) {
+            // Android may revoke notification permission between the check and delivery.
+        }
+    }
     static boolean exactAllowed(Context c){return Build.VERSION.SDK_INT<31||c.getSystemService(AlarmManager.class).canScheduleExactAlarms();}
     private static PendingIntent focusIntent(Context c){return PendingIntent.getBroadcast(c,FOCUS_ID,new Intent(c,ReminderReceiver.class).setAction(FOCUS_ACTION),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
     private static PendingIntent open(Context c){return PendingIntent.getActivity(c,0,new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
@@ -60,10 +66,10 @@ final class Reminders {
     private static NotificationCompat.Builder builder(Context c,String channel){return new NotificationCompat.Builder(c,channel).setSmallIcon(R.drawable.ic_stat_focus).setContentIntent(open(c)).setColor(0xff222222);}
     static void showFocus(Context c,JSONObject s,long elapsed){if(!notificationsAllowed(c))return;channel(c,"focus-status","专注状态",false,false,true);boolean paused=s.optString("state").equals("paused"),countdown=s.optString("mode").equals("countdown");NotificationCompat.Builder notification=builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle(s.optString("title")).setContentText(paused?"已暂停 · 点击返回专注":countdown?"倒计时专注进行中":"正计时专注进行中").setOngoing(true).setOnlyAlertOnce(true).setSilent(true);
         if(LockEngine.owns(s)) notification.setContentText(s.optBoolean("strictMode")?"严格锁机进行中 · 到期自动结束":"普通锁机进行中 · 点击返回锁机");
-        if(!paused){notification.setUsesChronometer(true).setWhen(countdown?System.currentTimeMillis()+Math.max(0,s.optLong("targetMs")-elapsed):System.currentTimeMillis()-elapsed);if(Build.VERSION.SDK_INT>=24)notification.setChronometerCountDown(countdown);}
+        if(!paused){notification.setUsesChronometer(true).setWhen(countdown?System.currentTimeMillis()+Math.max(0,s.optLong("targetMs")-elapsed):System.currentTimeMillis()-elapsed).setChronometerCountDown(countdown);}
         notification.addAction(0,"帮助与故障恢复",recovery(c));
-        NotificationManagerCompat.from(c).notify(FOCUS_ID,notification.build());}
-    static void showFinished(Context c,JSONObject s){if(!notificationsAllowed(c))return;boolean sound=true,vibration=true;try{JSONObject data=LocalStore.get(c).read("data");if(data!=null){JSONObject preferences=data.optJSONObject("preferences");if(preferences!=null){sound=preferences.optBoolean("sound",true);vibration=preferences.optBoolean("vibration",true);}}}catch(Exception ignored){}String id="focus-done-"+sound+"-"+vibration;channel(c,id,"专注结束提醒",sound,vibration,false);NotificationManagerCompat.from(c).notify(41,builder(c,id).setContentTitle("本次专注已完成").setContentText(s.optString("title")+" · 认真投入的时间已经记录").setAutoCancel(true).build());}
+        post(c,FOCUS_ID,notification.build());}
+    static void showFinished(Context c,JSONObject s){if(!notificationsAllowed(c))return;boolean sound=true,vibration=true;try{JSONObject data=LocalStore.get(c).read("data");if(data!=null){JSONObject preferences=data.optJSONObject("preferences");if(preferences!=null){sound=preferences.optBoolean("sound",true);vibration=preferences.optBoolean("vibration",true);}}}catch(Exception ignored){}String id="focus-done-"+sound+"-"+vibration;channel(c,id,"专注结束提醒",sound,vibration,false);post(c,41,builder(c,id).setContentTitle("本次专注已完成").setContentText(s.optString("title")+" · 认真投入的时间已经记录").setAutoCancel(true).build());}
     static void showLockFinished(Context c,JSONObject session) {
         if(!notificationsAllowed(c))return;
         boolean sound=true,vibration=true;
@@ -74,10 +80,10 @@ final class Reminders {
         channel(c,channel,"锁机结束提醒",sound,vibration,false);
         Intent intent = new Intent(c,MainActivity.class).putExtra("returnToLock",true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent target = PendingIntent.getActivity(c,45,intent,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        NotificationManagerCompat.from(c).notify(45,builder(c,channel).setContentTitle("本轮锁机已到期")
+        post(c,45,builder(c,channel).setContentTitle("本轮锁机已到期")
             .setContentIntent(target).setContentText(session.optString("title")+" · 查看独立锁机记录").setAutoCancel(true).build());
     }
-    static void showSchedule(Context c,int id,String title,String text){if(!notificationsAllowed(c))return;channel(c,"schedule","日程与课程提醒",true,true,false);NotificationManagerCompat.from(c).notify(id,builder(c,"schedule").setContentTitle(title).setContentText(text).setAutoCancel(true).build());}
+    static void showSchedule(Context c,int id,String title,String text){if(!notificationsAllowed(c))return;channel(c,"schedule","日程与课程提醒",true,true,false);post(c,id,builder(c,"schedule").setContentTitle(title).setContentText(text).setAutoCancel(true).build());}
     private static final class PendingAlarm{
         final int id;final long due;final String title;final String text;
         PendingAlarm(int id,long due,String title,String text){this.id=id;this.due=due;this.title=title;this.text=text;}

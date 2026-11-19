@@ -81,7 +81,7 @@ final class FocusNavigation {
             SharedPreferences.Editor edit = runtime.edit().putLong("pendingUntil", 0).putString("failure", "");
             if (now <= pending) edit.putLong("returnedAt", clock.epoch());
             else edit.putLong("returnedAt", 0);
-            edit.commit();
+            edit.apply();
             return false;
         }
         String target = device.target(pkg, cls);
@@ -91,9 +91,9 @@ final class FocusNavigation {
         SharedPreferences.Editor edit = runtime.edit();
         if (!same) edit.clear();
         edit.putString("sessionId", id).putString("target", target).putLong("attemptMono", now)
-            .putLong("pendingUntil", now + 3000).putString("failure", "").commit();
+            .putLong("pendingUntil", now + 3000).putString("failure", "").apply();
         try { device.returnToFocus(target); }
-        catch (Exception error) { runtime.edit().putLong("pendingUntil", 0).putString("failure", "无法返回专注：" + error.getClass().getSimpleName()).commit(); }
+        catch (Exception error) { runtime.edit().putLong("pendingUntil", 0).putString("failure", "无法返回专注：" + error.getClass().getSimpleName()).apply(); }
         return true;
     }
     JSONObject observe(JSONObject observation) throws JSONException {
@@ -123,5 +123,5 @@ final class FocusNavigation {
             .put("lastReturnedAt", returned > 0 ? returned : JSONObject.NULL).put("lastTarget", same ? runtime.getString("target", "") : JSONObject.NULL)
             .put("identity", "ordinary-accessibility").put("supportScope", "launcher-window-events; OEM and gesture navigation require device verification");
     }
-    void release() { runtime.edit().clear().commit(); }
+    void release() { runtime.edit().clear().apply(); }
 }

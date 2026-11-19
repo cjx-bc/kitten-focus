@@ -1,6 +1,5 @@
 package com.xiaomao.focus;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.BroadcastReceiver;
@@ -16,12 +15,14 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.ScrollView;
 import java.util.UUID;
+import androidx.activity.ComponentActivity;
+import androidx.activity.OnBackPressedCallback;
 import androidx.core.content.ContextCompat;
 import org.json.JSONObject;
 import java.util.Locale;
 
 /** The ordinary application restriction screen. All exits return to the owning focus. */
-public class FocusBlockActivity extends Activity {
+public class FocusBlockActivity extends ComponentActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     static final String TARGET_PACKAGE = "blockedPackage";
     private TextView title, time, state;
@@ -36,6 +37,9 @@ public class FocusBlockActivity extends Activity {
     };
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override public void handleOnBackPressed() { returnToFocus(); }
+        });
         blockedPackage = getIntent().getStringExtra(TARGET_PACKAGE);
         if (blockedPackage == null) blockedPackage = "";
         LinearLayout content = new LinearLayout(this);
@@ -94,7 +98,7 @@ public class FocusBlockActivity extends Activity {
             int remaining = grant == null ? 3 : grant.optInt("remainingUses");
             temporary.setVisibility(strict || lock ? android.view.View.GONE : android.view.View.VISIBLE);
             temporary.setEnabled(!granting && remaining > 0 && !blockedPackage.isEmpty());
-            temporary.setText("临时打开 " + appLabel(blockedPackage) + " · 剩余 " + remaining + " 次");
+            temporary.setText(getString(R.string.focus_block_temporary_access, appLabel(blockedPackage), remaining));
             title.setText(session.optString("title"));
             long elapsed = snapshot.optLong("elapsedMs");
             long ms = lock ? snapshot.optLong("remainingMs") : session.optString("mode").equals("countdown") ? Math.max(0, session.optLong("targetMs") - elapsed) : elapsed;
@@ -151,5 +155,4 @@ public class FocusBlockActivity extends Activity {
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
         finish();
     }
-    @Override public void onBackPressed() { returnToFocus(); }
 }

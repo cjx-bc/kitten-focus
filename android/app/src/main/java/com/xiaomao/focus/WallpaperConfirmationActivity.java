@@ -37,7 +37,8 @@ public final class WallpaperConfirmationActivity extends Activity {
         if (request == 17) complete();
     }
     @Override protected void onDestroy() {
-        if (!isChangingConfigurations()) reportReturned();
+        // Android can recreate a stopped host while its picker is still open.
+        if (isFinishing()) reportReturned();
         super.onDestroy();
     }
     private void reportReturned() {

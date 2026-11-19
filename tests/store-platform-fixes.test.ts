@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { emptyData, type ActiveFocus, type FocusRecord, type FocusSnapshot } from '../src/domain/model'
+import { defaultProtection, emptyData, type ActiveFocus, type CalendarEvent, type FocusRecord, type FocusSnapshot } from '../src/domain/model'
+import { occurrences } from '../src/domain/calendar'
 
 const mocks = vi.hoisted(() => ({
   load: vi.fn(),
@@ -91,6 +92,7 @@ function makeSession(id = 'f1'): ActiveFocus {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   setActivePinia(createPinia())
   vi.useFakeTimers()
   mocks.load.mockResolvedValue(emptyData())
@@ -117,6 +119,95 @@ afterEach(() => {
 })
 
 describe('app store resilience fixes', () => {
+  it('never publishes protection or lock settings from a failed write', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const app = useApp()
+    const data = emptyData()
+    data.lockConfigurations = [{ id: 'c1', name: '阅读', minutes: 5, strict: false, whitelist: { source: 'global' } }]
+    mocks.load.mockResolvedValueOnce(data)
+    await app.init()
+
+    mocks.save.mockRejectedValueOnce(new Error('磁盘繁忙'))
+    const failed = app.mutate(d => {
+      d.preferences.protection = { ...defaultProtection(), strict: true }
+      d.lockConfigurations![0]!.minutes = 45
+    })
+    const subsequent = app.mutate(d => { d.preferences.defaultMinutes = 30 })
+    await expect(failed).rejects.toThrow('磁盘繁忙')
+    expect(app.data.preferences.protection?.strict).not.toBe(true)
+    expect(app.data.lockConfigurations?.[0]?.minutes).toBe(5)
+    await subsequent
+    expect(mocks.save.mock.lastCall?.[0].lockConfigurations[0].minutes).toBe(5)
+    expect(mocks.save.mock.lastCall?.[0].preferences.protection?.strict).not.toBe(true)
+    await app.start(null, 'countdown', 25)
+    expect(app.startConfirmation).toBeNull()
+    expect(mocks.focusStart.mock.lastCall?.[1]).toBe(false)
+    app.dispose()
+  })
+
+  it('keeps a committed change when reminder synchronization fails', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const app = useApp()
+    await app.init()
+    mocks.syncReminders.mockRejectedValueOnce(new Error('提醒服务暂不可用'))
+    await expect(app.mutate(d => { d.preferences.defaultMinutes = 30 })).resolves.toBeUndefined()
+    expect(app.data.preferences.defaultMinutes).toBe(30)
+    expect(app.error).toBe('')
+    expect(app.toast).toContain('提醒同步')
+    await app.startLock('c1')
+    expect(app.lock.session).not.toBeNull()
+    app.dispose()
+  })
+
+  it('requires new confirmation when saved protection changes before start', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const app = useApp()
+    const data = emptyData()
+    data.preferences.protection = { ...defaultProtection(), strict: true }
+    mocks.load.mockResolvedValueOnce(data)
+    await app.init()
+    const pending = app.start(null, 'countdown', 25)
+    await vi.waitFor(() => expect(app.startConfirmation?.strict).toBe(true))
+    await app.mutate(d => { d.preferences.protection!.strict = false })
+    app.confirmStart(true)
+    await expect(pending).rejects.toThrow('配置已变化')
+    expect(mocks.focusStart).not.toHaveBeenCalled()
+
+    const confirmationData = app.data
+    const save = app.mutate(d => { d.preferences.protection!.globalWhitelist = ['reader.example'] })
+    const lock = app.startLock('c1', false, confirmationData)
+    const rejected = expect(lock).rejects.toThrow('锁机配置已变化')
+    await save
+    await rejected
+    expect(mocks.lockStart).not.toHaveBeenCalled()
+    app.dispose()
+  })
+
+  it('keeps a moved occurrence after the cutoff and clears old exceptions when converting the series', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const app = useApp()
+    const data = emptyData()
+    const series: CalendarEvent = {
+      id: 'e1', title: '复习', start: '2026-11-17T09:00', end: '2026-11-17T10:00',
+      allDay: false, note: '', repeat: 'weekly', weekdays: [2], until: '2026-11-17',
+      itemId: null, reminderMinutes: null,
+    }
+    data.events.push(series)
+    mocks.load.mockResolvedValueOnce(data)
+    await app.init()
+    const source = occurrences(app.data, '2026-11-17', '2026-11-17')[0]!
+    const moved = { ...series, start: '2026-11-18T09:00', end: '2026-11-18T10:00' }
+
+    await app.saveEvent(moved, source, 'once')
+    expect(app.data.events).toEqual([series])
+    expect(occurrences(app.data, '2026-11-18', '2026-11-18')).toHaveLength(1)
+    await app.saveEvent({ ...moved, repeat: 'none' }, source, 'all')
+    expect(app.data.events[0]?.until).toBe('')
+    expect(app.data.eventExceptions).toEqual([])
+    expect(occurrences(app.data, '2026-11-18', '2026-11-18')).toHaveLength(1)
+    app.dispose()
+  })
+
   it('does not poison start, startLock, or restore after a transient save failure', async () => {
     const { useApp } = await import('../src/stores/app')
     const app = useApp()

@@ -20,18 +20,16 @@ const labels: Record<string, string> = { off: '未开启', baseline_ready: '原�
 let timer: ReturnType<typeof setInterval> | undefined
 let readRevision = 0
 async function refresh() {
+  if (busy.value) return
   const revision = ++readRevision
   try {
     const value = await protectionDriver.wallpaper()
-    if (revision !== readRevision) return false
-    status.value = value
-    return true
+    if (revision === readRevision) status.value = value
   } catch (e) {
     if (revision === readRevision) {
       status.value = undefined
       error.value = e instanceof Error ? e.message : String(e)
     }
-    return false
   }
 }
 function visible() { if (!document.hidden) void refresh() }
@@ -44,10 +42,15 @@ onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   document.removeEventListener('visibilitychange', visible); window.removeEventListener('focus', visible); window.removeEventListener('protection-recovered', visible)
 })
-async function perform(action: () => Promise<unknown>) {
+async function perform(action: () => Promise<WallpaperStatus | void>) {
   if (busy.value) return
   busy.value = true; error.value = ''
-  try { await action(); await refresh() } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  // An earlier read can describe the state before the operation.
+  readRevision++
+  try {
+    const result = await action()
+    if (result) status.value = result
+  } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
 async function toggle(event: Event) {
@@ -72,18 +75,18 @@ function cancelEnable() { error.value = ''; pendingEnable.value = false; consent
 async function prepare() {
   if (busy.value || !limitsAccepted.value || !originalMatches.value) return
   await perform(async () => {
-    await protectionDriver.prepareWallpaper(limitsAccepted.value, originalMatches.value)
-    if (!(await refresh())) throw new Error(error.value || '状态检查失败')
+    const result = await protectionDriver.prepareWallpaper(limitsAccepted.value, originalMatches.value)
+    if (!result.prepared) throw new Error(result.error || '原状态未保存')
     if (pendingEnable.value) {
-      if (!status.value?.prepared) throw new Error('原状态未保存，壁纸辅助保持关闭')
       await app.mutate(data => {
         const protection = { ...defaultProtection(), ...data.preferences.protection }
-        protection.enhancements = [...new Set([...protection.enhancements, option])]
+        protection.enhancements = [...new Set([...(protection.enhancements ?? []), option])]
         data.preferences.protection = protection
       })
       pendingEnable.value = false
     }
     consentOpen.value = false; app.notify('本轮原状态已保存；开始后仍需 Android 确认')
+    return result
   })
 }
 function recover() { window.dispatchEvent(new Event('open-recovery')) }

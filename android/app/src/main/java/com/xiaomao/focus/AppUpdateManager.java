@@ -259,6 +259,7 @@ final class AppUpdateManager {
     }
 
     Intent permissionIntent() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return new Intent(Settings.ACTION_SECURITY_SETTINGS);
         return new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.getPackageName()));
     }
 

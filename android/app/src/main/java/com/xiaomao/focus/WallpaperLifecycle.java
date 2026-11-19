@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.UUID;
@@ -29,7 +30,9 @@ final class WallpaperLifecycle {
                     if (focus != null) event.put("focusElapsedMs", focus.optLong("elapsedMs"));
                 }
                 events.put(event);
-                preferences.edit().putString("events", events.toString()).commit();
+                // Flush before returning so a subsequent process death can be correlated.
+                if (!preferences.edit().putString("events", events.toString()).commit())
+                    Log.w("FocusWallpaper", "Could not persist wallpaper lifecycle evidence");
             } catch (Exception ignored) { /* Evidence failure never invents a successful association. */ }
         }
     }

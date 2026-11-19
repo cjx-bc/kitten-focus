@@ -14,7 +14,7 @@ final class AndroidLauncherSystem implements LauncherSystem {
     private final ComponentName alias;
     AndroidLauncherSystem(Context context) {
         this.context = context.getApplicationContext();
-        alias = new ComponentName(context.getPackageName(), MainActivity.class.getPackageName() + ".LauncherAlias");
+        alias = new ComponentName(context.getPackageName(), MainActivity.class.getPackage().getName() + ".LauncherAlias");
     }
     public int componentState() { return context.getPackageManager().getComponentEnabledSetting(alias); }
     public void componentState(int state) {

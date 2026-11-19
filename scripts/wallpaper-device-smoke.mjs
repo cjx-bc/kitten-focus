@@ -9,13 +9,15 @@ import { connectQa, delay, until } from './lib/android-qa.mjs'
 const argv = process.argv.slice(2)
 const arg = (name, fallback = '') => argv.includes(name) ? argv[argv.indexOf(name) + 1] : fallback
 if (argv.includes('--help')) {
-  console.log('Exclusive device lease required. --user <created-secondary-id> --action configure|import|prepare|start-select|start-cancel|finish|exit-rest|recover|restore-live|inspect [--image-name source.png] [--lock-source] [--target home|both] [--output directory]')
+  console.log('Exclusive device lease required. --user <created-secondary-id> --action configure|import|prepare|start-select|start-cancel|finish|exit-rest|recover|restore-live|inspect [--image-name source.png] [--lock-source] [--target home|both] [--recreate-picker-host] [--output directory]')
   process.exit(0)
 }
 const user = Number(arg('--user')), action = arg('--action'), target = arg('--target', 'home')
+const recreate = argv.includes('--recreate-picker-host')
 assert(Number.isInteger(user) && user > 0, 'Only the recorded disposable secondary Android user is allowed')
 assert(['configure', 'import', 'prepare', 'start-select', 'start-cancel', 'finish', 'exit-rest', 'recover', 'restore-live', 'inspect'].includes(action), 'Choose a documented action')
 assert(['home', 'both'].includes(target), 'Target must be home or both')
+assert(!recreate || action === 'start-select', 'Picker host recreation requires start-select')
 const adb = process.env.ADB || 'D:/KittenFocus-Android/sdk/platform-tools/adb.exe'
 const serial = process.env.ANDROID_SERIAL || 'emulator-5580'
 assert.equal(serial, 'emulator-5580', 'Only the approved official QA emulator')
@@ -32,6 +34,16 @@ const dump = () => {
   return command('shell', 'cat', '/data/local/tmp/kitten-t17-window.xml')
 }
 const unescape = value => value.replaceAll('&amp;', '&').replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>')
+const destroyedHosts = () => command('logcat', '-b', 'events', '-d', '-s', 'wm_destroy_activity')
+  .split(/\r?\n/).filter(line => line.includes('[' + user + ',')
+    && line.includes(qa.appId + '/com.xiaomao.focus.WallpaperConfirmationActivity'))
+function pickerJournal() {
+  const document = command('shell', 'run-as', qa.appId, '--user', String(user),
+    'cat', 'shared_prefs/catfocus-wallpaper-xiaomao-focus.db.xml')
+  const row = document.match(/<string name="journal">([^<]+)<\/string>/)
+  assert(row, 'Wallpaper journal is missing')
+  return JSON.parse(unescape(row[1]))
+}
 function tapText(text) {
   const nodes = [...dump().matchAll(/<node\b[^>]*>/g)].map(match => match[0])
   const node = nodes.find(row => [...row.matchAll(/(?:text|content-desc)="([^"]*)"/g)].some(attr => {
@@ -57,6 +69,7 @@ async function selectWallpaper() {
   // disposable user's CDP session before reading the resulting native state.
   qa.close(); qa = await connectQa({ port: 9274, output, user })
 }
+let previousActivitySetting
 try {
   const before = await native('getWallpaperStatus')
   qa.save(action + '-before.json', before)
@@ -89,10 +102,34 @@ try {
       themeName: '自由专注', title: '壁纸会话设备验证', color: '#476957', mode: 'stopwatch', targetMs: 600000,
       startedAt: now, timeZone: 'UTC', state: 'running', elapsedMs: 0, pausedMs: 0,
       anchorMono: now, anchorEpoch: now, bootId: 0, segments: [] }
+    const priorDestructions = new Set(recreate ? destroyedHosts() : [])
+    if (recreate) {
+      previousActivitySetting = command('shell', 'settings', 'get', 'global', 'always_finish_activities').trim()
+      command('shell', 'settings', 'put', 'global', 'always_finish_activities', '1')
+    }
     await native('startFocus', { session }); qa.save('started-session.json', session)
     if (action === 'start-select') {
+      if (recreate) {
+        const destroyed = await until(() => destroyedHosts().find(line => !priorDestructions.has(line)),
+          'Android destroyed the stopped picker host', 30000)
+        const journal = pickerJournal()
+        assert.equal(journal.sessionId, session.id)
+        assert.equal(journal.pickerOpen, true)
+        assert.equal(journal.pending, true)
+        assert(journal.pickerToken)
+        qa.save('recreated-host-before-selection.json', {
+          destroyed, sessionId: session.id, phase: journal.phase, pickerOpen: journal.pickerOpen,
+        })
+      }
       await selectWallpaper()
       await until(async () => (await native('getWallpaperStatus')).active, 'actual selected service associated with existing round')
+      if (recreate) {
+        const journal = pickerJournal()
+        assert.equal(journal.sessionId, session.id)
+        assert.equal(journal.pickerOpen, false)
+        assert.equal(journal.pending, true)
+        assert.equal(journal.phase, 'active')
+      }
     } else {
       evidence('cancel-picker'); command('shell', 'input', 'keyevent', 'BACK'); await delay(400); main()
       const after = await native('getWallpaperStatus')
@@ -115,4 +152,9 @@ try {
   qa.save(action + '-after.json', { user, serial, status: after, control: await native('observeControl'), recovery: await native('previewRecovery') })
   evidence(action + '-after')
   console.log(JSON.stringify({ user, action, phase: after.phase, active: after.active, recoveryPending: after.recoveryPending, output }))
-} finally { qa.close() }
+} finally {
+  try {
+    if (previousActivitySetting === 'null') command('shell', 'settings', 'delete', 'global', 'always_finish_activities')
+    else if (previousActivitySetting !== undefined) command('shell', 'settings', 'put', 'global', 'always_finish_activities', previousActivitySetting)
+  } finally { qa.close() }
+}

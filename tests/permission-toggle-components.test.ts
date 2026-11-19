@@ -56,7 +56,7 @@ beforeEach(() => {
     notify: vi.fn(), mutate: vi.fn(async (change: any) => change(mocks.app.data)),
   })
   setPermissions(false)
-  mocks.wallpaper.mockResolvedValue({ supported: true, prepared: false, phase: 'off', current: {} })
+  mocks.wallpaper.mockReset().mockResolvedValue({ supported: true, prepared: false, phase: 'off', current: {} })
 })
 describe('real protection component permission cancellation', () => {
   it.each([...cases, ['wallpaperProtection', WallpaperSetting, 'toggle', {}] as const])('%s is not saved before permission consent and stays off on cancellation', async (key, component, handler, props) => {
@@ -117,15 +117,40 @@ describe('real protection component permission cancellation', () => {
     expect(selected('wallpaperProtection')).toBe(false)
     expect(mocks.app.mutate).not.toHaveBeenCalled()
   })
-  it('enables wallpaper only after the confirmed baseline is saved', async () => {
+  it('enables wallpaper after the native baseline is saved even if a background read supersedes a refresh', async () => {
     const state = await setup(WallpaperSetting)
     await state.toggle({ target: { checked: true } })
     state.limitsAccepted = true; state.originalMatches = true
-    mocks.prepareWallpaper.mockResolvedValueOnce({})
-    mocks.wallpaper.mockResolvedValue({ supported: true, prepared: true, phase: 'baseline_ready', current: {} })
-    await state.prepare()
+    const prepared = { supported: true, prepared: true, phase: 'baseline_ready', current: {} }
+    mocks.prepareWallpaper.mockResolvedValueOnce(prepared)
+    mocks.wallpaper.mockResolvedValue(prepared)
+    let resolveRead: ((status: typeof prepared) => void) | undefined
+    mocks.wallpaper.mockImplementationOnce(() => new Promise(resolve => { resolveRead = resolve }))
+    const preparing = state.prepare()
+    await Promise.resolve()
+    const backgroundRead = state.refresh()
+    resolveRead?.(prepared)
+    await Promise.all([preparing, backgroundRead])
     expect(selected('wallpaperProtection')).toBe(true)
     expect(mocks.app.mutate).toHaveBeenCalledTimes(1)
+    expect(state.consentOpen).toBe(false)
+    expect(state.error).toBe('')
+  })
+  it('keeps the prepared wallpaper status when a read started before saving returns late', async () => {
+    const state = await setup(WallpaperSetting)
+    await state.toggle({ target: { checked: true } })
+    state.limitsAccepted = true; state.originalMatches = true
+    const unprepared = { supported: true, prepared: false, phase: 'off', current: {} }
+    const prepared = { ...unprepared, prepared: true, phase: 'baseline_ready' }
+    let resolveRead!: (status: typeof unprepared) => void
+    mocks.wallpaper.mockImplementationOnce(() => new Promise(resolve => { resolveRead = resolve }))
+    mocks.prepareWallpaper.mockResolvedValueOnce(prepared)
+    const lateRead = state.refresh()
+    await state.prepare()
+    resolveRead(unprepared)
+    await lateRead
+    expect(state.status).toEqual(prepared)
+    expect(selected('wallpaperProtection')).toBe(true)
   })
   it.each([
     ['study', StudyModeSheet, 'toggleStudy', { open: true }],

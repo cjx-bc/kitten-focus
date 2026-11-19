@@ -2,9 +2,9 @@
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="false">
-        <domain>47.251.9.162</domain>
-        <domain>focus.linma.asia</domain>
-        <domain>download-focus.linma.asia</domain>
+        <domain includeSubdomains="false">47.251.9.162</domain>
+        <domain includeSubdomains="false">focus.linma.asia</domain>
+        <domain includeSubdomains="false">download-focus.linma.asia</domain>
         <trust-anchors>
             <certificates src="system" />
             <certificates src="@raw/isrg_root_x1" />

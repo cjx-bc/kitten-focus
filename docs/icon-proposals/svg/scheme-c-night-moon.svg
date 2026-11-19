@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" role="img" aria-label="方案C 暗夜月光守望猫">
+  <g id="background">
+    <rect width="512" height="512" rx="116" fill="#1C1C1E"/>
+  </g>
+  <g id="moon">
+    <circle cx="256" cy="256" r="172" fill="#FAF9F6"/>
+  </g>
+  <g id="mascot">
+    <defs>
+      <clipPath id="moonClip">
+        <circle cx="256" cy="256" r="172"/>
+      </clipPath>
+    </defs>
+    <g clip-path="url(#moonClip)">
+      <!-- Tail sweeping gracefully inside moon -->
+      <path d="M294 378 C356 376, 386 330, 372 288 C362 260, 336 270, 344 294 C352 318, 336 346, 290 350 Z" fill="#1C1C1E"/>
+      <!-- Sitting cat body -->
+      <path d="M170 438 C172 340, 198 282, 248 282 C298 282, 326 340, 328 438 Z" fill="#1C1C1E"/>
+      <!-- Tilted head looking up-right -->
+      <g transform="rotate(-8 248 228)">
+        <path d="
+          M168 212
+          L160 144
+          C159 133, 171 128, 180 136
+          L216 168
+          C237 159, 265 159, 286 168
+          L322 136
+          C331 128, 343 133, 342 144
+          L334 212
+          C344 244, 326 284, 251 284
+          C176 284, 158 244, 168 212
+          Z" fill="#1C1C1E"/>
+        <!-- Bright eyes gazing up toward star -->
+        <circle cx="220" cy="218" r="27" fill="#FAF9F6"/>
+        <circle cx="284" cy="218" r="27" fill="#FAF9F6"/>
+        <circle cx="226" cy="213" r="12" fill="#1C1C1E"/>
+        <circle cx="290" cy="213" r="12" fill="#1C1C1E"/>
+      </g>
+    </g>
+    <!-- Single coral focus star inside moon -->
+    <path d="M354 162 L361 180 L379 187 L361 194 L354 212 L347 194 L329 187 L347 180 Z" fill="#EF4E36"/>
+  </g>
+</svg>

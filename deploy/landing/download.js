@@ -63,14 +63,21 @@ async function loadRelease() {
 }
 
 async function transfer(url, expected) {
-  const timeout = setTimeout(() => controller?.abort('timeout'), 20000)
+  let timeout
+  const resetTimeout = () => {
+    clearTimeout(timeout)
+    timeout = setTimeout(() => controller?.abort('timeout'), 20000)
+  }
+  resetTimeout()
   try {
     const response = await fetch(url, { signal: controller.signal, credentials: 'omit' })
     if (!response.ok) throw new TypeError('下载线路暂时无法连接')
+    if (!response.body) throw new TypeError('浏览器不支持流式下载')
     const reader = response.body.getReader(),
       chunks = []
     let received = 0
     while (true) {
+      resetTimeout()
       const { done, value } = await reader.read()
       if (done) break
       received += value.length
@@ -79,6 +86,7 @@ async function transfer(url, expected) {
       progress.value = Math.round((received / expected.size) * 100)
       status.textContent = `正在下载 ${progress.value}%`
     }
+    clearTimeout(timeout)
     if (received !== expected.size) throw new Error('安装包大小不一致，请稍后重试')
     const blob = new Blob(chunks, { type: 'application/vnd.android.package-archive' })
     const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
