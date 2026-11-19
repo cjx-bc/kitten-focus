@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 13,
+    "versionName": "0.2.7",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.7/xiaomao-focus-0.2.7-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.7/xiaomao-focus-0.2.7-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.7-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.7/xiaomao-focus-0.2.7-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.7-debug.apk"
+    ],
+    "size": 4631003,
+    "sha256": "dc8a41979ccce890385af5dbb4acc51f92a9aeaee049005f09ec18a31b81edb0",
+    "notes": "修复通知严格倒计时自然到期交接空窗导致的误判问题；优化重复日程/课程时间枚举与单次编辑冲突校验、锁机准备阶段配置快照锁定及壁纸状态同步；精简安卓启动图标与闪屏资源并完善 API 26–36 兼容与数据提取规则；优化发布页下载分块超时控制并同步更新分发脚本。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}
