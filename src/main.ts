@@ -4,7 +4,10 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import App from './App.vue'
 import './style.css'
 import { resolveMainEntry } from './platform/bridge'
-import { installMainEntryGuard } from './navigation/mainEntry'
+import { installMainEntryGuard, isStudySessionLocked } from './navigation/mainEntry'
+import { useApp } from './stores/app'
+
+const pinia = createPinia()
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
@@ -20,5 +23,9 @@ const router = createRouter({
     ...['permissions', 'help', 'emergency', 'recovery'].map(section => ({ path: `/${section}`, component: () => import('./views/ProtectionHelpView.vue') })),
   ],
 })
-installMainEntryGuard(router, resolveMainEntry)
-createApp(App).use(createPinia()).use(router).mount('#app')
+installMainEntryGuard(
+  router,
+  resolveMainEntry,
+  () => isStudySessionLocked(useApp(pinia).focus.session),
+)
+createApp(App).use(pinia).use(router).mount('#app')

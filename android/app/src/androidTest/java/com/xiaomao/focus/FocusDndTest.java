@@ -175,6 +175,7 @@ public class FocusDndTest {
         assertTrue(system.rules.isEmpty());
         assertTrue(rebuilt.loadData().getJSONObject("preferences").getJSONObject("protection").getBoolean("dnd"));
         rebuilt.focusAction("finish");
+        assertEquals("restored", rebuilt.getDndStatus().getString("phase"));
     }
 
     @Test public void editedOrDisabledRulesArePreservedAndRecoveryCanBeRetried() throws Exception {

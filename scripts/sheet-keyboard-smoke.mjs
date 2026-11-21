@@ -219,6 +219,10 @@ try {
   assert(Math.abs(before.top - after.top) <= 2, 'Dialog moved after hiding keyboard')
   const fields = []
   for (const selector of ['dialog[open] input[type=number]', 'dialog[open] textarea']) {
+    if (selector.endsWith('textarea')) {
+      await evaluate("document.querySelector('dialog[open] button[aria-controls=item-note]').click()")
+      await until(() => evaluate("!!document.querySelector('dialog[open] #item-note textarea')"), 'expanded note')
+    }
     await tapField(selector)
     const state = await geometry()
     const input = await evaluate(

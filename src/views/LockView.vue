@@ -8,6 +8,7 @@ import { protectionDriver, controlDriver } from '../platform/bridge'
 import Sheet from '../components/Sheet.vue'
 import Icon from '../components/Icon.vue'
 import AppWhitelistEditor from '../components/AppWhitelistEditor.vue'
+import LockMainEntrySetting from '../components/LockMainEntrySetting.vue'
 import NotificationSetting from '../components/NotificationSetting.vue'
 import ProtectionStartSummary from '../components/ProtectionStartSummary.vue'
 const app = useApp(), router = useRouter()
@@ -147,6 +148,7 @@ onUnmounted(() => {
       <button class="secondary wide" @click="edit()">新建锁机配置</button>
       <details v-if="app.lock.records.length"><summary>锁机历史（{{ app.lock.records.length }}）</summary><p v-for="record in app.lock.records" :key="record.id">{{ record.title }} · {{ record.status === 'completed' ? '到期' : record.status === 'early' ? '提前解除' : '重启中断' }} · {{ duration(record.durationMs) }}<small>{{ new Date(record.startedAt).toLocaleString() }}</small></p></details>
     </template>
+    <LockMainEntrySetting />
     <NotificationSetting runtime-only />
     <div class="lock-help"><button class="text-button" @click="refresh">重新检查保护</button><button class="text-button" @click="recovery">帮助与故障恢复</button></div>
     <div class="lock-help"><RouterLink to="/permissions">权限与保护状态</RouterLink><RouterLink to="/help">离线保护帮助</RouterLink><RouterLink to="/emergency">紧急与必要交互</RouterLink><RouterLink to="/recovery">故障恢复入口</RouterLink></div>

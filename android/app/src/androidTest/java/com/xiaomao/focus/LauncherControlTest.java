@@ -93,6 +93,8 @@ public class LauncherControlTest {
         launcher.failRestore = false; recreate(); preview = control.previewRecovery(); control.confirmRecovery(preview.getString("revision"));
         assertEquals(1, launcher.state); assertEquals("withdrawn", status().getString("phase"));
         control.reconcile(); assertEquals(1, launcher.state); assertEquals("focus", control.observeControl().getString("owner"));
+        clock.time += 1000; control.focusAction("finish"); control.restAction("exit");
+        assertEquals("restored", status().getString("phase"));
     }
     @Test public void pendingDutyBlocksNextRoundAndDataReplacementUntilActuallyRestored() throws Exception {
         preference(true); control.startFocus(session("stopwatch")); launcher.failRestore = true;

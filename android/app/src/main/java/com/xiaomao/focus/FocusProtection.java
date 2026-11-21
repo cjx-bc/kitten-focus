@@ -87,7 +87,7 @@ final class FocusProtection {
         return selectedEnhancements(source);
     }
     static JSONObject capture(Context context, LocalStore store, JSONObject session, AccessibilityState accessibility) throws JSONException {
-        JSONObject prefs = preferences(store);
+        JSONObject prefs = resolveEffective(preferences(store));
         boolean study = prefs.optBoolean("study", false);
         if (study && (!accessibility.authorized() || !accessibility.connected()))
             throw new IllegalStateException("学霸模式待授权：请启用小猫专注无障碍服务，并返回确认服务已连接");
@@ -112,8 +112,68 @@ final class FocusProtection {
             if (value instanceof String && !((String) value).isEmpty()) packages.add((String) value);
         }
         packages.add(context.getPackageName());
-        return new JSONObject().put("study", study).put("source", source)
+        JSONObject captured = new JSONObject().put("study", study).put("source", source)
             .put("whitelist", new JSONArray(packages)).put("enhancements", selectedEnhancements(prefs));
+        if (!temporaryAccessAllowed(prefs)) captured.put("temporaryAccessAllowed", false);
+        if (!study && masterStudyLocked(prefs)) captured.put("studyLocked", true);
+        return captured;
+    }
+    static JSONObject resolveEffective(JSONObject prefs) throws JSONException {
+        if (prefs == null) return new JSONObject();
+        JSONObject modules = prefs.optJSONObject("modules");
+        if (modules == null) return prefs;
+        JSONObject resolved = new JSONObject(prefs.toString());
+        boolean master = modules.optBoolean("master", false);
+        JSONObject apps = modules.optJSONObject("apps");
+        JSONObject strict = modules.optJSONObject("strict");
+        JSONObject quiet = modules.optJSONObject("quiet");
+        boolean appsOn = master && apps != null && apps.optBoolean("enabled", false);
+        boolean strictOn = master && strict != null && strict.optBoolean("enabled", false);
+        boolean quietOn = master && quiet != null && quiet.optBoolean("enabled", false);
+        resolved.put("study", appsOn && moduleSubBool(apps, "restrictApps", true));
+        resolved.put("strict", strictOn && moduleSubBool(strict, "noPauseEnd", true));
+        resolved.put("dnd", quietOn && moduleSubBool(quiet, "sound", true));
+        resolved.put("interceptNotifications", quietOn && moduleSubBool(quiet, "intercept", true));
+        JSONArray enhancements = new JSONArray();
+        if (strictOn) {
+            if (moduleSubBool(strict, "navigation", true)) enhancements.put("navigationHomeRecents");
+            if (moduleSubBool(strict, "antiClose", true)) enhancements.put(FocusAntiClose.OPTION);
+            if (moduleSubBool(strict, "hideRecents", false)) enhancements.put(RecentTasksProtection.KEY);
+            if (moduleSubBool(strict, "hideLauncher", false)) enhancements.put(LauncherProtection.KEY);
+            if (moduleSubBool(strict, "wallpaper", false)) enhancements.put(WallpaperProtection.KEY);
+        }
+        JSONArray existing = prefs.optJSONArray("enhancements");
+        if (existing != null) for (int i = 0; i < existing.length(); i++) {
+            if (FocusRecovery.MAIN_ENTRY.equals(existing.optString(i))) {
+                enhancements.put(FocusRecovery.MAIN_ENTRY);
+                break;
+            }
+        }
+        resolved.put("enhancements", enhancements);
+        return resolved;
+    }
+    private static boolean moduleSubBool(JSONObject module, String key, boolean fallback) {
+        if (module == null) return fallback;
+        JSONObject custom = module.optJSONObject("custom");
+        return custom != null && custom.has(key) ? custom.optBoolean(key, fallback) : fallback;
+    }
+    static boolean masterStudyLocked(JSONObject prefs) {
+        if (prefs == null) return false;
+        if (prefs.optBoolean("study", false)) return true;
+        JSONObject modules = prefs.optJSONObject("modules");
+        return modules != null && modules.optBoolean("master", false) && modules.optBoolean("focusLock", true);
+    }
+    static boolean temporaryAccessAllowed(JSONObject prefs) {
+        JSONObject modules = prefs == null ? null : prefs.optJSONObject("modules");
+        JSONObject apps = modules == null ? null : modules.optJSONObject("apps");
+        JSONObject custom = apps == null ? null : apps.optJSONObject("custom");
+        return custom == null || !custom.has("temporaryAccess") || custom.optBoolean("temporaryAccess", true);
+    }
+    static boolean notificationWhitelistPass(JSONObject prefs) {
+        JSONObject modules = prefs == null ? null : prefs.optJSONObject("modules");
+        JSONObject quiet = modules == null ? null : modules.optJSONObject("quiet");
+        JSONObject custom = quiet == null ? null : quiet.optJSONObject("custom");
+        return custom == null || !custom.has("whitelistPass") || custom.optBoolean("whitelistPass", true);
     }
     private static JSONArray selectedEnhancements(JSONObject prefs) {
         JSONArray enhancements = prefs.optJSONArray("enhancements"), selected = new JSONArray();
@@ -231,9 +291,8 @@ final class FocusProtection {
         Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
         ResolveInfo launcher = pm.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
         if (launcher != null) result.add(launcher.activityInfo.packageName);
-        String input = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
-        ComponentName keyboard = input == null ? null : ComponentName.unflattenFromString(input);
-        if (keyboard != null) result.add(keyboard.getPackageName());
+        String keyboardPackage = currentInputMethodPackage(context);
+        if (!keyboardPackage.isEmpty()) result.add(keyboardPackage);
         for (String permissionPackage : new String[]{"com.android.permissioncontroller", "com.google.android.permissioncontroller"}) {
             try { if ((pm.getApplicationInfo(permissionPackage, 0).flags & ApplicationInfo.FLAG_SYSTEM) != 0) result.add(permissionPackage); }
             catch (PackageManager.NameNotFoundException ignored) { }
@@ -241,6 +300,19 @@ final class FocusProtection {
         cachedNecessary = result;
         exceptionsChecked = now;
         return result;
+    }
+
+    static String currentInputMethodPackage(Context context) {
+        String input = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+        ComponentName keyboard = input == null ? null : ComponentName.unflattenFromString(input);
+        return keyboard == null ? "" : keyboard.getPackageName();
+    }
+
+    static boolean isTransientOverlayPackage(Context context, String packageName) {
+        if (packageName == null || packageName.isEmpty()) return false;
+        if ("com.android.systemui".equals(packageName) || "android".equals(packageName)) return true;
+        String ime = currentInputMethodPackage(context);
+        return !ime.isEmpty() && ime.equals(packageName);
     }
 
     static JSONArray apps(Context context, LocalStore store) throws JSONException {

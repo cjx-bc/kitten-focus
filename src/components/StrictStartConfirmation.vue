@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useApp } from '../stores/app'
+import { native } from '../platform/bridge'
 import Sheet from './Sheet.vue'
 import ProtectionStartSummary from './ProtectionStartSummary.vue'
 const app = useApp()
+const unreadyIds = ref<string[]>([])
+watch(() => app.startConfirmation, () => { unreadyIds.value = [] })
 </script>
 <template>
   <Sheet v-if="app.startConfirmation" title="开始专注" @close="app.confirmStart(false)">
@@ -36,7 +40,9 @@ const app = useApp()
         </p>
       </template>
       <p v-if="!app.startConfirmation.study && app.startConfirmation.protections.interceptNotifications" class="field-help">通知白名单 · {{ app.startConfirmation.whitelistCount }} 个应用</p>
-      <ProtectionStartSummary :preferences="app.startConfirmation.protections" @settings="app.confirmStart(false)" />
+      <ProtectionStartSummary :preferences="app.startConfirmation.protections" @settings="app.confirmStart(false)" @unready="unreadyIds = $event" />
+      <p v-if="native && unreadyIds.length" role="alert" class="field-help">存在未授权或本机不支持的保护项，直接开始会被原生检查拦截。</p>
+      <button v-if="native && unreadyIds.length" type="button" class="secondary wide" @click="app.clearUnreadyProtections(unreadyIds)">关闭未就绪项后重新开始</button>
       <button class="primary wide" @click="app.confirmStart(true)">开始专注</button>
       <button class="secondary wide" @click="app.confirmStart(false)">暂不开始</button>
     </div>

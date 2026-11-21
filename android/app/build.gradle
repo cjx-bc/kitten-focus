@@ -18,8 +18,8 @@ android {
         }
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode project.findProperty("updateVersionCode")?.toInteger() ?: 14
-        versionName project.findProperty("updateVersionName") ?: "0.2.8"
+        versionCode project.findProperty("updateVersionCode")?.toInteger() ?: 15
+        versionName project.findProperty("updateVersionName") ?: "0.2.9"
         def updateChannel = project.findProperty("updateChannel") ?: "stable"
         if (!(updateChannel ==~ /[a-z0-9-]+/)) throw new GradleException("Invalid update channel")
         buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://focus.linma.asia/updates/${updateChannel}.json\""

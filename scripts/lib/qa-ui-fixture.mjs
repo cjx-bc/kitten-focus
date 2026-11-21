@@ -40,7 +40,7 @@ export async function runQaUi({ output, port }, exercise) {
       const dialogs = [...document.querySelectorAll('dialog[open]')];
       const scope = dialogs.at(-1) || document;
       const row = [...scope.querySelectorAll('label')].find(el => el.textContent.trim().startsWith(${JSON.stringify(label)}));
-      const input = row?.querySelector('input,textarea,select');
+      const input = row?.control ?? row?.querySelector('input,textarea,select');
       if (!input) throw new Error('Missing QA field: ' + ${JSON.stringify(label)});
       const proto = input instanceof HTMLSelectElement ? HTMLSelectElement.prototype : input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, ${JSON.stringify(String(value))});

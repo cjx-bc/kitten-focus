@@ -71,7 +71,8 @@ function confirm() {
 form > p { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; margin-top: 5px; }
 .app-choices { display: grid; gap: 4px; }
-.app-choice { display: flex; align-items: center; gap: 12px; padding: 10px 4px; min-height: 60px; border-bottom: 1px solid var(--line); }
+.app-choice { display: flex; align-items: center; gap: 12px; padding: 10px 4px; min-height: 60px; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; border-radius: 10px; transition: background-color 120ms ease; }
+.app-choice:active { background: var(--surface); }
 .app-choice img, .app-icon { flex: 0 0 36px; border-radius: 8px; }
 .app-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .app-icon { display: grid; place-items: center; height: 36px; background: var(--surface); }

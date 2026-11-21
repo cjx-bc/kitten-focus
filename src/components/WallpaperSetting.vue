@@ -4,6 +4,7 @@ import InfoHint from './InfoHint.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
+import { syncLegacyFlatMutation } from '../domain/protectionModules'
 import type { WallpaperStatus } from '../domain/model'
 import { protectionDriver } from '../platform/bridge'
 import Sheet from './Sheet.vue'
@@ -62,10 +63,13 @@ async function toggle(event: Event) {
   pendingEnable.value = false
   await perform(async () => {
     await app.mutate(data => {
-      const protection = { ...defaultProtection(), ...data.preferences.protection }
-      protection.enhancements = (protection.enhancements ?? []).filter(key => key !== option)
-      if (checked) protection.enhancements.push(option)
-      data.preferences.protection = protection
+      data.preferences.protection = syncLegacyFlatMutation(
+        data.preferences.protection ?? defaultProtection(),
+        flat => {
+          flat.enhancements = (flat.enhancements ?? []).filter(key => key !== option)
+          if (checked) flat.enhancements.push(option)
+        },
+      )
     })
     app.notify(checked ? '壁纸偏好已保存，将用于下一轮；还需保存可恢复原状态及系统确认' : '壁纸偏好已关闭，将用于下一轮')
   })
@@ -79,9 +83,12 @@ async function prepare() {
     if (!result.prepared) throw new Error(result.error || '原状态未保存')
     if (pendingEnable.value) {
       await app.mutate(data => {
-        const protection = { ...defaultProtection(), ...data.preferences.protection }
-        protection.enhancements = [...new Set([...(protection.enhancements ?? []), option])]
-        data.preferences.protection = protection
+        data.preferences.protection = syncLegacyFlatMutation(
+          data.preferences.protection ?? defaultProtection(),
+          flat => {
+            flat.enhancements = [...new Set([...(flat.enhancements ?? []), option])]
+          },
+        )
       })
       pendingEnable.value = false
     }
@@ -134,7 +141,7 @@ function recover() { window.dispatchEvent(new Event('open-recovery')) }
 .wallpaper-setting { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 18px; }
 .wallpaper-consent { display: grid; gap: 18px; }
 p, .wallpaper-consent label { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
-.wallpaper-consent label { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; }
+.wallpaper-consent label { display: flex; align-items: flex-start; gap: 12px; min-height: 48px; cursor: pointer; user-select: none; }
 .wallpaper-consent input { flex: 0 0 auto; margin-top: 4px; }
 small { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
 .wallpaper-status { background: var(--surface); padding: 16px; border-radius: 14px; }

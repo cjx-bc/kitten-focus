@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useApp } from '../stores/app'
-import StrictModeSetting from '../components/StrictModeSetting.vue'
-import DndSetting from '../components/DndSetting.vue'
-import NotificationSetting from '../components/NotificationSetting.vue'
+import StudyModeSheet from '../components/StudyModeSheet.vue'
+import { migrateProtectionPreferences } from '../domain/protectionModules'
 import { makeBackup, readBackup, type Backup } from '../domain/backup'
 import { dateKey } from '../domain/dates'
 import {
@@ -15,6 +14,7 @@ import {
   openAlarmSettings,
 } from '../platform/bridge'
 import Icon from '../components/Icon.vue'
+import AppMark from '../components/AppMark.vue'
 import Sheet from '../components/Sheet.vue'
 import InfoHint from '../components/InfoHint.vue'
 import UpdateSettings from '../components/UpdateSettings.vue'
@@ -22,12 +22,23 @@ import { useUpdates } from '../stores/updates'
 const app = useApp(),
   updates = useUpdates(),
   sheet = ref<'duration' | 'restore' | 'about' | 'sound' | null>(null),
+  studyOpen = ref(false),
+  studyInitialView = ref<'home' | 'apps' | 'strict' | 'quiet' | 'permissions'>('home'),
   minutes = ref(25),
   importInput = ref<HTMLInputElement>(),
   backup = ref<Backup | null>(null),
   error = ref(''),
   busy = ref(false),
   permissions = ref({ notifications: false, exactAlarms: false })
+const studySummary = computed(() => {
+  const migrated = migrateProtectionPreferences(app.data.preferences.protection)
+  return migrated.modules?.master ? '已开启' : '未开启'
+})
+function openStudy(view: 'home' | 'apps' | 'strict' | 'quiet' | 'permissions' = 'home') {
+  sheet.value = null
+  studyInitialView.value = view
+  studyOpen.value = true
+}
 function recovery() { window.dispatchEvent(new Event('open-recovery')) }
 async function refreshPermissions() {
   try {
@@ -159,7 +170,7 @@ async function openAlarms() {
   <div class="page settings-page">
     <header class="page-header"><h1>我的</h1></header>
     <div class="profile">
-      <div class="profile-icon"><Icon name="cat" :size="33" /></div>
+      <div class="profile-icon"><AppMark :size="48" /></div>
       <div>
         <h2>小猫专注</h2>
         <p>版本 {{ updates.state.currentVersion }}</p>
@@ -188,15 +199,16 @@ async function openAlarms() {
     </div>
     <h3 class="settings-section-label">专注保护</h3>
     <div class="settings-group">
-      <StrictModeSetting />
+      <button class="settings-row" @click="openStudy('home')"><span class="row"><Icon name="shield" :size="20" />学霸模式</span><span class="row settings-value">{{ studySummary }}<Icon name="right" :size="16" /></span></button>
       <RouterLink class="settings-row" to="/lock"><span class="row"><Icon name="clock" :size="20" />独立锁机</span><span class="row settings-value">{{ app.lock.session ? '进行中' : '配置与记录' }}<Icon name="right" :size="16" /></span></RouterLink>
       <button class="settings-row" @click="sheet = 'sound'"><span class="row"><Icon name="bell" :size="20" />声音与通知</span><Icon name="right" :size="16" /></button>
       <RouterLink class="settings-row" to="/permissions"><span class="row"><Icon name="info" :size="20" />权限与保护状态</span><Icon name="right" :size="16" /></RouterLink>
     </div>
+    <StudyModeSheet v-if="studyOpen" :open="studyOpen" :initial-view="studyInitialView" @close="studyOpen = false" />
     <Sheet :open="sheet === 'sound'" title="声音与通知" @close="sheet = null">
       <div class="notification-preferences">
-        <DndSetting compact />
-        <NotificationSetting compact />
+        <button type="button" class="secondary wide" @click="openStudy('quiet')">前往学霸模式 · 免打扰设置</button>
+        <p class="field-help">专注期间的声音免打扰与通知拦截已统一归入「学霸模式 → 免打扰」。</p>
     <template v-if="native"
       ><h3 class="settings-section-label">系统提醒</h3>
       <div class="settings-group">
@@ -303,14 +315,14 @@ async function openAlarms() {
           <a href="https://focus.linma.asia/" target="_blank" rel="noopener noreferrer"><span class="destination-icon"><Icon name="globe" :size="21" /></span><span class="destination-copy"><strong>官方网站</strong><small>focus.linma.asia</small></span><Icon name="external" :size="15" /></a>
         </nav>
         <section class="about-release" aria-labelledby="latest-release-title">
-          <div class="about-section-heading"><h3 id="latest-release-title">最近更新</h3><time datetime="2026-11-17">2026.11.17</time></div>
-          <p class="release-name">v0.2.6 <span>稳定性与体验修复</span></p>
+          <div class="about-section-heading"><h3 id="latest-release-title">最近更新</h3><time datetime="2026-11-21">2026.11.21</time></div>
+          <p class="release-name">v0.2.9 <span>学霸模式改版与新图标</span></p>
           <ul class="release-changes">
-            <li>全面排查并修复待办、日历课表、统计、专注及锁机流程问题。</li>
-            <li>修正授权等待状态机、顶部 Toast 定位及保护帮助页标题对齐。</li>
-            <li>修复安卓端生命周期与导航时钟同步，完成 API 36 模拟器实测验证。</li>
+            <li>重构学霸模式为总开关、应用限制、严格模式、免打扰与授权中心，支持默认配置与自定义记忆。</li>
+            <li>开启学霸模式专注时锁定专注页，保留使用帮助、紧急交互与故障恢复出口。</li>
+            <li>更新全新小猫应用图标，优化待办弹窗交互、输入法临时浮层识别与备份兼容。</li>
           </ul>
-          <a class="about-link" href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.6" target="_blank" rel="noopener noreferrer">完整更新说明<Icon name="right" :size="15" /></a>
+          <a class="about-link" href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.9" target="_blank" rel="noopener noreferrer">完整更新说明<Icon name="right" :size="15" /></a>
         </section>
         <details class="about-details">
           <summary><span>开源许可</span><Icon name="down" :size="15" /></summary>
@@ -330,10 +342,9 @@ async function openAlarms() {
 .profile-icon {
   width: 48px;
   height: 48px;
-  border-radius: 18px;
-  background: var(--surface);
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
 .profile h2 {
   font-size: 20px;

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
+import { syncLegacyFlatMutation } from '../domain/protectionModules'
 import Icon from './Icon.vue'
 import Sheet from './Sheet.vue'
 const app = useApp(),
@@ -20,8 +21,12 @@ async function change(event: Event) {
   error.value = ''
   try {
     await app.mutate((data) => {
-      data.preferences.protection ??= defaultProtection()
-      data.preferences.protection.strict = checked
+      data.preferences.protection = syncLegacyFlatMutation(
+        data.preferences.protection ?? defaultProtection(),
+        (flat) => {
+          flat.strict = checked
+        },
+      )
     })
   } catch (failure) {
     target.checked = enabled.value

@@ -117,6 +117,8 @@ final class LauncherProtection {
             verified = phase.equals("active") && state == DISABLED && !visible && reachable;
             if (phase.equals("active") && !verified) { phase = "failed"; error = "实际入口或控制通知状态已变化，请返回控制页核实并恢复"; }
         } catch (RuntimeException failure) { phase = "failed"; error = message(failure); }
+        if ("withdrawn".equals(phase) && !value.optBoolean("pending")
+            && !(requested(active) && active.optString("id").equals(value.optString("sessionId")))) phase = "restored";
         return new JSONObject().put("supported", true).put("requested", requested(active)).put("phase", phase)
             .put("active", verified).put("verified", verified).put("recoveryAvailable", available).put("recoveryReachable", reachable)
             .put("componentState", state).put("launcherResolved", visible).put("launcherCacheVerified", false)

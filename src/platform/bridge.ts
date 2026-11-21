@@ -19,6 +19,7 @@ import type {
   WallpaperStatus,
 } from '../domain/model'
 import { emptyData, effectiveWhitelist } from '../domain/model'
+import { isMasterFocusLockActive, resolveEffectiveProtection } from '../domain/protectionModules'
 import { elapsed, settle } from '../domain/focus'
 import { makeRest, readRest, REST_DURATION_MS } from '../domain/rest'
 
@@ -123,7 +124,10 @@ export const focusDriver = {
   async start(session: ActiveFocus, strictModeConfirmed = false): Promise<FocusSnapshot> {
     if (native) return plugin.startFocus({ session, strictModeConfirmed })
     const db = await webReadFocus()
-    const preferredProtection = (await repository.load()).preferences.protection
+    const loadedData: AppData = (await db.get('kv', 'data')) || emptyData()
+    const preferredProtection = loadedData.preferences.protection
+      ? resolveEffectiveProtection(loadedData.preferences.protection)
+      : undefined
     if (preferredProtection?.enhancements?.includes('launcherIconHidden'))
       throw new Error('桌面图标隐藏仅支持 Android 本机版本，请关闭此选项后继续')
     if (preferredProtection?.enhancements?.includes('recentTasksHidden'))
@@ -142,11 +146,23 @@ export const focusDriver = {
     if ((await restDriver.read()).session?.state === 'running')
       throw new Error('请先退出休息，再开始新的专注')
     await restDriver.exit()
-    const data: AppData = (await db.get('kv', 'data')) || emptyData()
-    const strictMode = data.preferences.protection?.strict === true && session.mode === 'countdown'
+    const strictMode = preferredProtection?.strict === true && session.mode === 'countdown'
     if (strictMode && !strictModeConfirmed)
       throw new Error('请先确认严格倒计时：开始后不能暂停、取消或提前结束')
-    browserSession = { ...session, strictMode, protection: { study: false, ...effectiveWhitelist(data, session.itemId) }, anchorMono: Date.now(), bootId: 0 }
+    const protectionSnapshot: ActiveFocus['protection'] = {
+      study: false,
+      ...effectiveWhitelist(loadedData, session.itemId),
+    }
+    if (isMasterFocusLockActive(preferredProtection)) {
+      protectionSnapshot.studyLocked = true
+    }
+    browserSession = {
+      ...session,
+      strictMode,
+      protection: protectionSnapshot,
+      anchorMono: Date.now(),
+      bootId: 0,
+    }
     await db.put('kv', browserSession, 'active')
     return { session: browserSession, elapsedMs: 0 }
   },

@@ -92,6 +92,7 @@ public class RecentTasksControlTest {
         assertFalse(tasks.excluded(9)); assertTrue(tasks.excluded(10)); assertEquals("withdrawn", status().getString("phase"));
         control.reconcile(); assertFalse(tasks.excluded(9)); assertEquals("focus", control.observeControl().getString("owner"));
         clock.time += 1000; control.focusAction("finish"); control.restAction("exit");
+        assertEquals("restored", status().getString("phase"));
         control.startFocus(session("stopwatch")); tasks.failRestore = true; clock.time += 1000; control.focusAction("finish"); control.restAction("exit");
         try { control.startFocus(session("stopwatch")); fail("Unfinished duty must block new hiding"); } catch (IllegalStateException expected) { }
         tasks.failRestore = false; preview = control.previewRecovery(); control.confirmRecovery(preview.getString("revision"));

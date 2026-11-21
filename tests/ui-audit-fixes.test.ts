@@ -59,6 +59,7 @@ import FocusView from '../src/views/FocusView.vue'
 import CalendarView from '../src/views/CalendarView.vue'
 import SettingsView from '../src/views/SettingsView.vue'
 import LockView from '../src/views/LockView.vue'
+import StudyModeSheet from '../src/components/StudyModeSheet.vue'
 import StrictModeSetting from '../src/components/StrictModeSetting.vue'
 import LockMainEntrySetting from '../src/components/LockMainEntrySetting.vue'
 import WallpaperSetting from '../src/components/WallpaperSetting.vue'
@@ -148,6 +149,39 @@ describe('UI audit fixes', () => {
     vi.setSystemTime(new Date('2026-11-18T00:00:05'))
     state.syncToday()
     expect(state.today).toBe('2026-11-18')
+    vi.useRealTimers()
+  })
+
+  it('TasksView displays cross-midnight duration on day 2 without hiding it behind count === 0', async () => {
+    vi.useFakeTimers()
+    const start = new Date(2026, 10, 14, 23, 50, 0).getTime()
+    const end = new Date(2026, 10, 15, 0, 15, 0).getTime()
+    mocks.app.data.records.push({
+      id: 'cross-1',
+      itemId: 'i1',
+      themeId: 't1',
+      title: '看书',
+      themeName: '阅读',
+      color: '#ef4e36',
+      mode: 'countdown',
+      targetMs: 1500000,
+      startedAt: start,
+      endedAt: end,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      durationMs: 1500000,
+      pausedMs: 0,
+      segments: [{ start, end }],
+      status: 'completed',
+    })
+
+    vi.setSystemTime(new Date(2026, 10, 14, 23, 59, 0))
+    const day1 = await mountSSR(TasksView)
+    expect(day1.html).toContain('今日 1 次，10分钟')
+
+    vi.setSystemTime(new Date(2026, 10, 15, 0, 20, 0))
+    const day2 = await mountSSR(TasksView)
+    expect(day2.html).toContain('今日 15分钟')
+    expect(day2.html).not.toContain('0 次')
     vi.useRealTimers()
   })
 
@@ -319,5 +353,35 @@ describe('UI audit fixes', () => {
     expect(state.loadError).toBe('网络超时')
     state.closeDraft()
     expect(state.sheetError).toBe('')
+  })
+
+  it('TasksView and StudyModeSheet reflect active and withdrawn lock application protection', async () => {
+    mocks.protection.mockResolvedValue({
+      supported: true, authorized: true, connected: true, active: true, state: 'protecting',
+      reason: '本轮锁机保护中', effectiveWhitelist: [],
+    })
+    mocks.app.lock.session = {
+      id: 'lock-1',
+      configurationId: 'l1',
+      title: '锁机',
+      targetMs: 60000,
+      startedAt: 1,
+      strictMode: false,
+      protection: { study: true, source: 'global', whitelist: [] },
+    }
+    const tasks = await mountSSR(TasksView)
+    await tasks.state.refreshProtection()
+    expect(tasks.state.studyEntry.text).toBe('保护中')
+
+    const sheet = await mountSSR(StudyModeSheet, { open: true })
+    await sheet.state.refresh()
+    expect(sheet.state.display.text).toBe('保护中')
+
+    mocks.app.lock.session = {
+      ...mocks.app.lock.session,
+      protection: { study: true, source: 'global', whitelist: [], applicationsWithdrawn: true },
+    }
+    expect(tasks.state.studyEntry.text).toBe('已撤销')
+    expect(sheet.state.display.text).toBe('已撤销')
   })
 })

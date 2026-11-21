@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import { timer, duration } from '../domain/dates'
+import { isStudySessionLocked } from '../navigation/mainEntry'
 import Icon from '../components/Icon.vue'
 import DndSetting from '../components/DndSetting.vue'
 import NotificationSetting from '../components/NotificationSetting.vue'
@@ -13,6 +14,7 @@ const app = useApp(),
   router = useRouter(),
   busy = ref(false)
 const session = computed(() => app.focus.session),
+  studyLocked = computed(() => isStudySessionLocked(session.value)),
   strict = computed(() => session.value?.mode === 'countdown' && session.value.strictMode === true),
   result = computed(() => app.lastResult),
   display = computed(() =>
@@ -20,6 +22,13 @@ const session = computed(() => app.focus.session),
       ? Math.max(0, session.value.targetMs - app.focus.elapsedMs)
       : app.focus.elapsedMs,
   )
+function onBackClick() {
+  if (studyLocked.value) {
+    app.notify('学霸模式进行中，结束后可返回')
+    return
+  }
+  void router.replace('/tasks')
+}
 async function toggle() {
   busy.value = true
   try {
@@ -77,8 +86,12 @@ async function rest() {
   <div class="focus-page">
     <ConfirmationDialog :request="confirmation" @resolve="resolveConfirmation" />
     <header class="focus-header">
-      <button class="icon-button" aria-label="返回待办，保持计时" @click="router.replace('/tasks')">
-        <Icon name="back" /></button
+      <button
+        class="icon-button"
+        :aria-label="studyLocked ? '学霸模式进行中，专注页已锁定' : '返回待办，保持计时'"
+        @click="onBackClick"
+      >
+        <Icon :name="studyLocked ? 'lock' : 'back'" /></button
       ><span class="focus-header-title">{{ session?.themeName || '小猫专注' }}</span
       ><span class="focus-header-space" />
     </header>
@@ -99,6 +112,7 @@ async function rest() {
         <p v-if="session.protection?.study" class="temporary-summary">
           <template v-if="strict">严格倒计时 · 不可临时放行</template>
           <template v-else-if="session.protection.applicationsWithdrawn">本轮应用限制已撤销</template>
+          <template v-else-if="session.protection.temporaryAccessAllowed === false">本轮已关闭临时放行</template>
           <template v-else>
             临时放行剩余 {{ session.temporaryAccess?.remainingUses ?? 3 }} 次
             <span v-if="session.temporaryAccess?.targetPackage">
@@ -121,6 +135,11 @@ async function rest() {
           ><button class="end-control" aria-label="结束专注" :disabled="busy" @click="finish">
             <Icon name="stop" :size="24" />
           </button>
+        </div>
+        <div v-if="studyLocked" class="study-safety-links" aria-label="安全出口">
+          <RouterLink to="/help">使用帮助</RouterLink>
+          <RouterLink to="/emergency">紧急与必要交互</RouterLink>
+          <RouterLink to="/recovery">故障恢复</RouterLink>
         </div>
       </div></template
     ><template v-else-if="result"
@@ -153,6 +172,11 @@ async function rest() {
         <button v-else class="primary wide" :disabled="busy" @click="again">
           <Icon name="refresh" :size="18" />再次开始</button
         ><button class="text-button" @click="router.replace('/tasks')">返回待办</button>
+        <div v-if="studyLocked" class="study-safety-links" aria-label="安全出口">
+          <RouterLink to="/help">使用帮助</RouterLink>
+          <RouterLink to="/emergency">紧急与必要交互</RouterLink>
+          <RouterLink to="/recovery">故障恢复</RouterLink>
+        </div>
       </div></template
     >
     <div v-else class="empty">
@@ -246,6 +270,20 @@ async function rest() {
 .focus-bottom > p {
   font-size: 13px;
   color: #6c6c72;
+}
+.study-safety-links {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.study-safety-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }
 .focus-controls {
   display: flex;

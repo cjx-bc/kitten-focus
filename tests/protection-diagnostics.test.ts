@@ -142,3 +142,48 @@ it('does not report applications as off when controlDriver.observe rejects', asy
     state: 'authorization',
   })
 })
+
+it('reports recentTasksHidden authorization requirement and normalizes idle terminal phases when selected', async () => {
+  const { readProtectionDiagnostics } = await import('../src/platform/protectionDiagnostics')
+  device.values.getRecentTasksStatus = {
+    supported: true, requested: false, active: false, verified: false,
+    phase: 'restored', recoveryAvailable: false, recoveryPending: false, error: '',
+  }
+  const missingNotice = await readProtectionDiagnostics({
+    ...defaultProtection(),
+    enhancements: ['recentTasksHidden'],
+  })
+  expect(missingNotice.state).toBe('authorization')
+  expect(missingNotice.capabilities.find(row => row.id === 'recentTasks')).toMatchObject({
+    state: 'authorization',
+    authorized: false,
+    settings: 'controlNotification',
+  })
+
+  device.values.getDndStatus = {
+    supported: true, permissionGranted: true, requested: false, phase: 'withdrawn',
+    verified: false, ruleActive: null, recoveryPending: false, error: '',
+  }
+  device.values.getNotificationStatus = {
+    supported: true, authorized: true, connected: true, requested: false, active: false,
+    phase: 'released', pendingCount: 0, snoozedCount: 0, restoredCount: 1, absentCount: 0, releaseFailedCount: 0, error: '', reason: '',
+  }
+  device.values.getRecentTasksStatus = {
+    supported: true, requested: false, active: false, verified: false,
+    phase: 'restored', recoveryAvailable: true, recoveryPending: false, error: '',
+  }
+  device.values.getLauncherStatus = {
+    supported: true, requested: false, active: false, verified: false,
+    phase: 'withdrawn', recoveryAvailable: true, recoveryPending: false, error: '',
+  }
+  const idleSelected = await readProtectionDiagnostics({
+    ...defaultProtection(),
+    dnd: true,
+    interceptNotifications: true,
+    enhancements: ['recentTasksHidden', 'launcherIconHidden'],
+  })
+  expect(idleSelected.state).toBe('ready')
+  for (const id of ['dnd', 'notifications', 'recentTasks', 'launcher']) {
+    expect(idleSelected.capabilities.find(row => row.id === id)?.state).toBe('ready')
+  }
+})

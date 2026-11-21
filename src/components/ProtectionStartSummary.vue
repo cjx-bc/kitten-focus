@@ -4,27 +4,35 @@ import type { ProtectionPreferences } from '../domain/model'
 import { native } from '../platform/bridge'
 import { readProtectionDiagnostics, type CapabilityDiagnostic } from '../platform/protectionDiagnostics'
 const props = defineProps<{ preferences: ProtectionPreferences; lock?: boolean }>()
-defineEmits<{ settings: [] }>()
+const emit = defineEmits<{ settings: []; unready: [ids: string[]] }>()
 const rows = ref<CapabilityDiagnostic[]>([]), error = ref(''), busy = ref(false)
 let revision = 0
+function isUnready(row: CapabilityDiagnostic) {
+  if (row.id === 'strict') return false
+  if (row.id === 'mainEntry' && !props.lock) return false
+  return !native || !row.supported || row.authorized === false || row.connected === false || !!row.recoveryPending || row.state === 'failed'
+}
 async function refresh() {
   const request = ++revision
   busy.value = true; error.value = ''
   try {
     const result = await readProtectionDiagnostics(props.preferences)
-    if (request === revision) rows.value = result.capabilities.filter(row => row.selected)
-  } catch (e) { if (request === revision) error.value = String(e) }
+    if (request === revision) {
+      rows.value = result.capabilities.filter(row => row.selected)
+      emit('unready', rows.value.filter(isUnready).map(row => row.id))
+    }
+  } catch (e) { if (request === revision) { error.value = String(e); emit('unready', []) } }
   finally { if (request === revision) busy.value = false }
 }
 function availability(row: CapabilityDiagnostic) {
   if (row.id === 'strict') return '倒计时生效；正计时不适用'
   if (row.id === 'mainEntry' && !props.lock) return '仅独立锁机生效'
-  if (!native || !row.supported) return '本机不支持，需关闭此项'
-  if (row.authorized === false) return '需授权或关闭此项'
-  if (row.connected === false) return '服务未连接'
+  if (!native || !row.supported) return '本机不支持，未生效（需关闭此项）'
+  if (row.authorized === false) return '待授权 · 未生效（需授权或关闭此项）'
+  if (row.connected === false) return '服务未连接 · 未生效'
   if (row.recoveryPending) return '需先完成故障恢复'
-  if (row.state === 'failed') return '检查失败'
-  return '开始时检查'
+  if (row.state === 'failed') return '检查失败 · 未生效'
+  return '已就绪 · 开始时检查'
 }
 watch(() => props.preferences, refresh, { immediate: true, deep: true })
 onMounted(() => window.addEventListener('focus', refresh))

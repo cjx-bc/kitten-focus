@@ -1127,6 +1127,11 @@ function coursePosition(o: Occurrence) {
 .weekday-checks label {
   position: relative;
   min-height: 44px;
+  cursor: pointer;
+  user-select: none;
+}
+.weekday-checks label:active span {
+  opacity: 0.7;
 }
 .weekday-checks input {
   position: absolute;

@@ -41,6 +41,38 @@ export interface FocusRecord {
   segments: Segment[]
   status: 'completed' | 'early' | 'interrupted'
 }
+export type AppsSubKey = 'restrict' | 'temporaryAccess'
+export type StrictSubKey =
+  | 'noPauseEnd'
+  | 'navigation'
+  | 'antiClose'
+  | 'hideRecents'
+  | 'hideLauncher'
+  | 'wallpaper'
+export type QuietSubKey = 'sound' | 'intercept' | 'whitelistPass'
+export type ProtectionModuleKey = 'apps' | 'strict' | 'quiet'
+export type ProtectionEnhancementKey =
+  | 'navigationHomeRecents'
+  | 'preciseAntiClose'
+  | 'recentTasksHidden'
+  | 'launcherIconHidden'
+  | 'wallpaperProtection'
+  | 'lockMainInterfaceRestricted'
+
+export interface ModulePref<K extends string = string> {
+  enabled: boolean
+  custom?: Partial<Record<K, boolean>>
+}
+
+export interface ProtectionModules {
+  master?: boolean
+  initialized?: boolean
+  focusLock?: boolean
+  apps: ModulePref<AppsSubKey>
+  strict: ModulePref<StrictSubKey>
+  quiet: ModulePref<QuietSubKey>
+}
+
 export interface ProtectionPreferences {
   study: boolean
   strict: boolean
@@ -48,6 +80,7 @@ export interface ProtectionPreferences {
   dnd: boolean
   globalWhitelist: string[]
   enhancements: string[]
+  modules?: ProtectionModules
 }
 export const defaultProtection = (): ProtectionPreferences => ({
   study: false, strict: false, interceptNotifications: false, dnd: false,
@@ -57,6 +90,8 @@ export interface ProtectionSnapshot {
   applicationsWithdrawn?: boolean
   navigationWithdrawn?: boolean
   antiCloseWithdrawn?: boolean
+  temporaryAccessAllowed?: boolean
+  studyLocked?: boolean
   enhancements?: string[]
   study: boolean
   source: 'global' | 'custom'

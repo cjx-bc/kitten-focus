@@ -6,6 +6,7 @@ import { native, exportFile } from '../platform/bridge'
 import { updatesDriver, type UpgradeBackup } from '../platform/updates'
 import Sheet from './Sheet.vue'
 import Icon from './Icon.vue'
+import AppMark from './AppMark.vue'
 
 const app = useApp(),
   updates = useUpdates(),
@@ -133,7 +134,7 @@ async function restoreRecovery() {
   <Sheet v-if="panel === 'update'" title="应用更新" :close-disabled="busy" @close="close">
     <div class="stack update-content">
       <div class="update-heading">
-        <span class="update-mark"><Icon name="cat" :size="32" /></span>
+        <span class="update-mark"><AppMark :size="56" /></span>
         <div>
           <h3>小猫专注</h3>
           <p class="field-help">当前版本 {{ state.currentVersion }}</p>
@@ -279,12 +280,11 @@ async function restoreRecovery() {
   margin-top: 5px;
 }
 .update-mark {
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
-  background: var(--surface);
+  flex-shrink: 0;
 }
 .update-version {
   display: flex;

@@ -141,12 +141,13 @@ final class DndProtection {
         boolean supported = system.supported(), granted = system.permissionGranted();
         String phase = journal.optString("phase", "off"), error = journal.optString("error", "");
         boolean requested = active != null && active.optBoolean("dndRequested");
+        boolean sameRound = requested && active.optString("id").equals(journal.optString("sessionId"));
         Boolean ruleActive = null;
         boolean enabled = false;
         try {
             if (!supported) phase = "unsupported";
             else if (!granted && (requested || journal.has("condition"))) phase = journal.optString("phase").equals("restoration_failed") ? "restoration_failed" : "permission_required";
-            else if (journal.optBoolean("withdrawn") && !journal.has("condition")) phase = "withdrawn";
+            else if (journal.optBoolean("withdrawn") && !journal.has("condition")) phase = sameRound ? "withdrawn" : "restored";
             else if (journal.has("ruleId")) {
                 DndSystem.Rule rule = system.read(journal.getString("ruleId"), journal.getString("condition"));
                 if (rule == null) phase = "missing";

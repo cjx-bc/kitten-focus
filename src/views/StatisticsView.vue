@@ -379,6 +379,11 @@ async function remove(record: FocusRecord) {
   border-radius: 12px;
   text-align: center;
   flex: 1;
+  user-select: none;
+  transition: opacity 120ms ease;
+}
+.period-selector > label:active {
+  opacity: 0.65;
 }
 .period-selector > label:has(input:focus-visible) {
   outline: 2px solid var(--focus);

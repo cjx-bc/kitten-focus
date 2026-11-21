@@ -140,10 +140,11 @@ describe('TasksView UX improvements', () => {
     })
 
     const durationIdx = html.indexOf('专注时长（分钟）')
-    const whitelistIdx = html.indexOf('应用限制 · 跟随全局')
+    const whitelistIdx = html.indexOf('aria-controls="item-whitelist-panel"')
     expect(durationIdx).toBeGreaterThan(-1)
     expect(whitelistIdx).toBeGreaterThan(durationIdx)
-    expect(html).not.toContain('替代全局名单，不自动合并')
+    expect(html).not.toContain('规则说明')
+    expect(html).not.toContain('<textarea')
 
     state.setItemWhitelist('custom')
     expect(state.itemForm.whitelist?.source).toBe('custom')

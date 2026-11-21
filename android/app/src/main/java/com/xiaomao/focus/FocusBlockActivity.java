@@ -95,21 +95,29 @@ public class FocusBlockActivity extends ComponentActivity {
             JSONObject grant = session.optJSONObject("temporaryAccess");
             boolean strict = session.optBoolean("strictMode") && session.optString("mode").equals("countdown");
             boolean lock = LockEngine.owns(session);
+            boolean tempAllowed = protection.optBoolean("temporaryAccessAllowed", true);
             int remaining = grant == null ? 3 : grant.optInt("remainingUses");
-            temporary.setVisibility(strict || lock ? android.view.View.GONE : android.view.View.VISIBLE);
+            temporary.setVisibility(strict || lock || !tempAllowed ? android.view.View.GONE : android.view.View.VISIBLE);
             temporary.setEnabled(!granting && remaining > 0 && !blockedPackage.isEmpty());
             temporary.setText(getString(R.string.focus_block_temporary_access, appLabel(blockedPackage), remaining));
             title.setText(session.optString("title"));
             long elapsed = snapshot.optLong("elapsedMs");
             long ms = lock ? snapshot.optLong("remainingMs") : session.optString("mode").equals("countdown") ? Math.max(0, session.optLong("targetMs") - elapsed) : elapsed;
-            long seconds = ms / 1000;
-            time.setText(String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60));
+            String formatted = formatClock(ms);
+            time.setTextSize(formatted.length() > 5 ? 40 : 52);
+            time.setText(formatted);
             String description = lock ? strict ? "严格锁机保护中 · 到期自动结束" : "普通锁机保护中 · 可返回确认解除" : strict ? "严格倒计时 · 不可临时放行" : session.optString("state").equals("paused")
                 ? "计时已暂停 · 应用限制继续" : "本轮学霸模式保护中";
             if (!strict && grant != null && grant.optLong("remainingMs") > 0)
                 description += "\n正在放行 " + grant.optString("targetLabel") + " · 剩余 " + (grant.optLong("remainingMs") + 999) / 1000 + " 秒";
             state.setText(description);
         } catch (Exception error) { finish(); }
+    }
+    static String formatClock(long ms) {
+        long seconds = Math.max(0L, (ms + 999L) / 1000L);
+        if (seconds >= 3600L)
+            return String.format(Locale.ROOT, "%02d:%02d:%02d", seconds / 3600L, (seconds / 60L) % 60L, seconds % 60L);
+        return String.format(Locale.ROOT, "%02d:%02d", seconds / 60L, seconds % 60L);
     }
     private String appLabel(String packageName) {
         try { return getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(packageName, 0)).toString(); }

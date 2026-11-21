@@ -128,7 +128,8 @@ final class NotificationProtection {
         Set<String> whitelist = new HashSet<>(); whitelist.add(ownPackage);
         JSONObject protection = active.optJSONObject("protection");
         JSONArray packages = protection == null ? null : protection.optJSONArray("whitelist");
-        if (packages != null) for (int i = 0; i < packages.length(); i++) whitelist.add(packages.optString(i));
+        if (!active.optBoolean("notificationWhitelistDisabled", false) && packages != null)
+            for (int i = 0; i < packages.length(); i++) whitelist.add(packages.optString(i));
         long duration = NotificationPolicy.duration(notice, whitelist, journal.optLong("deadlineMono"), clock.mono(), ready());
         if (duration == 0) return;
         // Save every sibling before a grouped request can implicitly snooze it.
@@ -269,9 +270,10 @@ final class NotificationProtection {
             if (phase.equals("snoozed")) snoozed++;
         }
         boolean controlling = controlling(journal, active);
+        boolean sameRound = requested && active.optString("id").equals(journal.optString("sessionId"));
         boolean supported = system.supported(), authorized = system.authorized(), connected = system.connected();
         String error = journal.optString("error", system.failure());
-        String phase = !supported ? "unsupported" : journal.optBoolean("withdrawn") ? "withdrawn"
+        String phase = !supported ? "unsupported" : journal.optBoolean("withdrawn") && (sameRound || pending > 0) ? "withdrawn"
             : requested && !authorized ? "permission_required" : requested && !connected ? "disconnected"
             : !error.isEmpty() ? "failed" : controlling ? snoozed > 0 ? "holding" : pending > 0 ? "requested" : "ready"
             : pending > 0 ? "release_pending" : entries.length() > 0 ? "released" : "off";

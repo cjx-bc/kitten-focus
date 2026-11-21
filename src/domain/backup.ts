@@ -1,6 +1,71 @@
-import type { AppData } from './model'
+import type { AppData, ModulePref, ProtectionModuleKey, ProtectionModules } from './model'
 import { defaultProtection } from './model'
+import {
+  APPS_SUB_KEYS,
+  QUIET_SUB_KEYS,
+  STRICT_SUB_KEYS,
+} from './protectionModules'
 import { validateEvent } from './calendar'
+
+const MODULE_ALLOWED_KEYS: Record<ProtectionModuleKey, readonly string[]> = {
+  apps: APPS_SUB_KEYS,
+  strict: STRICT_SUB_KEYS,
+  quiet: QUIET_SUB_KEYS,
+}
+
+function cleanBackupModules(raw: ProtectionModules): ProtectionModules {
+  const cleanModule = <K extends string>(
+    key: ProtectionModuleKey,
+    mod: ModulePref<K>,
+  ): ModulePref<K> => {
+    const out: ModulePref<K> = { enabled: mod.enabled }
+    if (mod.custom) {
+      const custom: Partial<Record<K, boolean>> = {}
+      let hasAny = false
+      for (const subKey of MODULE_ALLOWED_KEYS[key]) {
+        const val = mod.custom[subKey as K]
+        if (typeof val === 'boolean') {
+          custom[subKey as K] = val
+          hasAny = true
+        }
+      }
+      if (hasAny) out.custom = custom
+    }
+    return out
+  }
+  const result: ProtectionModules = {
+    apps: cleanModule('apps', raw.apps),
+    strict: cleanModule('strict', raw.strict),
+    quiet: cleanModule('quiet', raw.quiet),
+  }
+  if (typeof raw.master === 'boolean') result.master = raw.master
+  if (typeof raw.initialized === 'boolean') result.initialized = raw.initialized
+  if (typeof raw.focusLock === 'boolean') result.focusLock = raw.focusLock
+  return result
+}
+
+function validateBackupModules(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  const record = raw as Record<string, unknown>
+  for (const flag of ['master', 'initialized', 'focusLock']) {
+    if (record[flag] !== undefined && typeof record[flag] !== 'boolean') return false
+  }
+  for (const moduleKey of ['apps', 'strict', 'quiet'] as const) {
+    const mod = record[moduleKey]
+    if (!mod || typeof mod !== 'object' || Array.isArray(mod)) return false
+    const modObj = mod as Record<string, unknown>
+    if (typeof modObj.enabled !== 'boolean') return false
+    if (modObj.custom !== undefined) {
+      if (!modObj.custom || typeof modObj.custom !== 'object' || Array.isArray(modObj.custom))
+        return false
+      const allowed = MODULE_ALLOWED_KEYS[moduleKey]
+      for (const [k, v] of Object.entries(modObj.custom as Record<string, unknown>)) {
+        if (!allowed.includes(k) || typeof v !== 'boolean') return false
+      }
+    }
+  }
+  return true
+}
 export interface Backup {
   app: 'xiaomao-focus'
   version: 1
@@ -68,8 +133,8 @@ function businessData(data: AppData): AppData {
     'vibration',
     'activeSemesterId',
   ])
-  if (data.preferences.protection !== undefined)
-    result.preferences.protection = {
+  if (data.preferences.protection !== undefined) {
+    const protection = {
       ...defaultProtection(),
       ...pick(data.preferences.protection, [
         'study',
@@ -80,6 +145,11 @@ function businessData(data: AppData): AppData {
         'enhancements',
       ]),
     }
+    if (data.preferences.protection.modules !== undefined) {
+      protection.modules = cleanBackupModules(data.preferences.protection.modules)
+    }
+    result.preferences.protection = protection
+  }
   // The confirmation Sheet may pass Vue proxies. The portable contract is JSON;
   // detach that representation without retaining reactive arrays or OS runtime.
   return JSON.parse(JSON.stringify(result)) as AppData
@@ -115,7 +185,8 @@ export function readBackup(text: string): Backup {
         return entry !== undefined && typeof entry !== 'boolean'
       }) ||
       (protection.globalWhitelist !== undefined && !validStrings(protection.globalWhitelist)) ||
-      (protection.enhancements !== undefined && !validStrings(protection.enhancements)))
+      (protection.enhancements !== undefined && !validStrings(protection.enhancements)) ||
+      (protection.modules !== undefined && !validateBackupModules(protection.modules)))
   )
     throw new Error('保护设置损坏')
   if (data.lockConfigurations !== undefined) {

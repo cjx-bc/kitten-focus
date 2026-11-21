@@ -16,6 +16,12 @@ import type {
 } from '../domain/model'
 import { emptyData, uid, effectiveWhitelist, defaultProtection, THEME_COLORS } from '../domain/model'
 import {
+  isMasterFocusLockActive,
+  migrateProtectionPreferences,
+  resolveEffectiveProtection,
+  syncLegacyFlatMutation,
+} from '../domain/protectionModules'
+import {
   focusDriver,
   restDriver,
   lockDriver,
@@ -52,6 +58,26 @@ export const useApp = defineStore('app', () => {
     startConfirmation.value = null
     resolveStartConfirmation?.(accepted)
     resolveStartConfirmation = undefined
+  }
+  async function clearUnreadyProtections(ids: string[]) {
+    if (!ids.length) return
+    confirmStart(false)
+    const set = new Set(ids)
+    const removeKeys: string[] = []
+    if (set.has('navigation')) removeKeys.push('navigationHomeRecents')
+    if (set.has('antiClose')) removeKeys.push('preciseAntiClose')
+    if (set.has('recentTasks')) removeKeys.push('recentTasksHidden')
+    if (set.has('launcher')) removeKeys.push('launcherIconHidden')
+    if (set.has('wallpaper')) removeKeys.push('wallpaperProtection')
+    await mutate((d) => {
+      d.preferences.protection = syncLegacyFlatMutation(d.preferences.protection, (p) => {
+        if (set.has('applications')) p.study = false
+        if (set.has('dnd')) p.dnd = false
+        if (set.has('notifications')) p.interceptNotifications = false
+        if (removeKeys.length) p.enhancements = p.enhancements.filter((k) => !removeKeys.includes(k))
+      })
+    })
+    notify('已关闭未就绪的保护项，请重新点击开始专注')
   }
   const themes = computed(() =>
     data.value.themes.filter((t) => !t.deleted).sort((a, b) => a.order - b.order),
@@ -159,7 +185,11 @@ export const useApp = defineStore('app', () => {
   }
   async function init() {
     try {
-      data.value = await repository.load()
+      const loaded = await repository.load()
+      if (loaded.preferences.protection) {
+        loaded.preferences.protection = migrateProtectionPreferences(loaded.preferences.protection)
+      }
+      data.value = loaded
       dataLoaded = true
       await Promise.allSettled([
         protectionDriver.apps(),
@@ -198,7 +228,17 @@ export const useApp = defineStore('app', () => {
         throw new Error('请填写正整数分钟')
       let strictModeConfirmed = false
       const protection = startingData.preferences.protection
-      if (protection?.strict || protection?.study || protection?.interceptNotifications || protection?.dnd || protection?.enhancements?.length) {
+        ? resolveEffectiveProtection(startingData.preferences.protection)
+        : undefined
+      if (
+        protection &&
+        (protection.strict ||
+          protection.study ||
+          isMasterFocusLockActive(protection) ||
+          protection.interceptNotifications ||
+          protection.dnd ||
+          protection.enhancements?.length)
+      ) {
         const whitelist = effectiveWhitelist(startingData, savedItem?.id ?? null)
         const accepted = await new Promise<boolean>((resolve) => {
           resolveStartConfirmation = resolve
@@ -563,6 +603,9 @@ export const useApp = defineStore('app', () => {
       if (lock.value.session) throw new Error('请先结束当前锁机再恢复数据')
       if (focus.value.session) throw new Error('请先结束当前专注再恢复数据')
       const restored = readBackup(makeBackup(next)).data
+      if (restored.preferences.protection) {
+        restored.preferences.protection = migrateProtectionPreferences(restored.preferences.protection)
+      }
       await dataOperation(async () => {
         await repository.replace(restored)
         data.value = restored
@@ -610,6 +653,7 @@ export const useApp = defineStore('app', () => {
     lastResult,
     startConfirmation,
     confirmStart,
+    clearUnreadyProtections,
     themes,
     items,
     init,

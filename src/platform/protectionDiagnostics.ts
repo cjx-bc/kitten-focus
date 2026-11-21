@@ -35,7 +35,7 @@ const withdrawnPhases = ['recovered', 'withdrawn', 'restored', 'released', 'user
 
 function entryState(row: CapabilityDiagnostic): ProtectionEntryState {
   if (row.recoveryPending && (!row.requested || withdrawnPhases.includes(row.phase))) return 'failed'
-  if (withdrawnPhases.includes(row.phase)) return 'off'
+  if (withdrawnPhases.includes(row.phase) && (row.requested || !row.selected)) return 'off'
   if (!row.selected && row.requested !== null && !row.requested) return 'off'
   if (!row.supported || failurePhases.includes(row.phase)) return 'failed'
   if (row.authorized === false || row.connected === false) return row.requested ? 'failed' : 'authorization'
@@ -117,8 +117,8 @@ export async function readProtectionDiagnostics(saved: Partial<ProtectionPrefere
     const value = result.value
     add(id, title, enhanced(key), { supported: value.supported, requested: value.requested, active: value.active,
       verified: value.verified, recoveryPending: value.recoveryPending, phase: value.phase,
-      authorized: id === 'launcher' ? value.recoveryAvailable : null,
-      settings: id === 'launcher' ? 'controlNotification' : undefined,
+      authorized: typeof value.recoveryAvailable === 'boolean' ? value.recoveryAvailable : null,
+      settings: 'controlNotification',
       reason: value.error || (id === 'launcher' ? '隐藏前需要可达的控制通知与恢复入口；系统组件状态不代表启动器缓存已刷新。' : '只隐藏小猫自己的任务卡片，保留原状态用于恢复；不保证免于系统强停。'),
       effect: value.verified ? '系统状态已核验；桌面与最近任务的实际显示仍受系统或启动器影响。' : '尚未核验本轮系统更改。',
     })

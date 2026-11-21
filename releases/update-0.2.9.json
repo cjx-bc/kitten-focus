@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 15,
+    "versionName": "0.2.9",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.9/xiaomao-focus-0.2.9-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.9/xiaomao-focus-0.2.9-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.9-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.9/xiaomao-focus-0.2.9-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.9-debug.apk"
+    ],
+    "size": 4725027,
+    "sha256": "000d38553f3231e5f3bf8befc50768f7cd74fd1a989df80747428ae88356f066",
+    "notes": "学霸模式全面改版：重组为总开关、应用限制、严格模式、免打扰和授权与权限中心，支持默认推荐配置、记住自定义与一键恢复默认；学霸专注期间锁定专注页，保留帮助、紧急与故障恢复入口，并将锁机主界面入口限制移入锁机配置。支持独立控制临时放行与白名单通知放行，优化输入法临时浮层识别与旧版备份兼容，同步焕新小猫应用图标及待办编辑交互。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

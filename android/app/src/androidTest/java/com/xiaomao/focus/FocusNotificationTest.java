@@ -252,6 +252,8 @@ public class FocusNotificationTest {
         now += 60000; system.active.addAll(system.snoozed); system.snoozed.clear();
         preview = rebuilt.previewRecovery();
         assertFalse(rebuilt.confirmRecovery(preview.getString("revision")).getBoolean("pending"));
+        rebuilt.reconcile();
+        assertEquals("released", rebuilt.getNotificationStatus().getString("phase"));
     }
     @Test public void withdrawnOriginalIsNotReportedAsRestoredAndDisconnectedReleaseStaysPending() throws Exception {
         control.startFocus(session(), true);
@@ -433,6 +435,32 @@ public class FocusNotificationTest {
         control.synchronizeNotifications();
         assertFalse(control.getNotificationStatus().getBoolean("recoveryPending"));
         assertEquals(1, control.getNotificationStatus().getInt("restoredCount"));
+    }
+    @Test public void disabledWhitelistPassSubItemHoldsWhitelistedAppNotificationsWhilePreservingOwnAndNecessary() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").getJSONObject("protection").put("modules", new JSONObject()
+            .put("master", true)
+            .put("initialized", true)
+            .put("apps", new JSONObject().put("enabled", false))
+            .put("strict", new JSONObject().put("enabled", false))
+            .put("quiet", new JSONObject().put("enabled", true).put("custom", new JSONObject().put("sound", false).put("whitelistPass", false))));
+        store.saveData(data, false);
+        control.startFocus(session(), true);
+        NotificationSystem.Notice whitelistedOrdinary = notice("wl-ordinary", "allowed.app", false);
+        system.active.add(whitelistedOrdinary);
+        control.notificationPosted(whitelistedOrdinary);
+        assertEquals(1, system.snoozed.size());
+        assertEquals("wl-ordinary", system.snoozed.get(0).key);
+
+        NotificationSystem.Notice whitelistedNecessary = notice("wl-necessary", "allowed.app", true);
+        system.active.add(whitelistedNecessary);
+        control.notificationPosted(whitelistedNecessary);
+        NotificationSystem.Notice ownNotice = notice("own-notice", context.getPackageName(), false);
+        system.active.add(ownNotice);
+        control.notificationPosted(ownNotice);
+        assertEquals(1, system.snoozed.size());
+        assertFalse(system.requests.containsKey("wl-necessary"));
+        assertFalse(system.requests.containsKey("own-notice"));
     }
     static final class FakeNotifications implements NotificationSystem {
         boolean granted = true, connected = true, supported = true, failRelease; int calls, releaseRequests;

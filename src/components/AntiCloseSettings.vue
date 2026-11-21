@@ -4,6 +4,7 @@ import InfoHint from './InfoHint.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
+import { syncLegacyFlatMutation } from '../domain/protectionModules'
 import type { AntiCloseStatus } from '../domain/model'
 import { protectionDriver } from '../platform/bridge'
 import Sheet from './Sheet.vue'
@@ -34,10 +35,13 @@ async function saveSelected(checked: boolean) {
   busy.value = true
   try {
     await app.mutate(data => {
-      const protection = { ...defaultProtection(), ...data.preferences.protection }
-      protection.enhancements = protection.enhancements.filter(value => value !== option)
-      if (checked) protection.enhancements.push(option)
-      data.preferences.protection = protection
+      data.preferences.protection = syncLegacyFlatMutation(
+        data.preferences.protection ?? defaultProtection(),
+        flat => {
+          flat.enhancements = flat.enhancements.filter(value => value !== option)
+          if (checked) flat.enhancements.push(option)
+        },
+      )
     })
     app.notify(app.focus.session ? '增强选项已保存，将用于下一轮' : '增强选项已保存')
   } finally { if (!wasBusy) busy.value = false }
@@ -64,7 +68,7 @@ async function authorize() {
     <div class="help-row"><label class="switch"><span>精确防关闭</span><input type="checkbox" :checked="selected" :disabled="capabilityToggleDisabled(selected, status?.supported, busy)" @change="toggle" /></label>
       <InfoHint label="精确防关闭说明">
 <p>提高从本应用强退、撤权与卸载入口绕开的成本</p>
-<p class="muted">仅在本轮专注或锁机期间识别小猫自己的相关入口。其他应用设置、普通设置、电话、授权、帮助和故障恢复继续可用。结束、休息、重启或主动恢复后解除。</p>
+<p class="muted">仅在本轮专注或锁机期间识别小猫自己的相关入口。其他应用设置、普通设置、电话、授权、帮助和故障恢复继续可用。与学霸模式同开时，系统设置主页及无关设置仍会保持可用，仅拦截小猫自身的强退、撤权与卸载入口。结束、休息、重启或主动恢复后解除。</p>
     <div class="anti-close-status" role="status">
       <strong>{{ status ? labels[status.state] : '正在检查增强能力' }}</strong><p>{{ status?.reason }}</p>
       <p v-if="status?.supported">无障碍：{{ status.authorized ? '已授权' : '未授权' }} · 服务：{{ status.connected ? '已连接' : '未连接' }}</p>

@@ -171,4 +171,46 @@ public class TemporaryAccessControlTest {
         control.focusAction("finish");
         assertEquals("denied", control.grantTemporaryAccess(request("example.other", 1, "ended")).getString("status"));
     }
+
+    @Test public void transientOverlayHelpersAndBlockClockFormatMatchUiContract() {
+        assertTrue(FocusProtection.isTransientOverlayPackage(context, "com.android.systemui"));
+        assertTrue(FocusProtection.isTransientOverlayPackage(context, "android"));
+        assertFalse(FocusProtection.isTransientOverlayPackage(context, "example.blocked"));
+        assertFalse(FocusProtection.isTransientOverlayPackage(context, ""));
+        assertFalse(FocusProtection.isTransientOverlayPackage(context, null));
+
+        // Timer expiry keeps targeting the underlying app when SystemUI/IME left an overlay event last.
+        assertEquals("example.blocked", FocusAccessibilityService.resolveTargetPackage(
+            "com.android.systemui", "example.blocked", "example.blocked", false, true, false));
+        assertEquals("example.blocked", FocusAccessibilityService.resolveTargetPackage(
+            "com.android.systemui", "example.blocked", "", false, true, false));
+        assertEquals("example.allowed", FocusAccessibilityService.resolveTargetPackage(
+            "com.android.systemui", "example.allowed", "example.allowed", false, true, false));
+        assertEquals("example.blocked", FocusAccessibilityService.resolveTargetPackage(
+            "com.android.systemui", "example.other", "example.blocked", true, true, false));
+
+        assertEquals("00:00", FocusBlockActivity.formatClock(0L));
+        assertEquals("00:01", FocusBlockActivity.formatClock(1L));
+        assertEquals("00:01", FocusBlockActivity.formatClock(1000L));
+        assertEquals("59:59", FocusBlockActivity.formatClock(3599000L));
+        assertEquals("01:00:00", FocusBlockActivity.formatClock(3599001L));
+        assertEquals("01:30:00", FocusBlockActivity.formatClock(5400000L));
+    }
+
+    @Test public void disabledTemporaryAccessSubItemRejectsGrantsWhileKeepingApplicationRestriction() throws Exception {
+        JSONObject data = control.loadData();
+        data.getJSONObject("preferences").getJSONObject("protection").put("modules", new JSONObject()
+            .put("master", true)
+            .put("initialized", true)
+            .put("apps", new JSONObject().put("enabled", true).put("custom", new JSONObject().put("temporaryAccess", false)))
+            .put("strict", new JSONObject().put("enabled", false))
+            .put("quiet", new JSONObject().put("enabled", false)));
+        store.saveData(data, false);
+        JSONObject started = control.startFocus(session());
+        assertFalse(started.getJSONObject("session").getJSONObject("protection").optBoolean("temporaryAccessAllowed", true));
+        assertTrue(FocusProtection.shouldBlock(context, control.observeControl(), "example.blocked", ""));
+        JSONObject reply = control.grantTemporaryAccess(request("example.blocked", 1, "disabled-temp"));
+        assertEquals("denied", reply.getString("status"));
+        assertEquals(0, state().getInt("used"));
+    }
 }

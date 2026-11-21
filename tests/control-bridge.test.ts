@@ -205,3 +205,65 @@ it('refuses dnd, notification interception, and wallpaper protection outside And
     expect((await controlDriver.observe()).owner).toBeNull()
   }
 })
+
+it('marks studyLocked in browser session when master study mode is enabled without app restriction', async () => {
+  const { focusDriver, repository } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  const { toggleMasterStudy, toggleProtectionModule } = await import('../src/domain/protectionModules')
+  const data = emptyData()
+  let protection = toggleMasterStudy(defaultProtection(), true, { quietDefault: false })
+  protection = toggleProtectionModule(protection, 'apps', false)
+  protection = toggleProtectionModule(protection, 'strict', true)
+  // Turn off Android-only enhancements in browser preview so browser can run strict countdown
+  const { setProtectionSubItem } = await import('../src/domain/protectionModules')
+  protection = setProtectionSubItem(protection, 'strict', 'navigation', false)
+  protection = setProtectionSubItem(protection, 'strict', 'antiClose', false)
+  data.preferences.protection = protection
+  await repository.save(data)
+  const started = await focusDriver.start(session('countdown'), true)
+  expect(started.session?.strictMode).toBe(true)
+  expect(started.session?.protection?.study).toBe(false)
+  expect(started.session?.protection?.studyLocked).toBe(true)
+})
+
+it('Blocker #1: normal countdown confirmed when strict module is off allows early finish even if stale flat strict was true', async () => {
+  const { focusDriver, repository } = await import('../src/platform/bridge')
+  const { emptyData, defaultProtection } = await import('../src/domain/model')
+  const { toggleMasterStudy, toggleProtectionModule } = await import('../src/domain/protectionModules')
+  const data = emptyData()
+  let protection = toggleMasterStudy(defaultProtection(), true, { quietDefault: false })
+  protection = toggleProtectionModule(protection, 'apps', false)
+  protection = toggleProtectionModule(protection, 'strict', false)
+  // Simulate corrupted/stale flat strict=true while modules.strict.enabled=false
+  protection.strict = true
+  data.preferences.protection = protection
+  await repository.save(data)
+
+  const started = await focusDriver.start(session('countdown'), true)
+  expect(started.session?.strictMode).toBe(false)
+  const finished = await focusDriver.action('finish')
+  expect(finished.session).toBeNull()
+})
+
+it('Blocker #2: legacy migrated preference with focusLock=false does not lock focus page in browser session', async () => {
+  const { focusDriver, repository } = await import('../src/platform/bridge')
+  const { emptyData } = await import('../src/domain/model')
+  const { migrateProtectionPreferences } = await import('../src/domain/protectionModules')
+  const { isStudySessionLocked } = await import('../src/navigation/mainEntry')
+  const data = emptyData()
+  // Legacy strict-only (no Android-only capabilities) so browser can start it
+  data.preferences.protection = migrateProtectionPreferences({
+    study: false,
+    strict: true,
+    dnd: false,
+    interceptNotifications: false,
+    globalWhitelist: [],
+    enhancements: [],
+  })
+  expect(data.preferences.protection.modules?.focusLock).toBe(false)
+  await repository.save(data)
+
+  const started = await focusDriver.start(session('countdown'), true)
+  expect(started.session?.strictMode).toBe(true)
+  expect(isStudySessionLocked(started.session)).toBe(false)
+})

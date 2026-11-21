@@ -8,6 +8,7 @@ import Icon from './components/Icon.vue'
 import StrictStartConfirmation from './components/StrictStartConfirmation.vue'
 import RecoverySheet from './components/RecoverySheet.vue'
 import { createTabSwipe } from './navigation/tabSwipe'
+import { isStudyFocusSafePath, isStudySessionLocked } from './navigation/mainEntry'
 import { useUpdates } from './stores/updates'
 const app = useApp(),
   recoveryOpen = ref(false),
@@ -35,6 +36,15 @@ watch(() => app.lock.session?.id, async id => {
 watch([() => app.ready, () => app.rest.session?.record.id], ([ready, id]) => {
   if (ready && id && route.path !== '/rest') void router.replace('/rest')
 })
+watch(
+  [() => app.ready, () => app.focus.session?.id, () => isStudySessionLocked(app.focus.session), () => route.path],
+  async ([ready, id, locked, path]) => {
+    if (ready && id && locked && !isStudyFocusSafePath(path)) {
+      await router.replace('/focus')
+    }
+  },
+  { immediate: true },
+)
 const tabs = [
   { path: '/tasks', label: '待办', icon: 'tasks' },
   { path: '/calendar', label: '日历', icon: 'calendar' },
@@ -45,7 +55,7 @@ const tabs = [
 const swipe = createTabSwipe({
   paths: tabs.map((tab) => tab.path),
   currentPath: () => route.path,
-  isBlocked: () => !app.ready,
+  isBlocked: () => !app.ready || isStudySessionLocked(app.focus.session),
   navigate: (path) => void router.replace(path),
 })
 onMounted(async () => {
@@ -81,7 +91,10 @@ onMounted(async () => {
           new Event('cancel'),
         )
       else if (route.path === '/rest') document.dispatchEvent(new Event('rest-exit-request'))
-      else if (route.path === '/focus') void router.replace('/tasks')
+      else if (isStudySessionLocked(app.focus.session)) {
+        if (route.path === '/focus') app.notify('学霸模式进行中，结束后可返回')
+        else void router.replace('/focus')
+      } else if (route.path === '/focus') void router.replace('/tasks')
       else if (route.path !== '/tasks') void router.replace('/tasks')
       else void CapacitorApp.minimizeApp()
     })

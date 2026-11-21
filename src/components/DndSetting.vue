@@ -5,6 +5,7 @@ import { App } from '@capacitor/app'
 import type { PluginListenerHandle } from '@capacitor/core'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
+import { syncLegacyFlatMutation } from '../domain/protectionModules'
 import { dndDriver, type DndStatus } from '../platform/dnd'
 import { native } from '../platform/bridge'
 import Sheet from './Sheet.vue'
@@ -22,14 +23,28 @@ const enabled = computed(() => Boolean(app.data.preferences.protection?.dnd))
 let readRevision = 0
 async function saveEnabled(dnd: boolean) {
   busy.value = true
-  try { await app.mutate(data => { data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, dnd } }) }
-  finally { busy.value = false }
+  try {
+    await app.mutate((data) => {
+      data.preferences.protection = syncLegacyFlatMutation(
+        data.preferences.protection ?? defaultProtection(),
+        (flat) => {
+          flat.dnd = dnd
+        },
+      )
+    })
+  } finally {
+    busy.value = false
+  }
 }
 const enableGate = usePendingEnable(saveEnabled, refresh)
 const permissionReady = () => !!(status.value?.supported && status.value.permissionGranted)
 function cancelEnable() { enableGate.cancel(); panel.value = null }
 const phaseText = computed(() => {
-  const phase = status.value?.phase
+  const value = status.value
+  const phase = value?.phase
+  if (value?.supported && !value.requested && !value.recoveryPending && ['off', 'restored', 'withdrawn'].includes(phase || '')) {
+    return !enabled.value ? '本轮未启用' : !value.permissionGranted ? '未获勿扰授权，计时可继续' : '已设置，等待下一轮'
+  }
   return ({
     off: '本轮未启用', ready: '已设置，等待下一轮', unsupported: '此环境不支持独立声音规则',
     permission_required: '未获勿扰授权，计时可继续', requested: '已请求声音保护，系统尚未核实激活',

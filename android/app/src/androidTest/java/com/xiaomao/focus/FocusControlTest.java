@@ -352,4 +352,43 @@ public class FocusControlTest {
         control.reconcile();
         assertEquals(1, control.loadData().getJSONArray("records").length());
     }
+
+    @Test public void modularProtectionResolvesEffectiveStrictAndFocusLock() throws Exception {
+        // Blocker #1 + #2 native parity:
+        // Case 1: modules.master=true, modules.strict.enabled=false (even with stale flat strict=true), focusLock=false
+        JSONObject data = control.loadData();
+        JSONObject modules = new JSONObject()
+            .put("master", true)
+            .put("initialized", true)
+            .put("focusLock", false)
+            .put("apps", new JSONObject().put("enabled", false))
+            .put("strict", new JSONObject().put("enabled", false))
+            .put("quiet", new JSONObject().put("enabled", false));
+        JSONObject protection = new JSONObject()
+            .put("study", false)
+            .put("strict", true)
+            .put("dnd", false)
+            .put("interceptNotifications", false)
+            .put("globalWhitelist", new JSONArray())
+            .put("enhancements", new JSONArray())
+            .put("modules", modules);
+        data.getJSONObject("preferences").put("protection", protection);
+        control.replaceData(data);
+
+        JSONObject started = control.startFocus(session("countdown"), false);
+        JSONObject activeSession = started.getJSONObject("session");
+        assertFalse("Stale flat strict must not override modules.strict.enabled=false", activeSession.optBoolean("strictMode", false));
+        assertFalse("focusLock=false must not lock focus page", activeSession.getJSONObject("protection").optBoolean("studyLocked", false));
+        clock.advance(5000);
+        JSONObject finished = control.focusAction("finish");
+        assertTrue("Normal countdown must allow early finish", finished.isNull("session"));
+
+        // Case 2: modules.master=true without focusLock=false locks focus page even when apps.enabled=false
+        modules.remove("focusLock");
+        data.getJSONObject("preferences").put("protection", protection);
+        control.replaceData(data);
+        JSONObject locked = control.startFocus(session("countdown"), true).getJSONObject("session");
+        assertTrue("Master study mode must set studyLocked when focusLock is not false", locked.getJSONObject("protection").optBoolean("studyLocked", false));
+        control.focusAction("finish");
+    }
 }

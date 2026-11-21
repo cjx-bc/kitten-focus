@@ -144,6 +144,8 @@ final class RecentTasksProtection {
             for (RecentTasksSystem.Task task : tasks) verified &= task.excluded;
             if (!verified) { phase = "failed"; error = "实际任务卡状态已变化，请返回控制页核实"; }
         } catch (RuntimeException failure) { phase = "failed"; error = message(failure); }
+        if ("withdrawn".equals(phase) && !pending(journal)
+            && !(requested(active) && active.optString("id").equals(journal.optString("sessionId")))) phase = "restored";
         return new JSONObject().put("supported", true).put("requested", requested(active)).put("phase", phase)
             .put("recoveryAvailable", system.recoveryAvailable())
             .put("active", verified).put("verified", verified).put("error", error)

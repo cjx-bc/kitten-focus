@@ -18,6 +18,7 @@ final class BusinessBackupData {
                     throw new IllegalArgumentException("保护设置损坏");
             for (String key : new String[]{"globalWhitelist", "enhancements"})
                 if (protection.has(key)) strings(protection.getJSONArray(key));
+            if (protection.has("modules")) validateModules(protection.opt("modules"));
         }
         if (data.has("lockConfigurations")) {
             JSONArray locks = data.getJSONArray("lockConfigurations"); java.util.Set<String> ids = new java.util.HashSet<>();
@@ -40,6 +41,58 @@ final class BusinessBackupData {
         for (int i = 0; i < values.length(); i++)
             if (!(values.get(i) instanceof String) || values.getString(i).trim().isEmpty())
                 throw new IllegalArgumentException("保护应用或增强设置损坏");
+    }
+    private static final java.util.Map<String, java.util.Set<String>> MODULE_SUB_KEYS = java.util.Map.of(
+        "apps", java.util.Set.of("restrict", "temporaryAccess"),
+        "strict", java.util.Set.of("noPauseEnd", "navigation", "antiClose", "hideRecents", "hideLauncher", "wallpaper"),
+        "quiet", java.util.Set.of("sound", "intercept", "whitelistPass")
+    );
+    private static void validateModules(Object raw) throws JSONException {
+        if (!(raw instanceof JSONObject)) throw new IllegalArgumentException("保护设置损坏");
+        JSONObject modules = (JSONObject) raw;
+        for (String flag : new String[]{"master", "initialized", "focusLock"}) {
+            if (modules.has(flag) && !(modules.get(flag) instanceof Boolean))
+                throw new IllegalArgumentException("保护设置损坏");
+        }
+        for (String key : new String[]{"apps", "strict", "quiet"}) {
+            if (!modules.has(key) || !(modules.get(key) instanceof JSONObject))
+                throw new IllegalArgumentException("保护设置损坏");
+            JSONObject mod = modules.getJSONObject(key);
+            if (!mod.has("enabled") || !(mod.get("enabled") instanceof Boolean))
+                throw new IllegalArgumentException("保护设置损坏");
+            if (mod.has("custom")) {
+                if (!(mod.get("custom") instanceof JSONObject))
+                    throw new IllegalArgumentException("保护设置损坏");
+                JSONObject custom = mod.getJSONObject("custom");
+                java.util.Set<String> allowed = MODULE_SUB_KEYS.get(key);
+                java.util.Iterator<String> it = custom.keys();
+                while (it.hasNext()) {
+                    String subKey = it.next();
+                    if (!allowed.contains(subKey) || !(custom.get(subKey) instanceof Boolean))
+                        throw new IllegalArgumentException("保护设置损坏");
+                }
+            }
+        }
+    }
+    private static JSONObject cleanModules(JSONObject raw) throws JSONException {
+        JSONObject out = new JSONObject();
+        if (raw.has("master")) out.put("master", raw.getBoolean("master"));
+        if (raw.has("initialized")) out.put("initialized", raw.getBoolean("initialized"));
+        if (raw.has("focusLock")) out.put("focusLock", raw.getBoolean("focusLock"));
+        for (String key : new String[]{"apps", "strict", "quiet"}) {
+            JSONObject mod = raw.getJSONObject(key);
+            JSONObject cleanMod = new JSONObject().put("enabled", mod.getBoolean("enabled"));
+            if (mod.has("custom")) {
+                JSONObject custom = mod.getJSONObject("custom");
+                JSONObject cleanCustom = new JSONObject();
+                for (String subKey : MODULE_SUB_KEYS.get(key)) {
+                    if (custom.has(subKey)) cleanCustom.put(subKey, custom.getBoolean(subKey));
+                }
+                if (cleanCustom.length() > 0) cleanMod.put("custom", cleanCustom);
+            }
+            out.put(key, cleanMod);
+        }
+        return out;
     }
     private static JSONObject pick(JSONObject source, String fields) throws JSONException {
         JSONObject result = new JSONObject();
@@ -85,7 +138,11 @@ final class BusinessBackupData {
         if (preferences != null) {
             JSONObject clean = pick(preferences, "defaultMinutes sound vibration activeSemesterId");
             JSONObject protection = preferences.optJSONObject("protection");
-            if (protection != null) clean.put("protection", pick(protection, "study strict interceptNotifications dnd globalWhitelist enhancements"));
+            if (protection != null) {
+                JSONObject cleanProtection = pick(protection, "study strict interceptNotifications dnd globalWhitelist enhancements");
+                if (protection.has("modules")) cleanProtection.put("modules", cleanModules(protection.getJSONObject("modules")));
+                clean.put("protection", cleanProtection);
+            }
             result.put("preferences", clean);
         }
         return result;

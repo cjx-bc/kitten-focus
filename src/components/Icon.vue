@@ -34,6 +34,11 @@ import {
   RefreshCw,
   Globe,
   ExternalLink,
+  Lock,
+  Shield,
+  BellOff,
+  KeyRound,
+  AlertTriangle,
 } from '@lucide/vue'
 withDefaults(defineProps<{ name: string; size?: number }>(), { size: 22 })
 const icons: Record<string, unknown> = {
@@ -71,6 +76,11 @@ const icons: Record<string, unknown> = {
   refresh: RefreshCw,
   globe: Globe,
   external: ExternalLink,
+  lock: Lock,
+  shield: Shield,
+  bellOff: BellOff,
+  key: KeyRound,
+  warning: AlertTriangle,
 }
 </script>
 <template>

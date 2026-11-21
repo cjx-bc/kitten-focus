@@ -3,6 +3,7 @@ import { capabilityToggleDisabled } from '../domain/protectionDisplay'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
+import { syncLegacyFlatMutation } from '../domain/protectionModules'
 import { notificationDriver, type NotificationStatus } from '../platform/notifications'
 import Sheet from './Sheet.vue'
 import InfoHint from './InfoHint.vue'
@@ -17,18 +18,34 @@ const enabled = computed(() => app.data.preferences.protection?.interceptNotific
 let readRevision = 0
 async function saveEnabled(interceptNotifications: boolean) {
   busy.value = true
-  try { await app.mutate(data => { data.preferences.protection = { ...defaultProtection(), ...data.preferences.protection, interceptNotifications } }) }
-  finally { busy.value = false }
+  try {
+    await app.mutate((data) => {
+      data.preferences.protection = syncLegacyFlatMutation(
+        data.preferences.protection ?? defaultProtection(),
+        (flat) => {
+          flat.interceptNotifications = interceptNotifications
+        },
+      )
+    })
+  } finally {
+    busy.value = false
+  }
 }
 const enableGate = usePendingEnable(saveEnabled, refresh)
 const permissionReady = () => !!(status.value?.supported && status.value.authorized && status.value.connected)
 function cancelEnable() { enableGate.cancel(); permissionOpen.value = false }
-const phaseText = computed(() => ({
-  unsupported: '本机不支持通知暂缓', off: '本轮未开启', ready: '正在监听，尚无受控通知',
-  holding: '系统已核实暂缓原通知', requested: '已请求暂缓，尚待系统核实', permission_required: '通知访问未授权', disconnected: '监听未连接，保护失效',
-  failed: '通知处理失败，请检查并重试',
-  release_pending: '等待系统释放并核实原通知', released: '本轮已无待释放通知', withdrawn: '本轮已停止新拦截',
-} as Record<string, string>)[status.value?.phase || ''] || '正在检查')
+const phaseText = computed(() => {
+  const value = status.value
+  if (value?.supported && !value.requested && !value.recoveryPending && ['off', 'released', 'withdrawn'].includes(value.phase || '')) {
+    return !enabled.value ? '本轮未开启' : !value.authorized ? '通知访问未授权' : !value.connected ? '监听未连接，保护失效' : '已设置，等待下一轮'
+  }
+  return ({
+    unsupported: '本机不支持通知暂缓', off: '本轮未开启', ready: '正在监听，尚无受控通知',
+    holding: '系统已核实暂缓原通知', requested: '已请求暂缓，尚待系统核实', permission_required: '通知访问未授权', disconnected: '监听未连接，保护失效',
+    failed: '通知处理失败，请检查并重试',
+    release_pending: '等待系统释放并核实原通知', released: '本轮已无待释放通知', withdrawn: '本轮已停止新拦截',
+  } as Record<string, string>)[value?.phase || ''] || '正在检查'
+})
 async function refresh() {
   const revision = ++readRevision
   try {

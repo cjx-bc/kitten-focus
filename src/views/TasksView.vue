@@ -27,6 +27,7 @@ const protectionReadFailed = ref(false)
 let protectionRevision = 0
 const itemWhitelistOpen = ref(false)
 const itemWhitelistExpanded = ref(false)
+const itemNoteExpanded = ref(false)
 const newThemeMode = ref(false)
 const newThemeName = ref('')
 const deleteChoice = ref<'move' | 'delete' | null>(null)
@@ -141,6 +142,7 @@ function openItem(themeId: string, item?: FocusItem) {
   delete itemForm.whitelist
   itemWhitelistOpen.value = false
   itemWhitelistExpanded.value = false
+  itemNoteExpanded.value = false
   newThemeName.value = ''
   if (item) {
     newThemeMode.value = false
@@ -567,7 +569,7 @@ function toggleTheme(theme: Theme) {
       :title="savedItem ? '编辑待办' : '新建待办'"
       :close-disabled="busy"
       @close="!busy && (sheet = null)"
-      ><form @submit.prevent="submitItem">
+      ><form class="item-form" @submit.prevent="submitItem">
         <label
           >待办名称<input
             v-model="itemForm.title"
@@ -576,43 +578,45 @@ function toggleTheme(theme: Theme) {
             required /></label
         >
         <fieldset>
-          <legend>计时方式</legend>
+          <legend class="sr-only">计时方式</legend>
           <div class="segmented">
             <button
               type="button"
               :class="{ active: itemForm.mode === 'countdown' }"
+              :aria-pressed="itemForm.mode === 'countdown'"
               @click="itemForm.mode = 'countdown'"
             >
               倒计时</button
             ><button
               type="button"
               :class="{ active: itemForm.mode === 'stopwatch' }"
+              :aria-pressed="itemForm.mode === 'stopwatch'"
               @click="itemForm.mode = 'stopwatch'"
             >
               正计时
             </button>
           </div>
         </fieldset>
-        <label v-if="itemForm.mode === 'countdown'"
-          >专注时长（分钟）<input
-            v-model.number="itemForm.minutes"
-            type="number"
-            min="1"
-            step="1"
-            required
-          /><span class="chip-row"
-            ><button
-              v-for="m in [25, 45, 60]"
-              :key="m"
-              type="button"
-              class="chip"
-              :class="{ active: itemForm.minutes === m }"
-              @click="itemForm.minutes = m"
-            >
-              {{ m }} 分钟
-            </button></span
-          ></label
-        >
+        <div v-if="itemForm.mode === 'countdown'" class="item-duration">
+          <label for="item-minutes">专注时长（分钟）</label>
+          <div class="duration-controls">
+            <input id="item-minutes" v-model.number="itemForm.minutes" type="number" min="1" step="1" required />
+            <div class="chip-row">
+              <button
+                v-for="m in [25, 45, 60]"
+                :key="m"
+                type="button"
+                class="chip"
+                :class="{ active: itemForm.minutes === m }"
+                :aria-pressed="itemForm.minutes === m"
+                :aria-label="m + ' 分钟'"
+                @click="itemForm.minutes = m"
+              >
+                {{ m }}
+              </button>
+            </div>
+          </div>
+        </div>
         <label v-if="app.themes.length"
           >所属主题<select :value="newThemeMode ? '' : itemForm.themeId" @change="onItemThemeSelect">
             <option v-for="theme in app.themes" :key="theme.id" :value="theme.id">
@@ -642,37 +646,53 @@ function toggleTheme(theme: Theme) {
             </button>
           </div>
         </div>
-        <label
-          >备注（选填）<textarea
-            v-model="itemForm.note"
-            placeholder="留一句提醒给自己"
-            maxlength="1000"
-          />
-        </label>
-        <div class="whitelist-collapse">
+        <div class="item-options">
           <button
             type="button"
             class="collapse-row"
+            :aria-expanded="itemNoteExpanded"
+            aria-controls="item-note"
+            @click="itemNoteExpanded = !itemNoteExpanded"
+          >
+            <span>备注</span>
+            <span v-if="itemForm.note.trim()" class="option-value">已填写</span>
+            <Icon name="down" :size="16" :class="{ open: itemNoteExpanded }" />
+          </button>
+          <div v-if="itemNoteExpanded" id="item-note" class="option-panel">
+            <textarea v-model="itemForm.note" aria-label="备注" maxlength="1000" />
+          </div>
+          <button
+            type="button"
+            class="collapse-row whitelist-row"
             :aria-expanded="itemWhitelistExpanded"
             aria-controls="item-whitelist-panel"
             @click="itemWhitelistExpanded = !itemWhitelistExpanded"
           >
-            <span>
-              应用限制 ·
-              {{
-                itemForm.whitelist?.source === 'custom'
-                  ? `独立白名单（${itemPackages.length} 个应用）`
-                  : '跟随全局'
-              }}
+            <span>应用限制</span>
+            <span class="option-value">
+              {{ itemForm.whitelist?.source === 'custom' ? `独立 · ${itemPackages.length} 个应用` : '跟随全局' }}
             </span>
             <Icon name="down" :size="16" :class="{ open: itemWhitelistExpanded }" />
           </button>
-          <div v-if="itemWhitelistExpanded" id="item-whitelist-panel" class="whitelist-panel">
-            <label class="switch"><span>跟随全局<small>每轮开始时使用最新全局名单</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source !== 'custom'" @change="setItemWhitelist('global')" /></label>
-            <label class="switch"><span>独立白名单<small>替代全局名单，不自动合并</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source === 'custom'" @change="setItemWhitelist('custom')" /></label>
-            <button v-if="itemForm.whitelist?.source === 'custom'" type="button" class="secondary wide" :disabled="!protectionState?.supported" @click="itemWhitelistOpen = true">编辑独立白名单（{{ itemPackages.length }} 个应用）</button>
-            <p class="field-help">独立空名单仅保留小猫与必要功能例外。保存待办后生效；本轮专注保持开始时的名单。</p>
-          </div>
+          <fieldset v-if="itemWhitelistExpanded" id="item-whitelist-panel" class="option-panel">
+            <legend class="sr-only">应用白名单</legend>
+            <label class="switch">
+              跟随全局
+              <input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source !== 'custom'" @change="setItemWhitelist('global')" />
+            </label>
+            <label class="switch">
+              独立白名单
+              <input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source === 'custom'" @change="setItemWhitelist('custom')" />
+            </label>
+            <button v-if="itemForm.whitelist?.source === 'custom'" type="button" class="secondary wide" :disabled="!protectionState?.supported" @click="itemWhitelistOpen = true">编辑独立白名单</button>
+            <details class="whitelist-help">
+              <summary>规则说明</summary>
+              <div class="field-help">
+                <p>跟随全局时，每轮开始使用最新的全局名单。独立白名单会替代全局名单，留空时只放行小猫专注和必要功能。</p>
+                <p>保存后的修改从下一轮专注开始生效。</p>
+              </div>
+            </details>
+          </fieldset>
         </div>
         <div v-if="savedItem" class="row between">
           <span class="muted">{{ savedItemThemeChanged ? '更换主题后，保存再调整顺序' : '调整顺序 · 立即生效' }}</span>
@@ -1076,23 +1096,46 @@ function toggleTheme(theme: Theme) {
   display: grid;
   gap: 10px;
 }
-.whitelist-collapse {
+.item-form {
+  gap: 14px;
+}
+.item-duration {
+  display: grid;
+  gap: 8px;
+}
+.duration-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.duration-controls input {
+  flex: 1 0 64px;
+  min-width: 64px;
+  width: auto;
+}
+.duration-controls .chip {
+  min-width: 44px;
+  min-height: 44px;
+}
+.item-options {
   background: var(--surface);
   border-radius: 14px;
   overflow: hidden;
 }
 .collapse-row {
   width: 100%;
-  min-height: 50px;
-  padding: 12px 14px;
+  min-height: 46px;
+  padding: 10px 14px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   text-align: left;
   font-size: 14px;
 }
 .collapse-row svg {
+  flex: none;
+  margin-inline-start: auto;
   color: var(--muted);
   transform: rotate(-90deg);
   transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
@@ -1100,11 +1143,38 @@ function toggleTheme(theme: Theme) {
 .collapse-row svg.open {
   transform: rotate(0deg);
 }
-.whitelist-panel {
-  display: grid;
-  gap: 10px;
-  padding: 8px 14px 14px;
+.option-value {
+  margin-inline-start: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+.option-value + svg {
+  margin-inline-start: 0;
+}
+.whitelist-row {
   border-top: 1px solid var(--line);
+}
+.option-panel {
+  padding: 0 14px 10px;
+}
+.option-panel .switch {
+  min-height: 44px;
+}
+.option-panel textarea {
+  display: block;
+  background: var(--white);
+}
+.whitelist-help summary {
+  width: fit-content;
+  padding: 12px 0;
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.whitelist-help .field-help {
+  display: grid;
+  gap: 6px;
 }
 .delete-choices {
   display: grid;

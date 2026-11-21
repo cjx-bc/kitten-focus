@@ -12,11 +12,13 @@ await runQaUi({ port: 9244, output: 'artifacts/focus-control/api36/final-whiteli
   await qa.send('Page.reload')
   await until(() => qa.evaluate('!!document.querySelector(".study-entry")'), 'whitelist fixture initialized')
   await qa.evaluate('document.querySelector(".study-entry").click()')
-  await until(() => qa.evaluate('!!document.querySelector(".menu-row") && !document.querySelector(".menu-row").disabled'), 'global editor available while study is off')
+  await until(() => qa.evaluate('!!document.querySelector("dialog[open] .module-nav")'), 'study home opened while study is off')
+  await qa.evaluate('document.querySelector("dialog[open] .module-nav").click()')
+  await until(() => qa.evaluate('!!document.querySelector("dialog[open] .menu-row") && !document.querySelector("dialog[open] .menu-row").disabled'), 'global editor available while study is off')
   assert.equal((await qa.native('loadData')).data.preferences.protection.study, false)
   const editor = 'dialog[open][aria-label="全局白名单"]'
   const open = async () => {
-    await qa.evaluate('document.querySelector(".menu-row").click()')
+    await qa.evaluate('document.querySelector("dialog[open] .menu-row").click()')
     await until(() => qa.evaluate(`!!document.querySelector('${editor} .app-choice') && !document.querySelector('${editor} button.primary').disabled`), 'real installed apps loaded')
   }
   const row = name => qa.evaluate(`(() => {
@@ -79,6 +81,8 @@ await runQaUi({ port: 9244, output: 'artifacts/focus-control/api36/final-whiteli
   ui.pass('confirm-persists-packages-reopen-retains-selection-and-self-is-not-saved-as-editable')
   await ui.click('取消')
   await until(() => qa.evaluate(`!document.querySelector('${editor}')`), 'final list closed')
+  await ui.click('返回学霸模式')
+  await until(() => qa.evaluate('document.body.innerText.includes("授权与权限")'), 'returned to study home')
   await ui.click('完成')
   await ui.closedSheet()
 })

@@ -1,23 +1,23 @@
 {
-  "version": "0.2.8",
-  "versionCode": 14,
+  "version": "0.2.9",
+  "versionCode": 15,
   "type": "debug internal testing build",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
-      "name": "xiaomao-focus-0.2.8-debug.apk",
-      "size": 4634739,
-      "sha256": "44eb45bd992ac9716c6ad37f52b34720ecc528c9c118bc965c23d8cd9233aab0"
+      "name": "xiaomao-focus-0.2.9-debug.apk",
+      "size": 4725027,
+      "sha256": "000d38553f3231e5f3bf8befc50768f7cd74fd1a989df80747428ae88356f066"
     }
   ],
-  "sourceArchive": "xiaomao-focus-0.2.8-source.zip",
-  "sourceTag": "v0.2.8",
+  "sourceArchive": "xiaomao-focus-0.2.9-source.zip",
+  "sourceTag": "v0.2.9",
   "verified": {
-    "hostTestsPassed": 157,
+    "hostTestsPassed": 175,
     "frontendBuild": true,
-    "browserTasksFlow": true,
     "androidApkBuild": true,
     "androidJvmTestsPassed": 1,
+    "androidTestCompile": true,
     "sameSigningIdentity": true,
     "emulatorTestsRun": false
   },

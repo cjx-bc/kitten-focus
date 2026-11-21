@@ -2,7 +2,7 @@
 
 - Vue、Vue Router、Pinia、Vite、TypeScript、Capacitor、ECharts、idb 等依赖的许可证随对应 npm 包提供。
 - 数字字体 Nunito：SIL Open Font License 1.1，许可见 `public/fonts/OFL.txt`。
-- 图标与应用启动图标中的猫轮廓：Lucide，ISC License，许可见 `licenses/lucide-ISC.txt`。
+- 应用内线性图标：Lucide，ISC License，许可见 `licenses/lucide-ISC.txt`。
 - 关于页 GitHub 标识：来自 GitHub 官方品牌素材（https://github.com/logos），仅用于链接项目仓库；GitHub 标识归 GitHub, Inc. 所有。
 - `docs/references` 下的界面截图用于设计参考，不打包进应用，也不是本应用的原创视觉资源。
 

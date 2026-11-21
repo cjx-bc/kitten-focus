@@ -4,6 +4,7 @@ import InfoHint from './InfoHint.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
+import { syncLegacyFlatMutation } from '../domain/protectionModules'
 import type { NavigationProtectionStatus } from '../domain/model'
 import { protectionDriver } from '../platform/bridge'
 import AntiCloseSettings from './AntiCloseSettings.vue'
@@ -49,10 +50,13 @@ async function saveSelected(checked: boolean) {
   busy.value = true
   try {
     await app.mutate(d => {
-      const protection = { ...defaultProtection(), ...d.preferences.protection }
-      protection.enhancements = protection.enhancements.filter(value => value !== option)
-      if (checked) protection.enhancements.push(option)
-      d.preferences.protection = protection
+      d.preferences.protection = syncLegacyFlatMutation(
+        d.preferences.protection ?? defaultProtection(),
+        flat => {
+          flat.enhancements = flat.enhancements.filter(value => value !== option)
+          if (checked) flat.enhancements.push(option)
+        },
+      )
     })
     app.notify(app.focus.session ? '增强选项已保存，将用于下一轮' : '增强选项已保存')
   } finally { if (!wasBusy) busy.value = false }

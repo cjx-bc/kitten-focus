@@ -189,7 +189,8 @@ final class FocusControl {
             focus.checkStart(session);
             JSONObject data = store.read("data");
             JSONObject preferences = data == null ? null : data.optJSONObject("preferences");
-            JSONObject protection = preferences == null ? null : preferences.optJSONObject("protection");
+            JSONObject rawProtection = preferences == null ? null : preferences.optJSONObject("protection");
+            JSONObject protection = rawProtection == null ? null : FocusProtection.resolveEffective(rawProtection);
             boolean strict = protection != null && Boolean.TRUE.equals(protection.opt("strict"))
                 && session.optString("mode").equals("countdown");
             if (strict && !strictModeConfirmed)
@@ -207,6 +208,8 @@ final class FocusControl {
             navigation.checkStart(started);
             antiClose.checkStart(started);
             started.put("notificationsRequested", protection != null && Boolean.TRUE.equals(protection.opt("interceptNotifications")));
+            if (!FocusProtection.notificationWhitelistPass(protection))
+                started.put("notificationWhitelistDisabled", true);
             dnd.checkStart(started);
             notifications.checkStart(started);
             recentTasks.checkStart(started);
@@ -385,6 +388,7 @@ final class FocusControl {
     private boolean temporaryEligible(JSONObject session) throws JSONException {
         JSONObject policy = session == null ? null : session.optJSONObject("protection");
         return policy != null && !"lock".equals(session.optString("kind")) && policy.optBoolean("study")
+            && policy.optBoolean("temporaryAccessAllowed", true)
             && !recovery.withdrawn(session.optString("id"), FocusRecovery.APPLICATIONS)
             && !(session.optBoolean("strictMode") && session.optString("mode").equals("countdown"))
             && session.optInt("bootId") == clock.boot() && clock.mono() >= session.optLong("anchorMono")

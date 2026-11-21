@@ -181,4 +181,43 @@ describe('real protection component permission cancellation', () => {
     expect(state.enableGate.pending.value).toBe(false)
     expect(mocks.app.mutate).not.toHaveBeenCalled()
   })
+  it('normalizes stale terminal phases when idle while preserving active-round withdrawal text', async () => {
+    mocks.dnd.mockResolvedValue({ supported: true, permissionGranted: true, requested: false, recoveryPending: false, phase: 'withdrawn' })
+    mocks.notification.mockResolvedValue({ supported: true, authorized: true, connected: true, requested: false, recoveryPending: false, phase: 'released' })
+    mocks.recent.mockResolvedValue({ supported: true, recoveryAvailable: true, requested: false, recoveryPending: false, phase: 'restored' })
+    mocks.launcher.mockResolvedValue({ supported: true, recoveryAvailable: true, requested: false, recoveryPending: false, phase: 'withdrawn' })
+    expect((await setup(DndSetting)).phaseText).toBe('本轮未启用')
+    expect((await setup(NotificationSetting)).phaseText).toBe('本轮未开启')
+    expect((await setup(RecentTasksSetting)).statusText).toBe('未开启')
+    expect((await setup(LauncherSetting)).statusText).toBe('未开启')
+
+    mocks.app.data.preferences.protection = {
+      ...defaultProtection(),
+      dnd: true,
+      interceptNotifications: true,
+      enhancements: ['recentTasksHidden', 'launcherIconHidden'],
+    }
+    expect((await setup(DndSetting)).phaseText).toBe('已设置，等待下一轮')
+    expect((await setup(NotificationSetting)).phaseText).toBe('已设置，等待下一轮')
+    expect((await setup(RecentTasksSetting)).statusText).toBe('等待执行')
+    expect((await setup(LauncherSetting)).statusText).toBe('等待执行')
+
+    mocks.dnd.mockResolvedValue({ supported: true, permissionGranted: false, requested: false, recoveryPending: false, phase: 'restored' })
+    mocks.notification.mockResolvedValue({ supported: true, authorized: false, connected: false, requested: false, recoveryPending: false, phase: 'released' })
+    mocks.recent.mockResolvedValue({ supported: true, recoveryAvailable: false, requested: false, recoveryPending: false, phase: 'restored' })
+    mocks.launcher.mockResolvedValue({ supported: true, recoveryAvailable: false, requested: false, recoveryPending: false, phase: 'restored' })
+    expect((await setup(DndSetting)).phaseText).toBe('未获勿扰授权，计时可继续')
+    expect((await setup(NotificationSetting)).phaseText).toBe('通知访问未授权')
+    expect((await setup(RecentTasksSetting)).statusText).toBe('待开启通知')
+    expect((await setup(LauncherSetting)).statusText).toBe('待开启通知')
+
+    mocks.dnd.mockResolvedValue({ supported: true, permissionGranted: true, requested: true, recoveryPending: false, phase: 'withdrawn' })
+    mocks.notification.mockResolvedValue({ supported: true, authorized: true, connected: true, requested: true, recoveryPending: false, phase: 'withdrawn' })
+    mocks.recent.mockResolvedValue({ supported: true, recoveryAvailable: true, requested: true, recoveryPending: false, phase: 'withdrawn' })
+    mocks.launcher.mockResolvedValue({ supported: true, recoveryAvailable: true, requested: true, recoveryPending: false, phase: 'withdrawn' })
+    expect((await setup(DndSetting)).phaseText).toBe('本轮声音辅助已主动撤销')
+    expect((await setup(NotificationSetting)).phaseText).toBe('本轮已停止新拦截')
+    expect((await setup(RecentTasksSetting)).statusText).toBe('本轮已撤销')
+    expect((await setup(LauncherSetting)).statusText).toBe('本轮已撤销')
+  })
 })

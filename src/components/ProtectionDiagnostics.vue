@@ -58,7 +58,7 @@ onBeforeUnmount(() => {
         <dl>
           <div><dt>下一轮偏好</dt><dd>{{ row.selected ? '已开启' : '未开启' }}</dd></div>
           <div><dt>支持范围</dt><dd>{{ row.supported ? '已提供本项接口，效果见下方' : '本环境尚不支持或未接入' }}</dd></div>
-          <div v-if="row.authorized !== null"><dt>{{ row.id === 'launcher' ? '备用通知入口' : '系统授权' }}</dt><dd>{{ row.authorized ? '已就绪' : '未就绪' }}</dd></div>
+          <div v-if="row.authorized !== null"><dt>{{ row.id === 'launcher' || row.id === 'recentTasks' ? '备用通知入口' : '系统授权' }}</dt><dd>{{ row.authorized ? '已就绪' : '未就绪' }}</dd></div>
           <div v-if="row.connected !== null"><dt>服务连接</dt><dd>{{ row.connected ? '已连接' : '未连接' }}</dd></div>
           <div><dt>本轮请求</dt><dd>{{ row.requested === null ? '未核实' : row.requested ? '已选择' : '未选择' }}</dd></div>
           <div><dt>当前执行</dt><dd>{{ row.active === null ? '未核实' : row.active ? '执行中' : '未执行' }}</dd></div>
@@ -66,7 +66,7 @@ onBeforeUnmount(() => {
           <div><dt>恢复责任</dt><dd>{{ row.recoveryPending === null ? '未核实，请重新检查' : row.recoveryPending ? '仍有待恢复项目' : '未报告待恢复项目' }}</dd></div>
         </dl>
         <p class="field-help">{{ row.effect }}</p>
-        <p v-if="['recovered', 'withdrawn', 'restored', 'released'].includes(row.phase)" class="notice">本轮已停止新保护；主动撤销的能力不会因重连再次启用。剩余恢复项目仍需处理。</p>
+        <p v-if="row.requested && ['recovered', 'withdrawn', 'restored', 'released'].includes(row.phase)" class="notice">本轮已停止新保护；主动撤销的能力不会因重连再次启用。剩余恢复项目仍需处理。</p>
         <button v-if="native && row.supported && row.settings" class="secondary wide" @click="permission = row.settings">查看用途与系统授权</button>
         <RouterLink v-if="row.recoveryPending" class="secondary wide" to="/recovery">查看恢复清单与重试</RouterLink>
       </div>
@@ -78,7 +78,7 @@ onBeforeUnmount(() => {
         <template v-if="permission === 'accessibility'"><p>用于识别并限制名单外应用，不读取其他应用正文。</p><p>精确防关闭仅识别系统页面中小猫自己的入口，不保存或上传内容。</p></template>
         <template v-else-if="permission === 'notifications'"><p>专注期间暂缓名单外通知，结束后请求恢复。不保存通知正文。</p><p>电话、闹钟与紧急通知保留。</p></template>
         <template v-else-if="permission === 'dnd'"><p>减少通知声音和振动，保留来电、闹钟与媒体。</p><p>其他勿扰设置不变。</p></template>
-        <template v-else><p>隐藏图标后，可从小猫控制通知重新进入应用。</p><p>结束后恢复图标；桌面刷新可能有延迟。</p></template>
+        <template v-else><p>隐藏桌面图标或最近任务卡后，需要从小猫控制通知重新进入应用和故障恢复。</p><p>结束后恢复原状态；系统显示刷新可能有延迟。</p></template>
         <button class="primary wide" @click="authorize">前往系统授权</button><button class="secondary wide" @click="permission = undefined">暂不授权</button>
       </div>
     </Sheet>
