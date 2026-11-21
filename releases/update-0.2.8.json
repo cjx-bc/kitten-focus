@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 14,
+    "versionName": "0.2.8",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.8/xiaomao-focus-0.2.8-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.8/xiaomao-focus-0.2.8-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.8-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.8/xiaomao-focus-0.2.8-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.8-debug.apk"
+    ],
+    "size": 4634739,
+    "sha256": "44eb45bd992ac9716c6ad37f52b34720ecc528c9c118bc965c23d8cd9233aab0",
+    "notes": "可从待办页直接开始专注，首次创建待办时可一并新建主题。点待办卡片即可开始，编辑从「⋯」进入。修复排序后保存会还原的问题，删除主题前会明确提示下属待办的去向。优化今日统计并补齐跨午夜的时长显示。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

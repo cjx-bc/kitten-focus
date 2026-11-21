@@ -1,29 +1,26 @@
 {
-  "version": "0.2.7",
-  "versionCode": 13,
+  "version": "0.2.8",
+  "versionCode": 14,
   "type": "debug internal testing build",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
-      "name": "xiaomao-focus-0.2.7-debug.apk",
-      "size": 4631003,
-      "sha256": "dc8a41979ccce890385af5dbb4acc51f92a9aeaee049005f09ec18a31b81edb0"
+      "name": "xiaomao-focus-0.2.8-debug.apk",
+      "size": 4634739,
+      "sha256": "44eb45bd992ac9716c6ad37f52b34720ecc528c9c118bc965c23d8cd9233aab0"
     }
   ],
-  "sourceArchive": "xiaomao-focus-0.2.7-source.zip",
-  "sourceTag": "v0.2.7",
+  "sourceArchive": "xiaomao-focus-0.2.8-source.zip",
+  "sourceTag": "v0.2.8",
   "verified": {
-    "hostTestsPassed": 143,
+    "hostTestsPassed": 157,
     "frontendBuild": true,
+    "browserTasksFlow": true,
     "androidApkBuild": true,
+    "androidJvmTestsPassed": 1,
     "sameSigningIdentity": true,
-    "qaCoreAndCompatibilityInstrumentationPassed": 125,
-    "qaNotificationOriginalDevicePassed": 25,
-    "qaWhitelistEditorSmokePassed": 3,
-    "qaBusinessRegressionDetailsOnlyPassed": 5,
-    "fullDeviceMatrixPassed": false
+    "emulatorTestsRun": false
   },
   "repository": "cjx-bc/kitten-focus",
-  "repositoryVisibility": "public",
-  "acceptanceReport": "docs/focus-control-final-acceptance.md"
+  "repositoryVisibility": "public"
 }

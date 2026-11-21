@@ -110,10 +110,10 @@ await runQaUi({ port: 9245, output: 'artifacts/focus-control/api36/final-busines
     console.log('Details-only continuation: full rest evidence belongs to the separate timed-phase result; this run does not claim timed acceptance')
     await restExitDialog(true)
   }
-  await until(() => qa.evaluate(`location.hash === '#/tasks' && !!document.querySelector('.tabbar') && !!document.querySelector('[aria-label="编辑待办${title}"]')`), 'tasks after rest exit settled')
+  await until(() => qa.evaluate(`location.hash === '#/tasks' && !!document.querySelector('.tabbar') && !!document.querySelector('[aria-label="编辑${title}"]')`), 'tasks after rest exit settled')
 
   // Reuse the SAME item as an ordinary countdown; early end offers manual rest.
-  await ui.click('编辑待办' + title); await ui.click('倒计时'); await ui.fill('专注时长（分钟）', '1')
+  await ui.click('编辑' + title); await ui.click('倒计时'); await ui.fill('专注时长（分钟）', '1')
   await ui.click('保存待办'); await ui.closedSheet(); await ui.click('开始' + title)
   await until(() => qa.evaluate('!!document.querySelector(".focus-clock")'), 'reused item countdown')
   await delay(1500); await finishDialog(true, '08-early-finish-confirm')

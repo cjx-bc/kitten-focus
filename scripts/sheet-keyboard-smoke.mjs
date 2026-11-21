@@ -186,7 +186,7 @@ try {
     () => evaluate('!!document.querySelector(".task-text")'),
     'existing reusable test item',
   )
-  await evaluate('document.querySelector(".task-text").click()')
+  await evaluate('document.querySelector(".task-more").click()')
   await until(
     () => evaluate('document.querySelector("dialog[open] h2")?.textContent === "编辑待办"'),
     'edit item dialog',

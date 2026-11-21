@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { settle } from '../src/domain/focus'
-import { statistics } from '../src/domain/statistics'
+import { itemToday, statistics, todaySummary } from '../src/domain/statistics'
 import { findEventConflict, occurrences, validateEvent } from '../src/domain/calendar'
-import { periodRange } from '../src/domain/dates'
+import { intervalBuckets, periodRange, zoneDate, zoneHour } from '../src/domain/dates'
 import { makeBackup, readBackup } from '../src/domain/backup'
 import { emptyData, defaultPeriods, type ActiveFocus, type CalendarEvent, type FocusRecord } from '../src/domain/model'
 
@@ -126,6 +126,89 @@ describe('statistics across dates and time zones', () => {
   it('uses the recorded time zone rather than the viewers current zone', () => {
     const value = record('2026-11-15T04:50:00Z', '2026-11-15T05:20:00Z', 'America/New_York')
     expect(statistics([value], '2026-11-14', '2026-11-14').totalMs).toBe(600000)
+  })
+  it('computes todaySummary accurately across midnight, pauses, free focus, and deleted items', () => {
+    const midnight: FocusRecord = {
+      ...record('2026-11-14T23:50:00+08:00', '2026-11-15T00:15:00+08:00', 'Asia/Shanghai'),
+      id: 'm1',
+      itemId: 'i1',
+    }
+    const paused: FocusRecord = {
+      ...record('2026-11-15T10:00:00+08:00', '2026-11-15T10:25:00+08:00', 'Asia/Shanghai'),
+      id: 'p1',
+      itemId: 'i1',
+      durationMs: 600000,
+      pausedMs: 900000,
+      segments: [
+        { start: Date.parse('2026-11-15T10:00:00+08:00'), end: Date.parse('2026-11-15T10:04:00+08:00') },
+        { start: Date.parse('2026-11-15T10:19:00+08:00'), end: Date.parse('2026-11-15T10:25:00+08:00') },
+      ],
+    }
+    const free: FocusRecord = {
+      ...record('2026-11-15T12:00:00+08:00', '2026-11-15T12:20:00+08:00', 'Asia/Shanghai'),
+      id: 'f1',
+      itemId: null,
+    }
+    const deletedItem: FocusRecord = {
+      ...record('2026-11-15T14:00:00+08:00', '2026-11-15T14:10:00+08:00', 'Asia/Shanghai'),
+      id: 'd1',
+      itemId: 'deleted-item',
+    }
+    const otherDay: FocusRecord = {
+      ...record('2026-11-13T10:00:00+08:00', '2026-11-13T10:30:00+08:00', 'Asia/Shanghai'),
+      id: 'o1',
+      itemId: 'i1',
+    }
+    const all = [midnight, paused, free, deletedItem, otherDay]
+
+    const day1 = todaySummary(all, '2026-11-14')
+    expect(day1.count).toBe(1)
+    expect(day1.totalMs).toBe(600000)
+    expect(day1.items.get('i1')).toEqual({ count: 1, totalMs: 600000 })
+
+    const day2 = todaySummary(all, '2026-11-15')
+    expect(day2.count).toBe(3)
+    expect(day2.totalMs).toBe(900000 + 600000 + 1200000 + 600000)
+    expect(day2.items.get('i1')).toEqual({ count: 1, totalMs: 900000 + 600000 })
+    expect(day2.items.get('deleted-item')).toEqual({ count: 1, totalMs: 600000 })
+    expect(day2.totalMs).toBe(statistics(all, '2026-11-15', '2026-11-15').totalMs)
+    expect(day2.items.get('i1')).toEqual({
+      count: itemToday(all, 'i1', '2026-11-15').count,
+      totalMs: itemToday(all, 'i1', '2026-11-15').totalMs,
+    })
+  })
+  it('matches minute-by-minute bucketing across DST transitions and fractional-hour zones', () => {
+    function refBuckets(start: number, end: number, zone: string) {
+      const grouped = new Map<string, number>()
+      for (let cursor = start; cursor < end;) {
+        const boundary = Math.min(end, (Math.floor(cursor / 60000) + 1) * 60000)
+        const key = `${zoneDate(cursor, zone)}/${zoneHour(cursor, zone)}`
+        grouped.set(key, (grouped.get(key) || 0) + (boundary - cursor))
+        cursor = boundary
+      }
+      return grouped
+    }
+    const cases: Array<[string, string, string]> = [
+      // DST spring-forward in New York (01:59 EST -> 03:00 EDT)
+      ['2026-03-08T06:20:00Z', '2026-03-08T08:40:15.500Z', 'America/New_York'],
+      // DST fall-back in New York (01:59 EDT -> 01:00 EST)
+      ['2026-11-01T04:45:10.250Z', '2026-11-01T07:20:00Z', 'America/New_York'],
+      // Fractional-hour timezone (+05:30)
+      ['2026-11-14T18:15:30Z', '2026-11-14T19:45:45Z', 'Asia/Kolkata'],
+    ]
+    for (const [s, e, zone] of cases) {
+      const start = Date.parse(s),
+        end = Date.parse(e)
+      const actual = new Map(intervalBuckets(start, end, zone).map((b) => [`${b.date}/${b.hour}`, b.ms]))
+      expect(actual).toEqual(refBuckets(start, end, zone))
+    }
+    const springRec = { ...record('2026-03-08T06:20:00Z', '2026-03-08T08:40:15.500Z', 'America/New_York'), itemId: 'dst' }
+    const dstSummary = todaySummary([springRec], '2026-03-08')
+    expect(dstSummary.totalMs).toBe(statistics([springRec], '2026-03-08', '2026-03-08').totalMs)
+    expect(dstSummary.items.get('dst')).toEqual({
+      count: itemToday([springRec], 'dst', '2026-03-08').count,
+      totalMs: itemToday([springRec], 'dst', '2026-03-08').totalMs,
+    })
   })
 })
 describe('calendar recurrence and exceptions', () => {

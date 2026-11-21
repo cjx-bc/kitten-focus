@@ -1,4 +1,5 @@
 export type Mode = 'countdown' | 'stopwatch'
+export const THEME_COLORS = ['#ef4e36', '#e7a54a', '#7b9a80', '#698caa', '#a08bb0', '#85858b'] as const
 export type WhitelistConfiguration = { source: 'global' } | { source: 'custom'; packages: string[] }
 export interface Theme {
   id: string

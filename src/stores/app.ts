@@ -14,7 +14,7 @@ import type {
   LockSnapshot,
   ProtectionPreferences,
 } from '../domain/model'
-import { emptyData, uid, effectiveWhitelist, defaultProtection } from '../domain/model'
+import { emptyData, uid, effectiveWhitelist, defaultProtection, THEME_COLORS } from '../domain/model'
 import {
   focusDriver,
   restDriver,
@@ -279,21 +279,109 @@ export const useApp = defineStore('app', () => {
       lock.value = await lockDriver.finish(confirmed)
     })
   }
+  function nextThemeOrder(d: AppData) {
+    const live = d.themes.filter((t) => !t.deleted)
+    return live.length ? Math.max(...live.map((t) => t.order)) + 1 : 0
+  }
+  function nextItemOrder(d: AppData, themeId: string) {
+    const siblings = d.items.filter((t) => !t.deleted && t.themeId === themeId)
+    return siblings.length ? Math.max(...siblings.map((t) => t.order)) + 1 : 0
+  }
+  function buildItemPayload(
+    existing: FocusItem | undefined,
+    incoming: FocusItem,
+    title: string,
+    themeId: string,
+    order: number,
+  ): FocusItem {
+    const next: FocusItem = {
+      ...(existing ?? {}),
+      id: incoming.id,
+      themeId,
+      title,
+      note: incoming.note,
+      mode: incoming.mode,
+      minutes: incoming.minutes,
+      order,
+    }
+    if (incoming.whitelist?.source === 'custom') {
+      next.whitelist = { source: 'custom', packages: [...incoming.whitelist.packages] }
+    } else if (incoming.whitelist?.source === 'global') {
+      next.whitelist = { source: 'global' }
+    } else {
+      delete next.whitelist
+    }
+    return next
+  }
+  function validateItemFields(item: FocusItem) {
+    const title = item.title.trim()
+    if (!title) throw new Error('请填写待办名称')
+    if (!Number.isInteger(item.minutes) || item.minutes <= 0) throw new Error('请填写正整数分钟')
+    return title
+  }
   async function saveTheme(theme: Theme) {
-    if (!theme.name.trim()) throw new Error('请填写主题名称')
+    const name = theme.name.trim()
+    if (!name) throw new Error('请填写主题名称')
     await mutate((d) => {
       const i = d.themes.findIndex((t) => t.id === theme.id)
-      if (i < 0) d.themes.push(theme)
-      else d.themes[i] = theme
+      if (i < 0) {
+        d.themes.push({
+          ...theme,
+          name,
+          order: nextThemeOrder(d),
+          collapsed: Boolean(theme.collapsed),
+        })
+      } else {
+        // Preserve stored order/collapsed so stale form snapshots do not revert move() or toggle actions.
+        d.themes[i] = { ...d.themes[i]!, name, color: theme.color }
+      }
+    })
+  }
+  async function toggleThemeCollapsed(id: string) {
+    await mutate((d) => {
+      const theme = d.themes.find((t) => t.id === id && !t.deleted)
+      if (theme) theme.collapsed = !theme.collapsed
     })
   }
   async function saveItem(item: FocusItem) {
-    if (!item.title.trim()) throw new Error('请填写待办名称')
-    if (!Number.isInteger(item.minutes) || item.minutes <= 0) throw new Error('请填写正整数分钟')
+    const title = validateItemFields(item)
     await mutate((d) => {
+      if (!d.themes.some((t) => t.id === item.themeId && !t.deleted))
+        throw new Error('请选择有效的所属主题')
       const i = d.items.findIndex((t) => t.id === item.id)
-      if (i < 0) d.items.push(item)
-      else d.items[i] = item
+      const existing = i >= 0 ? d.items[i] : undefined
+      const order =
+        existing && existing.themeId === item.themeId
+          ? existing.order
+          : nextItemOrder(d, item.themeId)
+      const next = buildItemPayload(existing, item, title, item.themeId, order)
+      if (i < 0) d.items.push(next)
+      else d.items[i] = next
+    })
+  }
+  async function saveItemWithNewTheme(
+    themeInput: { name: string; color?: string },
+    item: FocusItem,
+  ) {
+    const themeName = themeInput.name.trim()
+    if (!themeName) throw new Error('请填写主题名称')
+    const title = validateItemFields(item)
+    await mutate((d) => {
+      const liveCount = d.themes.filter((t) => !t.deleted).length
+      const themeId = uid()
+      const theme: Theme = {
+        id: themeId,
+        name: themeName,
+        color: themeInput.color || THEME_COLORS[liveCount % THEME_COLORS.length]!,
+        order: nextThemeOrder(d),
+        collapsed: false,
+      }
+      d.themes.push(theme)
+      const i = d.items.findIndex((t) => t.id === item.id)
+      const existing = i >= 0 ? d.items[i] : undefined
+      const next = buildItemPayload(existing, item, title, themeId, 0)
+      if (i < 0) d.items.push(next)
+      else d.items[i] = next
     })
   }
   async function removeItem(id: string) {
@@ -307,11 +395,23 @@ export const useApp = defineStore('app', () => {
   }
   async function removeTheme(id: string, moveTo: string | null) {
     await mutate((d) => {
-      const theme = d.themes.find((t) => t.id === id)
-      if (theme) theme.deleted = true
-      for (const item of d.items.filter((t) => t.themeId === id && !t.deleted)) {
-        if (moveTo) item.themeId = moveTo
-        else {
+      const theme = d.themes.find((t) => t.id === id && !t.deleted)
+      if (!theme) throw new Error('主题不存在')
+      if (moveTo !== null) {
+        if (moveTo === id || !d.themes.some((t) => t.id === moveTo && !t.deleted)) {
+          throw new Error('目标主题不存在')
+        }
+      }
+      theme.deleted = true
+      let nextOrder = moveTo ? nextItemOrder(d, moveTo) : 0
+      const children = d.items
+        .filter((t) => t.themeId === id && !t.deleted)
+        .sort((a, b) => a.order - b.order)
+      for (const item of children) {
+        if (moveTo) {
+          item.themeId = moveTo
+          item.order = nextOrder++
+        } else {
           item.deleted = true
           d.events.forEach((e) => {
             if (e.itemId === item.id) e.itemId = null
@@ -521,7 +621,9 @@ export const useApp = defineStore('app', () => {
     mutate,
     notify,
     saveTheme,
+    toggleThemeCollapsed,
     saveItem,
+    saveItemWithNewTheme,
     removeItem,
     removeTheme,
     move,

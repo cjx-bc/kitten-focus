@@ -1,5 +1,7 @@
 # 应用内更新
 
+0.2.8 / versionCode 14 优化待办创建、开始专注和主题管理，修复今日统计及跨午夜显示。157 项宿主测试、浏览器待办流程、前端生产构建、安卓 APK 构建、安卓 JVM 单元测试与签名校验通过。按发布要求跳过模拟器测试。详见 [0.2.8 发布说明](../releases/release-0.2.8.md)。
+
 2026-11-19 已发布 0.2.7 / versionCode 13：修复 `NotificationProtection` 严格倒计时到期交接空窗期误判（`absent`）、优化重复日程/课程与锁机快照锁定及壁纸操作修订守卫、精简安卓启动图标/闪屏资源并加固 API 26–36 兼容、修复发布页 `download.js` 20 秒总时长误中断并支持 `SSH_BIND_ADDRESS` 分发同步。宿主机 16 个测试文件 / 143 项单元测试、TypeScript/Vite、正式 APK 构建与签名/完整性校验（`prepare-update.py`）通过；D 盘 API 36 隔离 QA 模拟器通过 125 项核心/兼容性仪器测试、25 项通知原生/真机测试、3 项全局白名单烟雾测试与 5 项业务回归烟雾测试（`--details-only`）。GitHub Release、官网下载页、`/download` 跳转及线上 `domain-stable.json` 已同步。
 
 2026-11-17 已发布 0.2.6 / versionCode 12：全盘排查修复前端界面与流程、权限授权等待状态机（`usePendingEnable`）、Top-layer `[popover]` `.toast` 定位、`ProtectionHelpView` 标题对齐、`Chart` 重绘守卫及安卓端 `FocusNavigation` `SessionClock` 同步等多项问题。宿主机 16 个测试文件 / 132 项单元测试、TypeScript/Vite、正式 APK 构建及签名/完整性校验通过；D 盘 API 36 隔离 QA 模拟器通过 121 项核心/保护仪器测试、5 项学习模式测试、5 项滚屏/手势导航触摸测试、6 项 WebView 端到端巡检及软键盘弹窗适配检查。GitHub Release、官网下载页、下载跳转及线上 `domain-stable.json` 同步发布。

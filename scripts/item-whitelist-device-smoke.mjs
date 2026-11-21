@@ -20,10 +20,13 @@ async function tasks() {
   launchMain()
   await evaluate("location.hash = '#/tasks'")
   await qa.send('Page.reload', {})
-  await until(() => evaluate("!!document.querySelector('[aria-label=\"编辑待办Reading\"]')"), 'persisted Reading item')
+  await until(() => evaluate("!!document.querySelector('[aria-label=\"编辑Reading\"]')"), 'persisted Reading item')
 }
 async function editReading(source, packages = []) {
-  await click('编辑待办Reading')
+  await click('编辑Reading')
+  const restrictionToggle = 'dialog[open] button[aria-controls="item-whitelist-panel"]'
+  await until(() => evaluate('!!document.querySelector(' + JSON.stringify(restrictionToggle) + ')'), 'item editor')
+  await evaluate('document.querySelector(' + JSON.stringify(restrictionToggle) + ').click()')
   await until(() => evaluate("!!document.querySelector('dialog[open] input[name=item-whitelist]')"), 'item configuration')
   await evaluate(`document.querySelectorAll('dialog[open] input[name=item-whitelist]')[${source === 'custom' ? 1 : 0}].click()`)
   if (source === 'custom') {
@@ -48,10 +51,10 @@ async function editReading(source, packages = []) {
 }
 async function begin(title, expectedSource) {
   await click('开始' + title)
-  await until(() => evaluate("[...document.querySelectorAll('button')].some(b=>b.textContent==='按此规则开始')"), 'start confirmation')
+  await until(() => evaluate('!!document.querySelector("dialog[open][aria-label=\'开始专注\']")'), 'start confirmation')
   const text = await evaluate('document.body.innerText')
   assert(text.includes(expectedSource === 'custom' ? '子待办独立白名单' : '跟随全局白名单'))
-  await click('按此规则开始')
+  await evaluate('[...document.querySelectorAll("dialog[open][aria-label=\'开始专注\'] button")].find(b => b.textContent.trim() === "开始专注").click()')
   await until(async () => (await observe()).focus.session?.title === title, 'native item focus')
   assert.equal((await policy()).source, expectedSource)
 }

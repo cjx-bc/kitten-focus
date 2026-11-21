@@ -3,9 +3,9 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import type { Theme, FocusItem, Mode } from '../domain/model'
-import { uid } from '../domain/model'
-import { dateKey, duration, readableDate, weekdayName } from '../domain/dates'
-import { statistics, itemToday } from '../domain/statistics'
+import { uid, THEME_COLORS } from '../domain/model'
+import { dateKey, duration, readableDate, timer, weekdayName } from '../domain/dates'
+import { todaySummary } from '../domain/statistics'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
@@ -26,12 +26,35 @@ const protectionState = ref<ProtectionStatus | null>(null)
 const protectionReadFailed = ref(false)
 let protectionRevision = 0
 const itemWhitelistOpen = ref(false)
+const itemWhitelistExpanded = ref(false)
+const newThemeMode = ref(false)
+const newThemeName = ref('')
+const deleteChoice = ref<'move' | 'delete' | null>(null)
+const defaultMinutes = computed(() => app.data.preferences.defaultMinutes || 25)
 const itemPackages = computed(() => itemForm.whitelist?.source === 'custom' ? itemForm.whitelist.packages : app.data.preferences.protection?.globalWhitelist ?? [])
 function setItemWhitelist(source: 'global' | 'custom') {
-  itemForm.whitelist = source === 'global' ? { source } : { source, packages: [...itemPackages.value] }
+  if (source === 'global') delete itemForm.whitelist
+  else itemForm.whitelist = { source, packages: [...itemPackages.value] }
 }
+const blocker = computed(() =>
+  app.lock.session
+    ? { kind: 'lock' as const, text: '锁机进行中，结束后可开始', to: '/lock' }
+    : app.focus.session
+      ? {
+          kind: 'focus' as const,
+          text: `正在专注「${app.focus.session.title}」，结束后可开始其他事项`,
+          to: '/focus',
+        }
+      : app.rest.session?.state === 'running'
+        ? { kind: 'rest' as const, text: '休息中，结束后可开始', to: '/rest' }
+        : null,
+)
+function isCurrentFocusItem(item: FocusItem) {
+  return app.focus.session?.itemId === item.id
+}
+const activeProtection = computed(() => app.focus?.session?.protection ?? app.lock?.session?.protection)
 const studyEntry = computed(() => studyDisplay(app.data.preferences.protection?.study === true,
-  app.focus.session?.protection?.study === true, app.focus.session?.protection?.applicationsWithdrawn === true,
+  activeProtection.value?.study === true, activeProtection.value?.applicationsWithdrawn === true,
   protectionState.value, protectionReadFailed.value))
 async function refreshProtection() {
   const revision = ++protectionRevision
@@ -49,13 +72,12 @@ function syncToday() {
 function refreshWhenVisible() { syncToday(); if (!document.hidden) void refreshProtection() }
 onMounted(() => { void refreshProtection(); document.addEventListener('visibilitychange', refreshWhenVisible); window.addEventListener('focus', refreshWhenVisible); window.addEventListener('protection-recovered', refreshWhenVisible) })
 onBeforeUnmount(() => { protectionRevision++; document.removeEventListener('visibilitychange', refreshWhenVisible); window.removeEventListener('focus', refreshWhenVisible); window.removeEventListener('protection-recovered', refreshWhenVisible) })
-watch([() => app.data.preferences.protection, () => app.focus.session?.id, () => studyOpen.value], refreshProtection)
+watch([() => app.data.preferences.protection, () => app.focus.session?.id, () => app.lock.session?.id, () => studyOpen.value], refreshProtection)
 watch(() => app.focus, syncToday)
 const today = ref(dateKey()),
-  todayStats = computed(() => statistics(app.data.records, today.value, today.value)),
-  itemStats = computed(
-    () => new Map(app.items.map((i) => [i.id, itemToday(app.data.records, i.id, today.value)])),
-  )
+  todayOverview = computed(() => todaySummary(app.data.records, today.value)),
+  todayStats = computed(() => todayOverview.value),
+  itemStats = computed(() => todayOverview.value.items)
 const themeForm = reactive<Theme>({
   id: '',
   name: '',
@@ -74,7 +96,31 @@ const itemForm = reactive<FocusItem>({
 })
 const freeForm = reactive<{ mode: Mode; minutes: number }>({ mode: 'countdown', minutes: 25 }),
   moveTo = ref('')
-const colors = ['#ef4e36', '#e7a54a', '#7b9a80', '#698caa', '#a08bb0', '#85858b']
+const isEditingTheme = computed(() => app.themes.some((t) => t.id === themeForm.id))
+const themeIndex = computed(() => app.themes.findIndex((t) => t.id === themeForm.id))
+const savedItem = computed(() => app.items.find((i) => i.id === itemForm.id))
+const savedItemThemeChanged = computed(
+  () => !!savedItem.value && (newThemeMode.value || savedItem.value.themeId !== itemForm.themeId),
+)
+const savedItemSiblings = computed(() =>
+  savedItem.value ? app.items.filter((i) => i.themeId === savedItem.value!.themeId) : [],
+)
+const itemIndex = computed(() => savedItemSiblings.value.findIndex((i) => i.id === itemForm.id))
+const otherThemes = computed(() => app.themes.filter((t) => t.id !== themeForm.id))
+const removingThemeName = computed(
+  () => app.themes.find((t) => t.id === themeForm.id)?.name ?? themeForm.name,
+)
+const removingCount = computed(() => app.items.filter((i) => i.themeId === themeForm.id).length)
+const moveToThemeName = computed(
+  () => otherThemes.value.find((t) => t.id === moveTo.value)?.name ?? '',
+)
+const removeThemeButtonText = computed(() => {
+  if (removingCount.value === 0) return '删除主题'
+  if (deleteChoice.value === 'move')
+    return `删除主题，${removingCount.value} 个待办移到「${moveToThemeName.value}」`
+  if (deleteChoice.value === 'delete') return `删除主题和 ${removingCount.value} 个待办`
+  return '请选择待办的去向'
+})
 function openTheme(theme?: Theme) {
   Object.assign(
     themeForm,
@@ -83,7 +129,7 @@ function openTheme(theme?: Theme) {
       : {
           id: uid(),
           name: '',
-          color: colors[app.themes.length % colors.length],
+          color: THEME_COLORS[app.themes.length % THEME_COLORS.length]!,
           order: app.themes.length,
           collapsed: false,
         },
@@ -94,22 +140,80 @@ function openTheme(theme?: Theme) {
 function openItem(themeId: string, item?: FocusItem) {
   delete itemForm.whitelist
   itemWhitelistOpen.value = false
-  Object.assign(
-    itemForm,
-    item
-      ? structuredClone(item)
-      : {
-          id: uid(),
-          themeId,
-          title: '',
-          note: '',
-          mode: 'countdown',
-          minutes: app.data.preferences.defaultMinutes,
-          order: app.items.length,
-        },
-  )
+  itemWhitelistExpanded.value = false
+  newThemeName.value = ''
+  if (item) {
+    newThemeMode.value = false
+    Object.assign(itemForm, {
+      id: item.id,
+      themeId: item.themeId,
+      title: item.title,
+      note: item.note,
+      mode: item.mode,
+      minutes: item.minutes,
+      order: item.order,
+    })
+    if (item.whitelist?.source === 'custom') {
+      itemForm.whitelist = { source: 'custom', packages: [...item.whitelist.packages] }
+    } else if (item.whitelist?.source === 'global') {
+      itemForm.whitelist = { source: 'global' }
+    }
+  } else {
+    newThemeMode.value = !app.themes.length
+    Object.assign(itemForm, {
+      id: uid(),
+      themeId: themeId || app.themes[0]?.id || '',
+      title: '',
+      note: '',
+      mode: 'countdown',
+      minutes: defaultMinutes.value,
+      order: app.items.length,
+    })
+  }
   formError.value = ''
   sheet.value = 'item'
+}
+function onItemThemeSelect(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (value === '') {
+    newThemeMode.value = true
+    newThemeName.value = ''
+  } else {
+    newThemeMode.value = false
+    itemForm.themeId = value
+  }
+}
+async function submitItem() {
+  const payload: FocusItem = {
+    ...itemForm,
+    title: itemForm.title.trim(),
+    minutes: Number(itemForm.minutes),
+  }
+  if (newThemeMode.value || !app.themes.length) {
+    await execute(() =>
+      app.saveItemWithNewTheme(
+        {
+          name: newThemeName.value.trim(),
+          color: THEME_COLORS[app.themes.length % THEME_COLORS.length]!,
+        },
+        payload,
+      ),
+    )
+  } else {
+    await execute(() => app.saveItem(payload))
+  }
+}
+async function reorder(kind: 'theme' | 'item', id: string, direction: number) {
+  if (busy.value) return
+  busy.value = true
+  formError.value = ''
+  try {
+    await app.move(kind, id, direction)
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
 }
 async function execute(operation: () => Promise<unknown>) {
   busy.value = true
@@ -123,20 +227,40 @@ async function execute(operation: () => Promise<unknown>) {
     busy.value = false
   }
 }
-async function begin(item: FocusItem | null) {
+async function begin(item: FocusItem | null, requestedMode?: Mode, requestedMinutes?: number) {
   if (busy.value) return
+  if (blocker.value) {
+    app.notify(blocker.value.text)
+    return
+  }
   busy.value = true
   try {
-    await app.start(item)
+    if (requestedMode !== undefined) await app.start(item, requestedMode, requestedMinutes)
+    else await app.start(item)
     await router.push('/focus')
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     if (message !== '已取消开始专注') app.notify(message)
     if (app.focus.session) await router.push('/focus')
     else if (app.rest.session) await router.push('/rest')
+    else if (app.lock.session) await router.push('/lock')
   } finally {
     busy.value = false
   }
+}
+function onTaskCardClick(item: FocusItem) {
+  if (isCurrentFocusItem(item)) {
+    void router.push('/focus')
+    return
+  }
+  if (blocker.value) {
+    app.notify(blocker.value.text)
+    return
+  }
+  void begin(item)
+}
+function startDefaultFree() {
+  return begin(null, 'countdown', defaultMinutes.value)
 }
 async function startFree() {
   if (busy.value) return
@@ -154,7 +278,11 @@ async function startFree() {
   }
 }
 function openFree() {
-  freeForm.minutes = app.data.preferences.defaultMinutes
+  if (blocker.value) {
+    app.notify(blocker.value.text)
+    return
+  }
+  freeForm.minutes = defaultMinutes.value
   formError.value = ''
   sheet.value = 'free'
 }
@@ -164,12 +292,22 @@ async function deleteItem() {
   await execute(() => app.removeItem(id))
 }
 function removeTheme() {
-  moveTo.value = ''
+  deleteChoice.value = null
+  moveTo.value = otherThemes.value[0]?.id ?? ''
   formError.value = ''
   sheet.value = 'removeTheme'
 }
+async function submitRemoveTheme() {
+  if (removingCount.value > 0 && !deleteChoice.value) return
+  const target = removingCount.value > 0 && deleteChoice.value === 'move' ? moveTo.value : null
+  if (removingCount.value > 0 && deleteChoice.value === 'move' && !target) {
+    formError.value = '请选择目标主题'
+    return
+  }
+  await execute(() => app.removeTheme(themeForm.id, target))
+}
 function toggleTheme(theme: Theme) {
-  void app.saveTheme({ ...theme, collapsed: !theme.collapsed })
+  void app.toggleThemeCollapsed(theme.id).catch(() => {})
 }
 </script>
 <template>
@@ -185,7 +323,7 @@ function toggleTheme(theme: Theme) {
         </button>
       </div>
       <div class="actions">
-        <button class="icon-button" aria-label="自由专注" @click="openFree">
+        <button class="icon-button" aria-label="自由专注" :aria-disabled="blocker ? 'true' : undefined" @click="openFree">
           <Icon name="clock" /></button
         ><button class="icon-button soft" aria-label="新建主题" @click="openTheme()">
           <Icon name="plus" />
@@ -201,11 +339,17 @@ function toggleTheme(theme: Theme) {
         >今日专注 <strong class="number">{{ duration(todayStats.totalMs) }}</strong></span
       >
     </div>
-    <button v-if="app.lock.session" class="ongoing" @click="router.push('/lock')"><Icon name="clock" /><span>{{ app.lock.session.title }}<small>锁机进行中 · 返回处理</small></span><Icon name="right" /></button>
+    <button v-if="app.lock.session" class="ongoing" @click="router.push('/lock')">
+      <span class="row">
+        <Icon name="clock" />
+        <span>{{ app.lock.session.title }}<small>锁机进行中 · 返回处理</small></span>
+      </span>
+      <Icon name="right" :size="18" />
+    </button>
     <button v-if="app.focus.session" class="ongoing" @click="router.push('/focus')">
       <span class="row"
         ><span class="status-dot" /><span
-          >{{ app.focus.session.title
+          >返回{{ app.focus.session.title
           }}<small>{{ app.focus.session.state === 'paused' ? '已暂停' : '正在专注' }}</small></span
         ></span
       ><span class="row"
@@ -213,29 +357,46 @@ function toggleTheme(theme: Theme) {
         ><Icon name="right" :size="18"
       /></span>
     </button>
+    <button v-if="app.rest.session?.state === 'running'" class="ongoing" @click="router.push('/rest')">
+      <span class="row"
+        ><span class="status-dot" /><span
+          >{{ app.rest.session.record.title
+          }}<small>休息中 · 返回休息</small></span
+        ></span
+      ><span class="row"
+        ><span class="number">{{ timer(app.rest.remainingMs) }}</span
+        ><Icon name="right" :size="18"
+      /></span>
+    </button>
+    <p v-if="blocker" class="blocker-hint" role="status">{{ blocker.text }}</p>
     <section v-for="theme in app.themes" :key="theme.id" class="theme-section">
       <header class="theme-header">
-        <button class="theme-title" :aria-label="'编辑主题' + theme.name" @click="openTheme(theme)">
+        <button
+          class="theme-title"
+          :class="{ collapsed: theme.collapsed }"
+          :aria-label="(theme.collapsed ? '展开主题' : '收起主题') + theme.name"
+          :aria-expanded="!theme.collapsed"
+          :aria-controls="'theme-items-' + theme.id"
+          @click="toggleTheme(theme)"
+        >
           <span class="theme-dot" :style="{ background: theme.color }" />
           <h2>{{ theme.name }}</h2>
+          <Icon name="down" :size="16" />
         </button>
         <div class="row theme-actions">
           <button
-            class="icon-button"
+            class="icon-button small"
             :aria-label="'在' + theme.name + '下添加待办'"
             @click="openItem(theme.id)"
           >
             <Icon name="plus" :size="19" />
           </button>
           <button
-            class="icon-button theme-toggle"
-            :class="{ collapsed: theme.collapsed }"
-            :aria-label="(theme.collapsed ? '展开主题' : '收起主题') + theme.name"
-            :aria-expanded="!theme.collapsed"
-            :aria-controls="'theme-items-' + theme.id"
-            @click="toggleTheme(theme)"
+            class="icon-button small"
+            :aria-label="'编辑主题' + theme.name"
+            @click="openTheme(theme)"
           >
-            <Icon name="down" :size="18" />
+            <Icon name="more" :size="19" />
           </button>
         </div>
       </header>
@@ -252,23 +413,44 @@ function toggleTheme(theme: Theme) {
               v-for="item in app.items.filter((i) => i.themeId === theme.id)"
               :key="item.id"
               class="task-card"
+              :class="{ current: isCurrentFocusItem(item) }"
             >
               <button
-                class="task-text"
-                :aria-label="'编辑待办' + item.title"
+                class="task-main"
+                :aria-label="isCurrentFocusItem(item) ? '返回专注' + item.title : '开始' + item.title"
+                :aria-disabled="blocker && !isCurrentFocusItem(item) ? 'true' : undefined"
+                :disabled="busy"
+                @click="onTaskCardClick(item)"
+              >
+                <span class="task-text">
+                  <h3>{{ item.title }}</h3>
+                  <p v-if="isCurrentFocusItem(item)" class="ongoing-label">
+                    {{ app.focus.session?.state === 'paused' ? '已暂停' : '进行中' }} · 返回专注
+                  </p>
+                  <p v-else>
+                    {{ item.mode === 'stopwatch' ? '正计时' : '倒计时 · ' + item.minutes + ' 分钟'
+                    }}<span v-if="itemStats.get(item.id)?.count || itemStats.get(item.id)?.totalMs">
+                      · 今日 {{
+                        itemStats.get(item.id)?.count
+                          ? `${itemStats.get(item.id)!.count} 次，${duration(itemStats.get(item.id)!.totalMs)}`
+                          : duration(itemStats.get(item.id)!.totalMs)
+                      }}</span
+                    >
+                  </p>
+                </span>
+                <span v-if="isCurrentFocusItem(item)" class="start-icon current" aria-hidden="true">
+                  <span class="status-dot" />
+                </span>
+                <span v-else class="start-icon" :class="{ blocked: !!blocker }" aria-hidden="true">
+                  <Icon name="play" :size="14" />
+                </span>
+              </button>
+              <button
+                class="task-more"
+                :aria-label="'编辑' + item.title"
                 @click="openItem(theme.id, item)"
               >
-                <h3>{{ item.title }}</h3>
-                <p>
-                  {{ item.mode === 'stopwatch' ? '正计时' : '倒计时 · ' + item.minutes + ' 分钟'
-                  }}<span v-if="itemStats.get(item.id)?.count">
-                    · 今日 {{ itemStats.get(item.id)?.count }} 次，{{
-                      duration(itemStats.get(item.id)!.totalMs)
-                    }}</span
-                  >
-                </p></button
-              ><button class="start-button" :aria-label="'开始' + item.title" :disabled="busy" @click="begin(item)">
-                <span class="start-icon"><Icon name="play" :size="14" /></span>
+                <Icon name="more" :size="18" />
               </button>
             </article>
             <button
@@ -284,19 +466,38 @@ function toggleTheme(theme: Theme) {
     </section>
     <div v-if="!app.themes.length" class="empty task-empty">
       <div class="empty-mark"><Icon name="tasks" :size="31" /></div>
-      <h2>给专注一个方向</h2>
-      <p>创建一个主题，把常做的事情放在一起。每次想开始，随时回来。</p>
-      <button class="primary" @click="openTheme()"><Icon name="plus" :size="18" />创建主题</button>
+      <h2>现在就开始专注</h2>
+      <p>不用先分类，点一下就能计时。</p>
+      <div class="empty-actions">
+        <button
+          class="primary wide"
+          :aria-disabled="blocker ? 'true' : undefined"
+          :disabled="busy"
+          @click="startDefaultFree"
+        >
+          <Icon name="play" :size="16" />开始 {{ defaultMinutes }} 分钟专注
+        </button>
+        <button class="secondary wide" :disabled="busy" @click="openItem('')">
+          <Icon name="plus" :size="18" />创建第一个待办
+        </button>
+      </div>
+      <p class="empty-example">例如「英语 → 背单词」，以后每天点它就能开始</p>
     </div>
-    <button v-else class="add-theme" @click="openTheme()">
-      <Icon name="plus" :size="17" />新建主题
-    </button>
-    <button class="free-focus secondary wide" @click="openFree">
-      <Icon name="clock" :size="18" />自由专注
-    </button>
+    <template v-else>
+      <button class="add-theme" @click="openTheme()">
+        <Icon name="plus" :size="17" />新建主题
+      </button>
+      <button
+        class="free-focus secondary wide"
+        :aria-disabled="blocker ? 'true' : undefined"
+        @click="openFree"
+      >
+        <Icon name="clock" :size="18" />自由专注
+      </button>
+    </template>
     <Sheet
       :open="sheet === 'theme'"
-      :title="app.themes.some((t) => t.id === themeForm.id) ? '编辑主题' : '新建主题'"
+      :title="isEditingTheme ? '编辑主题' : '新建主题'"
       :close-disabled="busy"
       @close="!busy && (sheet = null)"
       ><form
@@ -315,7 +516,7 @@ function toggleTheme(theme: Theme) {
           <legend>主题颜色</legend>
           <div class="color-picker">
             <button
-              v-for="color in colors"
+              v-for="color in THEME_COLORS"
               :key="color"
               type="button"
               class="color-swatch"
@@ -327,21 +528,23 @@ function toggleTheme(theme: Theme) {
             />
           </div>
         </fieldset>
-        <div v-if="app.themes.some((t) => t.id === themeForm.id)" class="row between">
-          <span class="muted">调整主题顺序</span>
+        <div v-if="isEditingTheme" class="row between">
+          <span class="muted">调整顺序 · 立即生效</span>
           <div class="row">
             <button
               type="button"
               class="icon-button soft"
               aria-label="主题上移"
-              @click="app.move('theme', themeForm.id, -1)"
+              :disabled="busy || themeIndex <= 0"
+              @click="reorder('theme', themeForm.id, -1)"
             >
               <Icon name="up" /></button
             ><button
               type="button"
               class="icon-button soft"
               aria-label="主题下移"
-              @click="app.move('theme', themeForm.id, 1)"
+              :disabled="busy || themeIndex < 0 || themeIndex >= app.themes.length - 1"
+              @click="reorder('theme', themeForm.id, 1)"
             >
               <Icon name="arrowDown" />
             </button>
@@ -350,7 +553,7 @@ function toggleTheme(theme: Theme) {
         <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
         <button class="primary wide" :disabled="busy">保存主题</button
         ><button
-          v-if="app.themes.some((t) => t.id === themeForm.id)"
+          v-if="isEditingTheme"
           type="button"
           class="text-button danger"
           @click="removeTheme"
@@ -361,32 +564,16 @@ function toggleTheme(theme: Theme) {
     >
     <Sheet
       :open="sheet === 'item'"
-      :title="app.items.some((i) => i.id === itemForm.id) ? '编辑待办' : '新建待办'"
+      :title="savedItem ? '编辑待办' : '新建待办'"
       :close-disabled="busy"
       @close="!busy && (sheet = null)"
-      ><form
-        @submit.prevent="
-          execute(() =>
-            app.saveItem({
-              ...itemForm,
-              title: itemForm.title.trim(),
-              minutes: Number(itemForm.minutes),
-            }),
-          )
-        "
-      >
+      ><form @submit.prevent="submitItem">
         <label
           >待办名称<input
             v-model="itemForm.title"
             placeholder="例如：背单词"
             maxlength="120"
             required /></label
-        ><label
-          >所属主题<select v-model="itemForm.themeId">
-            <option v-for="theme in app.themes" :key="theme.id" :value="theme.id">
-              {{ theme.name }}
-            </option>
-          </select></label
         >
         <fieldset>
           <legend>计时方式</legend>
@@ -405,13 +592,6 @@ function toggleTheme(theme: Theme) {
               正计时
             </button>
           </div>
-        </fieldset>
-        <fieldset>
-          <legend>应用白名单</legend>
-          <label class="switch"><span>跟随全局<small>每轮开始时使用最新全局名单</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source !== 'custom'" @change="setItemWhitelist('global')" /></label>
-          <label class="switch"><span>独立白名单<small>替代全局名单，不自动合并</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source === 'custom'" @change="setItemWhitelist('custom')" /></label>
-          <button v-if="itemForm.whitelist?.source === 'custom'" type="button" class="secondary wide" :disabled="!protectionState?.supported" @click="itemWhitelistOpen = true">编辑独立白名单（{{ itemPackages.length }} 个应用）</button>
-          <p class="muted">独立空名单仅保留小猫与必要功能例外。保存待办后生效；本轮专注保持开始时的名单。</p>
         </fieldset>
         <label v-if="itemForm.mode === 'countdown'"
           >专注时长（分钟）<input
@@ -432,28 +612,85 @@ function toggleTheme(theme: Theme) {
               {{ m }} 分钟
             </button></span
           ></label
-        ><label
+        >
+        <label v-if="app.themes.length"
+          >所属主题<select :value="newThemeMode ? '' : itemForm.themeId" @change="onItemThemeSelect">
+            <option v-for="theme in app.themes" :key="theme.id" :value="theme.id">
+              {{ theme.name }}
+            </option>
+            <option value="">+ 新建主题…</option>
+          </select></label
+        >
+        <div v-if="!app.themes.length || newThemeMode" class="new-theme-field">
+          <label
+            >{{ app.themes.length ? '新主题名称' : '所属主题' }}<input
+              v-model="newThemeName"
+              placeholder="例如：英语、数学、阅读"
+              maxlength="80"
+              required
+          /></label>
+          <div class="chip-row" aria-label="推荐主题名称">
+            <button
+              v-for="preset in ['英语', '数学', '阅读']"
+              :key="preset"
+              type="button"
+              class="chip"
+              :class="{ active: newThemeName.trim() === preset }"
+              @click="newThemeName = preset"
+            >
+              {{ preset }}
+            </button>
+          </div>
+        </div>
+        <label
           >备注（选填）<textarea
             v-model="itemForm.note"
             placeholder="留一句提醒给自己"
             maxlength="1000"
           />
         </label>
-        <div v-if="app.items.some((i) => i.id === itemForm.id)" class="row between">
-          <span class="muted">调整待办顺序</span>
+        <div class="whitelist-collapse">
+          <button
+            type="button"
+            class="collapse-row"
+            :aria-expanded="itemWhitelistExpanded"
+            aria-controls="item-whitelist-panel"
+            @click="itemWhitelistExpanded = !itemWhitelistExpanded"
+          >
+            <span>
+              应用限制 ·
+              {{
+                itemForm.whitelist?.source === 'custom'
+                  ? `独立白名单（${itemPackages.length} 个应用）`
+                  : '跟随全局'
+              }}
+            </span>
+            <Icon name="down" :size="16" :class="{ open: itemWhitelistExpanded }" />
+          </button>
+          <div v-if="itemWhitelistExpanded" id="item-whitelist-panel" class="whitelist-panel">
+            <label class="switch"><span>跟随全局<small>每轮开始时使用最新全局名单</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source !== 'custom'" @change="setItemWhitelist('global')" /></label>
+            <label class="switch"><span>独立白名单<small>替代全局名单，不自动合并</small></span><input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source === 'custom'" @change="setItemWhitelist('custom')" /></label>
+            <button v-if="itemForm.whitelist?.source === 'custom'" type="button" class="secondary wide" :disabled="!protectionState?.supported" @click="itemWhitelistOpen = true">编辑独立白名单（{{ itemPackages.length }} 个应用）</button>
+            <p class="field-help">独立空名单仅保留小猫与必要功能例外。保存待办后生效；本轮专注保持开始时的名单。</p>
+          </div>
+        </div>
+        <div v-if="savedItem" class="row between">
+          <span class="muted">{{ savedItemThemeChanged ? '更换主题后，保存再调整顺序' : '调整顺序 · 立即生效' }}</span>
           <div class="row">
             <button
               type="button"
               class="icon-button soft"
               aria-label="待办上移"
-              @click="app.move('item', itemForm.id, -1)"
+              :disabled="busy || savedItemThemeChanged || itemIndex <= 0"
+              @click="reorder('item', itemForm.id, -1)"
             >
               <Icon name="up" /></button
             ><button
               type="button"
               class="icon-button soft"
               aria-label="待办下移"
-              @click="app.move('item', itemForm.id, 1)"
+              :disabled="busy || savedItemThemeChanged || itemIndex < 0 || itemIndex >= savedItemSiblings.length - 1"
+              @click="reorder('item', itemForm.id, 1)"
             >
               <Icon name="arrowDown" />
             </button>
@@ -462,7 +699,7 @@ function toggleTheme(theme: Theme) {
         <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
         <button class="primary wide" :disabled="busy">保存待办</button
         ><button
-          v-if="app.items.some((i) => i.id === itemForm.id)"
+          v-if="savedItem"
           type="button"
           class="text-button danger"
           @click="deleteItem"
@@ -517,22 +754,52 @@ function toggleTheme(theme: Theme) {
       </form></Sheet
     >
     <Sheet :open="sheet === 'removeTheme'" title="删除主题" :close-disabled="busy" @close="!busy && (sheet = null)"
-      ><form @submit.prevent="execute(() => app.removeTheme(themeForm.id, moveTo || null))">
-        <p>删除“{{ themeForm.name }}”后，历史专注记录仍会保留。</p>
-        <label
-          >主题里的待办<select v-model="moveTo">
-            <option value="">一并删除</option>
-            <option
-              v-for="theme in app.themes.filter((t) => t.id !== themeForm.id)"
-              :key="theme.id"
-              :value="theme.id"
-            >
-              移到 {{ theme.name }}
-            </option>
-          </select></label
-        >
+      ><form @submit.prevent="submitRemoveTheme">
+        <p>删除“{{ removingThemeName }}”后，历史专注记录仍会保留。</p>
+        <template v-if="removingCount > 0">
+          <fieldset class="delete-choices">
+            <legend>这个主题里有 {{ removingCount }} 个待办，怎么处理？</legend>
+            <label class="switch">
+              <span>
+                移到其他主题
+                <small v-if="!otherThemes.length">没有其他主题可移入</small>
+                <small v-else>保留这些待办的专注入口</small>
+              </span>
+              <input
+                v-model="deleteChoice"
+                type="radio"
+                name="remove-theme-choice"
+                value="move"
+                :disabled="!otherThemes.length"
+              />
+            </label>
+            <label v-if="deleteChoice === 'move' && otherThemes.length">
+              目标主题
+              <select v-model="moveTo">
+                <option v-for="theme in otherThemes" :key="theme.id" :value="theme.id">
+                  {{ theme.name }}
+                </option>
+              </select>
+            </label>
+            <label class="switch">
+              <span>
+                一并删除这 {{ removingCount }} 个待办
+                <small>历史专注记录仍会保留</small>
+              </span>
+              <input v-model="deleteChoice" type="radio" name="remove-theme-choice" value="delete" />
+            </label>
+          </fieldset>
+          <p v-if="deleteChoice === 'delete'" class="delete-warning">
+            这些待办的开始入口会消失，历史专注记录保留。
+          </p>
+        </template>
         <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
-        <button class="danger-button wide" :disabled="busy">确认删除主题</button>
+        <button
+          class="danger-button wide"
+          :disabled="busy || (removingCount > 0 && (!deleteChoice || (deleteChoice === 'move' && !moveTo)))"
+        >
+          {{ removeThemeButtonText }}
+        </button>
       </form></Sheet
     >
   </div>
@@ -587,11 +854,11 @@ function toggleTheme(theme: Theme) {
 .theme-title {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
   min-height: 48px;
-  padding: 8px 4px;
+  padding: 8px 6px;
   text-align: left;
   border-radius: 10px;
   transition: background-color 120ms ease;
@@ -611,6 +878,13 @@ function toggleTheme(theme: Theme) {
   flex-shrink: 0;
   border-radius: 50%;
 }
+.theme-title > svg {
+  color: var(--muted);
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+.theme-title.collapsed > svg {
+  transform: rotate(-90deg);
+}
 .theme-actions {
   gap: 0;
   flex-shrink: 0;
@@ -618,12 +892,6 @@ function toggleTheme(theme: Theme) {
 }
 .theme-actions .icon-button {
   transition: background-color 120ms ease;
-}
-.theme-toggle svg {
-  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
-}
-.theme-toggle.collapsed svg {
-  transform: rotate(-90deg);
 }
 .theme-items {
   display: grid;
@@ -653,14 +921,26 @@ function toggleTheme(theme: Theme) {
   border-radius: 14px;
   background: var(--surface);
 }
-.task-text {
+.task-card.current {
+  background: #fff4f1;
+}
+.task-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-width: 0;
   flex: 1;
   text-align: left;
-  padding: 10px 0 10px 14px;
+  padding: 10px 12px 10px 14px;
   min-height: 64px;
   border-radius: 14px 0 0 14px;
   transition: background-color 120ms ease;
+}
+.task-text {
+  min-width: 0;
+  flex: 1;
+  display: block;
 }
 .task-text h3 {
   font-size: 15px;
@@ -675,38 +955,55 @@ function toggleTheme(theme: Theme) {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.start-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  flex-shrink: 0;
-  min-height: 48px;
-  padding: 8px;
-  border-radius: 0 14px 14px 0;
-  transition: opacity 120ms ease;
+.task-text .ongoing-label {
+  color: #c13a25;
+  font-weight: 500;
 }
 .start-icon {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
+  flex-shrink: 0;
   border-radius: 50%;
   color: white;
   background: var(--ink);
 }
-.start-button svg {
+.start-icon.blocked {
+  background: #d8d8de;
+  color: white;
+}
+.start-icon.current {
+  background: #fde7e1;
+}
+.start-icon svg {
   fill: currentColor;
   margin-left: 1px;
+}
+.task-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  flex-shrink: 0;
+  min-height: 64px;
+  color: var(--muted);
+  border-left: 1px solid var(--line);
+  border-radius: 0 14px 14px 0;
+  transition: background-color 120ms ease;
 }
 .theme-title:active,
 .theme-actions .icon-button:active {
   opacity: 1;
   background: var(--surface);
 }
-.task-text:active {
+.task-main:active:not(:disabled),
+.task-more:active {
   opacity: 1;
   background: var(--line);
+}
+.task-card.current .task-main:active:not(:disabled) {
+  background: #fde7e1;
 }
 .add-first {
   min-height: 52px;
@@ -732,8 +1029,18 @@ function toggleTheme(theme: Theme) {
   margin-bottom: 8px;
 }
 .task-empty {
-  padding-top: clamp(16px, 5dvh, 40px);
-  padding-bottom: clamp(16px, 4dvh, 32px);
+  margin-block: auto;
+  padding-top: clamp(16px, 4dvh, 36px);
+  padding-bottom: clamp(16px, 4dvh, 36px);
+}
+.empty-actions {
+  width: 100%;
+  max-width: 280px;
+  display: grid;
+  gap: 10px;
+}
+.empty-example {
+  font-size: 12px;
 }
 .free-focus {
   margin-top: auto;
@@ -748,7 +1055,7 @@ function toggleTheme(theme: Theme) {
   padding: 12px 16px;
   background: #fff4f1;
   border-radius: 18px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   text-align: left;
   font-size: 14px;
 }
@@ -758,5 +1065,68 @@ function toggleTheme(theme: Theme) {
 }
 .ongoing .number {
   font-size: 18px;
+}
+.blocker-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: -6px 0 14px 4px;
+  line-height: 1.5;
+}
+.new-theme-field {
+  display: grid;
+  gap: 10px;
+}
+.whitelist-collapse {
+  background: var(--surface);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.collapse-row {
+  width: 100%;
+  min-height: 50px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  font-size: 14px;
+}
+.collapse-row svg {
+  color: var(--muted);
+  transform: rotate(-90deg);
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+.collapse-row svg.open {
+  transform: rotate(0deg);
+}
+.whitelist-panel {
+  display: grid;
+  gap: 10px;
+  padding: 8px 14px 14px;
+  border-top: 1px solid var(--line);
+}
+.delete-choices {
+  display: grid;
+  gap: 6px;
+}
+.delete-choices legend {
+  margin-bottom: 6px;
+}
+.switch:has(input:disabled) > span {
+  opacity: 0.5;
+}
+.delete-warning {
+  background: #fff1ef;
+  color: #a32a19;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.danger-button {
+  height: auto;
+  line-height: 1.4;
+  text-align: center;
 }
 </style>
