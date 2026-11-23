@@ -15,8 +15,8 @@ public class SplashCoordinatorTest {
 
         coordinator.markWebReady();
         assertTrue(coordinator.shouldKeepOnScreen(1400L));
-        assertTrue(coordinator.shouldKeepOnScreen(1779L));
-        assertFalse(coordinator.shouldKeepOnScreen(1780L));
+        assertTrue(coordinator.shouldKeepOnScreen(1999L));
+        assertFalse(coordinator.shouldKeepOnScreen(2000L));
         assertTrue(coordinator.shouldAnimateExit());
     }
 
@@ -44,7 +44,7 @@ public class SplashCoordinatorTest {
     public void releasesAtMaxTimeoutEvenWithoutWebSignal() {
         SplashCoordinator coordinator = new SplashCoordinator(1000L, false, false);
 
-        assertTrue(coordinator.shouldKeepOnScreen(2799L));
-        assertFalse(coordinator.shouldKeepOnScreen(2800L));
+        assertTrue(coordinator.shouldKeepOnScreen(2999L));
+        assertFalse(coordinator.shouldKeepOnScreen(3000L));
     }
 }

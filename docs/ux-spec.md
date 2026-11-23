@@ -64,8 +64,8 @@
 7. **如实能力反馈**：
    - 严禁在权限未授或非原生预览环境伪装保护已生效；严禁将 `hideRecents`、`hideLauncher`、`wallpaperProtection` 或 `preciseAntiClose` 描述为“系统保证无法强停或卸载”。
 8. **单段原生启动屏与无缝首屏交接（`AppTheme.NoActionBarLaunch` + `SplashCoordinator`）**：
-   - Android 启动阶段采用单段原生开屏（`#FFFFFF` 纯白背景 + 纯黑白猫头「歪头抖耳 Wink」780ms 矢量动画 + 底部品牌字标「小猫专注 / 专注此刻，陪小猫一起长大」，Android 11 及以下静默降级为纯猫头静态图标），由 `SplashCoordinator` 保持开屏直至 Vue 首帧就绪且至少播完 780ms 动画（极端情况最长 1800ms 超时放行），随后以 180ms 轻淡出直接进入目标页面。
-   - 存在进行中会话（专注 / 休息 / 锁机或系统拉回 `returnToFocus` / `returnToLock` / `openRecovery`）或系统开启减少动态效果时，跳过 780ms 等待并在前端就绪后立即无阻碍放行。
+   - Android 启动阶段采用单段原生开屏（`#FFFFFF` 纯白背景 + 纯黑白猫头「歪头抖耳 Wink」1000ms 矢量动画，含约 320ms 静候反应停顿后开始歪头抖耳眨眼 + 底部品牌字标「小猫专注 / 专注此刻，陪小猫一起长大」，Android 11 及以下静默降级为纯猫头静态图标），由 `SplashCoordinator` 保持开屏直至 Vue 首帧就绪且至少播完 1000ms 动画（极端情况最长 2000ms 超时放行），随后以 180ms 轻淡出直接进入目标页面。
+   - 存在进行中会话（专注 / 休息 / 锁机或系统拉回 `returnToFocus` / `returnToLock` / `openRecovery`）或系统开启减少动态效果时，跳过 1000ms 等待并在前端就绪后立即无阻碍放行。
    - 在原生 Android 环境下，`App.vue` 初始化期 `.boot`（`.boot-native`）保持纯白底不渲染第二段文字闪屏，彻底消除两段割裂；纯网页预览保留 `.boot`（副标「专注此刻，陪小猫一起长大」）。保持全部 40 个 `CatFocus` `@PluginMethod` 签名不变，仅在 `MainActivity` 暴露极简 `window.KittenSplash.notifyReady()` `JavascriptInterface` 通知首帧就绪。
 
 ### 2.3 `GLOSSARY.md` 术语契约与禁用词表

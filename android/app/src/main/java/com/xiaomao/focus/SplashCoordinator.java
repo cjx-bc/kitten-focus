@@ -2,8 +2,8 @@ package com.xiaomao.focus;
 
 /** Decides when the single-stage native splash screen can dismiss. */
 final class SplashCoordinator {
-    static final long MIN_ANIMATION_MS = 780L;
-    static final long MAX_WAIT_MS = 1800L;
+    static final long MIN_ANIMATION_MS = 1000L;
+    static final long MAX_WAIT_MS = 2000L;
     static final long EXIT_FADE_MS = 180L;
 
     private final long startElapsedMs;

@@ -1,5 +1,7 @@
 # 应用内更新
 
+2026-11-23 已发布 0.2.12 / versionCode 18：优化单段原生小猫开屏节奏（增加约 320ms 静候反应停顿后再触发歪头抖耳 Wink，总动画时长 1000ms，`MAX_WAIT_MS` 调整为 2000ms，继续保留进行中会话与减少动态效果直通及 180ms 淡出退场）。20 个测试文件 / 161 项宿主单元测试、5 个 E2E 文件 / 32 项浏览器及 UX 门禁检查、TypeScript/Vite 生产构建、安卓 APK 构建、5 项安卓 JVM 单元测试、安卓仪器测试编译检查与包名/签名/完整性校验（`prepare-update.py`）通过，未运行模拟器与真机回归。GitHub Release、官网下载页、`/download` 跳转及线上 `domain-stable.json` 已同步。详见 [0.2.12 发布说明](../releases/release-0.2.12.md)。
+
 2026-11-23 已发布 0.2.11 / versionCode 17：单段原生「歪头抖耳 Wink」纯黑白猫头开屏动画（`AnimatedVectorDrawable` + 底部「小猫专注 / 专注此刻，陪小猫一起长大」品牌标识 + `SplashCoordinator` 首帧就绪保持与 180ms 淡出退场，消除原生/前端两段切换闪屏；进行中会话拉回与减少动态效果跳过等待，Android 7–11 静默降级为纯猫头静态图标）。20 个测试文件 / 161 项宿主单元测试、5 个 E2E 文件 / 32 项浏览器及 UX 门禁检查、TypeScript/Vite 生产构建、安卓 APK 构建、5 项安卓 JVM 单元测试、安卓仪器测试编译检查与包名/签名/完整性校验（`prepare-update.py`）通过，未运行模拟器与真机回归。GitHub Release、官网下载页、`/download` 跳转及线上 `domain-stable.json` 已同步。详见 [0.2.11 发布说明](../releases/release-0.2.11.md)。
 
 2026-11-23 已发布 0.2.10 / versionCode 16：全端交互精简与窄屏适配（单层弹窗与三层渐进披露重构、专注结果页情绪与休息/再来一轮出口、待办防误触单区学霸胶囊与独立图标、日历起止时间整行排布与 320px 周条适配、统计日视图指标与整数纵轴、权限中心单行横滑与术语折叠，以及无障碍服务解绑重连与授权读取加固）。19 个测试文件 / 159 项宿主单元测试、5 个 E2E 文件 / 32 项浏览器与 UX 门禁检查、TypeScript/Vite 生产构建、安卓 APK 构建、安卓 JVM 单元测试、安卓仪器测试编译检查与包名/签名/完整性校验（`prepare-update.py`）通过，未运行模拟器与真机回归。GitHub Release、官网下载页、`/download` 跳转及线上 `domain-stable.json` 已同步。详见 [0.2.10 发布说明](../releases/release-0.2.10.md)。
