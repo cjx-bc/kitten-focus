@@ -1,24 +1,136 @@
 package com.xiaomao.focus;
 
-import com.getcapacitor.BridgeActivity;
-import android.os.Bundle;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.content.Intent;
+import android.os.Bundle;
+import android.os.SystemClock;
+import android.provider.Settings;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
+import android.webkit.JavascriptInterface;
+import androidx.core.splashscreen.SplashScreen;
+import androidx.core.splashscreen.SplashScreenViewProvider;
+import com.getcapacitor.BridgeActivity;
+import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
+    private SplashCoordinator splashCoordinator;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
         WallpaperLifecycle.record(this, "activity_create", false, null);
         restrictOrdinaryEntry(getIntent());
+        splashCoordinator = new SplashCoordinator(
+            SystemClock.elapsedRealtime(),
+            isFastEntry(getIntent()),
+            isReducedMotion()
+        );
+        splashScreen.setKeepOnScreenCondition(
+            () -> splashCoordinator.shouldKeepOnScreen(SystemClock.elapsedRealtime())
+        );
+        splashScreen.setOnExitAnimationListener(this::animateSplashExit);
         registerPlugin(CatFocusPlugin.class);
         registerPlugin(AppUpdatesPlugin.class);
         super.onCreate(savedInstanceState);
         // Android stretches the entire WebView at scroll edges, including fixed navigation.
-        getBridge().getWebView().setOverScrollMode(View.OVER_SCROLL_NEVER);
-        getBridge().getWebView().setVerticalScrollBarEnabled(false);
-        getBridge().getWebView().setHorizontalScrollBarEnabled(false);
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().setOverScrollMode(View.OVER_SCROLL_NEVER);
+            getBridge().getWebView().setVerticalScrollBarEnabled(false);
+            getBridge().getWebView().setHorizontalScrollBarEnabled(false);
+            getBridge().getWebView().addJavascriptInterface(new SplashBridge(), "KittenSplash");
+        }
     }
-    @Override protected void onNewIntent(Intent intent) {
+
+    private void animateSplashExit(SplashScreenViewProvider splashScreenView) {
+        if (splashCoordinator != null && !splashCoordinator.shouldAnimateExit()) {
+            splashScreenView.remove();
+            return;
+        }
+        View root = splashScreenView.getView();
+        ObjectAnimator fadeOut = ObjectAnimator.ofFloat(root, View.ALPHA, 1f, 0f);
+        AnimatorSet set = new AnimatorSet();
+        View iconView = null;
+        try {
+            iconView = splashScreenView.getIconView();
+        } catch (Throwable ignored) {
+            // Pre-API 31 compat or OEM splash wrappers may not expose an icon view.
+        }
+        if (iconView != null) {
+            float liftPx = -8f * getResources().getDisplayMetrics().density;
+            set.playTogether(
+                fadeOut,
+                ObjectAnimator.ofFloat(iconView, View.SCALE_X, 1f, 1.06f),
+                ObjectAnimator.ofFloat(iconView, View.SCALE_Y, 1f, 1.06f),
+                ObjectAnimator.ofFloat(iconView, View.TRANSLATION_Y, 0f, liftPx)
+            );
+        } else {
+            set.play(fadeOut);
+        }
+        set.setDuration(SplashCoordinator.EXIT_FADE_MS);
+        set.setInterpolator(new DecelerateInterpolator());
+        set.addListener(new AnimatorListenerAdapter() {
+            private boolean removed;
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (!removed) {
+                    removed = true;
+                    splashScreenView.remove();
+                }
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                if (!removed) {
+                    removed = true;
+                    splashScreenView.remove();
+                }
+            }
+        });
+        set.start();
+    }
+
+    private boolean isFastEntry(Intent intent) {
+        if (intent != null && (intent.getBooleanExtra("returnToFocus", false)
+            || intent.getBooleanExtra("returnToLock", false)
+            || intent.getBooleanExtra("openRecovery", false))) {
+            return true;
+        }
+        try {
+            Object owner = new FocusControl(this).observeControl().opt("owner");
+            return owner != null && owner != JSONObject.NULL && !owner.toString().isEmpty();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean isReducedMotion() {
+        try {
+            return Settings.Global.getFloat(
+                getContentResolver(),
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1.0f
+            ) == 0.0f;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private final class SplashBridge {
+        @JavascriptInterface
+        public void notifyReady() {
+            if (splashCoordinator != null) {
+                splashCoordinator.markWebReady();
+            }
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
         restrictOrdinaryEntry(intent);
         super.onNewIntent(intent);
         setIntent(intent);
@@ -41,6 +153,7 @@ public class MainActivity extends BridgeActivity {
             getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(
                 "window.dispatchEvent(new Event('lock-return-request'))", null));
     }
+
     private void restrictOrdinaryEntry(Intent intent) {
         if (intent == null) return;
         try {
@@ -50,12 +163,15 @@ public class MainActivity extends BridgeActivity {
             // The Vue guard retries through the public bridge; do not invent another owner.
         }
     }
-    @Override public void onWindowFocusChanged(boolean hasFocus) {
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (!hasFocus) return;
         FocusProtection.clearSettingsAuthorization();
         observeNavigationFocus();
     }
+
     private void observeNavigationFocus() {
         try {
             // Transient Overview can leave this Activity resumed and omit a second
@@ -65,5 +181,13 @@ public class MainActivity extends BridgeActivity {
         } catch (Exception ignored) {
             // A missing confirmation remains pending/failed; never infer a successful return.
         }
+    }
+
+    @Override
+    public void onDestroy() {
+        if (splashCoordinator != null) {
+            splashCoordinator.markWebReady();
+        }
+        super.onDestroy();
     }
 }

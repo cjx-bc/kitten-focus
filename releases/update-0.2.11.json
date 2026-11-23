@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 17,
+    "versionName": "0.2.11",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.11/xiaomao-focus-0.2.11-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.11/xiaomao-focus-0.2.11-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.11-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.11/xiaomao-focus-0.2.11-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.11-debug.apk"
+    ],
+    "size": 4864802,
+    "sha256": "0bcf6aa6fc4866262e941e2427794ece3e102e022b09f18918e573b7ed447981",
+    "notes": "开屏体验升级为单段原生动画：点击桌面图标即见纯黑白小猫单眼眨眼与抖耳迎接动画，搭配底部「小猫专注 · 专注此刻，陪小猫一起长大」品牌标识；等待前端首屏就绪后丝滑淡出进入待办，消除旧版两段切换闪屏与白屏；进行中的专注、休息或锁机状态拉回以及系统减弱动态效果下自动跳过动画等待，直达目标页面。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

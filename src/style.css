@@ -437,6 +437,9 @@ main {
   font-size: 13px;
   color: var(--muted);
 }
+.boot-native {
+  background: var(--bg);
+}
 html.sheet-open {
   overflow: hidden;
 }

@@ -1,0 +1,36 @@
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/cat_splash_head">
+    <target
+        android:name="head_rig"
+        android:animation="@animator/splash_head_rig" />
+    <target
+        android:name="ear_right"
+        android:animation="@animator/splash_ear_right" />
+    <target
+        android:name="ear_left"
+        android:animation="@animator/splash_ear_left" />
+    <target
+        android:name="tuft_top"
+        android:animation="@animator/splash_tuft_top" />
+    <target
+        android:name="left_eye_group"
+        android:animation="@animator/splash_left_eye" />
+    <target
+        android:name="left_pupil"
+        android:animation="@animator/splash_left_pupil" />
+    <target
+        android:name="right_eye_open"
+        android:animation="@animator/splash_right_eye_scale" />
+    <target
+        android:name="right_eye_sclera"
+        android:animation="@animator/splash_right_eye_alpha" />
+    <target
+        android:name="right_eye_pupil"
+        android:animation="@animator/splash_right_eye_alpha" />
+    <target
+        android:name="wink_arc_group"
+        android:animation="@animator/splash_wink_arc_group" />
+    <target
+        android:name="wink_arc_path"
+        android:animation="@animator/splash_wink_arc_alpha" />
+</animated-vector>

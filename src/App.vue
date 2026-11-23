@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, computed, watch, ref } from 'vue'
+import { onBeforeUnmount, onMounted, computed, watch, ref, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App as CapacitorApp } from '@capacitor/app'
 import { consumeFocusReturn, consumeLockReturn, consumeRecoveryReturn, resolveMainEntry, native } from './platform/bridge'
+import { notifyNativeSplashReady } from './platform/splash'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
 import Sheet from './components/Sheet.vue'
@@ -87,41 +88,54 @@ const onLockReturnRequest = async () => {
   await consumeLockReturn()
   void router.replace('/lock')
 }
+function scheduleSplashReady() {
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => requestAnimationFrame(() => notifyNativeSplashReady()))
+  } else {
+    notifyNativeSplashReady()
+  }
+}
 onMounted(async () => {
   window.addEventListener('open-recovery', onOpenRecovery)
   window.addEventListener('recovery-return-request', onRecoveryReturnRequest)
   window.addEventListener('focus-return-request', onFocusReturnRequest)
   window.addEventListener('lock-return-request', onLockReturnRequest)
-  await app.init()
-  if (await consumeFocusReturn()) {
-    if (app.lock.session) await router.replace('/lock')
-    else if (app.focus.session) await router.replace('/focus')
-  }
-  if (await consumeLockReturn()) await router.replace('/lock')
-  if (await consumeRecoveryReturn()) await openRecoveryPreempting()
-  void updates.init()
-  if (native) {
-    await CapacitorApp.addListener('appStateChange', (state) => {
-      if (state.isActive) {
-        void app.tick()
-        void updates.refresh().catch(() => {})
-        void updates.check()
-      }
-    })
-    await CapacitorApp.addListener('backButton', () => {
-      const dialogs = document.querySelectorAll<HTMLDialogElement>('dialog[open]')
-      if (dialogs.length)
-        dialogs[dialogs.length - 1]!.dispatchEvent(
-          new Event('cancel'),
-        )
-      else if (route.path === '/rest') document.dispatchEvent(new Event('rest-exit-request'))
-      else if (isStudySessionLocked(app.focus.session)) {
-        if (route.path === '/focus') app.notify('学霸模式进行中，结束后可返回')
-        else void router.replace('/focus')
-      } else if (route.path === '/focus') void router.replace('/tasks')
-      else if (route.path !== '/tasks') void router.replace('/tasks')
-      else void CapacitorApp.minimizeApp()
-    })
+  try {
+    await app.init()
+    if (await consumeFocusReturn()) {
+      if (app.lock.session) await router.replace('/lock')
+      else if (app.focus.session) await router.replace('/focus')
+    }
+    if (await consumeLockReturn()) await router.replace('/lock')
+    if (await consumeRecoveryReturn()) await openRecoveryPreempting()
+    void updates.init()
+    if (native) {
+      await CapacitorApp.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+          void app.tick()
+          void updates.refresh().catch(() => {})
+          void updates.check()
+        }
+      })
+      await CapacitorApp.addListener('backButton', () => {
+        const dialogs = document.querySelectorAll<HTMLDialogElement>('dialog[open]')
+        if (dialogs.length)
+          dialogs[dialogs.length - 1]!.dispatchEvent(
+            new Event('cancel'),
+          )
+        else if (route.path === '/rest') document.dispatchEvent(new Event('rest-exit-request'))
+        else if (isStudySessionLocked(app.focus.session)) {
+          if (route.path === '/focus') app.notify('学霸模式进行中，结束后可返回')
+          else void router.replace('/focus')
+        } else if (route.path === '/focus') void router.replace('/tasks')
+        else if (route.path !== '/tasks') void router.replace('/tasks')
+        else void CapacitorApp.minimizeApp()
+      })
+    }
+  } finally {
+    await router.isReady().catch(() => {})
+    await nextTick()
+    scheduleSplashReady()
   }
 })
 onBeforeUnmount(() => {
@@ -133,9 +147,11 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <div class="app-shell" :class="{ fullscreen: full }">
-    <div v-if="!app.ready && !app.error" class="boot">
-      <span class="wordmark">小猫专注</span>
-      <p>把时间留给认真生活的自己</p>
+    <div v-if="!app.ready && !app.error" class="boot" :class="{ 'boot-native': native }">
+      <template v-if="!native">
+        <span class="wordmark">小猫专注</span>
+        <p>专注此刻，陪小猫一起长大</p>
+      </template>
     </div>
     <template v-else
       ><div v-if="app.error" role="alert" class="error-banner">
