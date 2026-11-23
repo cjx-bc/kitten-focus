@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 20,
+    "versionName": "0.2.14",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.14/xiaomao-focus-0.2.14-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.14/xiaomao-focus-0.2.14-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.14-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.14/xiaomao-focus-0.2.14-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.14-debug.apk"
+    ],
+    "size": 4871902,
+    "sha256": "e8c64dc7881a3daa86952289a0c293feea649d65d24e1032d9608a1769370366",
+    "notes": "优化覆盖升级体验：应用覆盖安装完成后自动重连已授权的通知使用权监听服务，减少升级后“等待连接”状态；同步补充开发调试一键覆盖安装与自动授权脚本（适配 OPPO / ColorOS）。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

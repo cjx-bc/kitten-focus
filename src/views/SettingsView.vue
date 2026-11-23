@@ -568,15 +568,15 @@ async function openBatteryOptimization() {
                   <h3 id="latest-release-title">最近更新</h3>
                   <time datetime="2026-11-23">2026.11.23</time>
                 </div>
-                <p class="release-name">v0.2.13 <span>启动自动查更新、前台保活与后台运行授权</span></p>
+                <p class="release-name">v0.2.14 <span>覆盖升级自动重连通知监听与真机调试提效</span></p>
                 <ul class="release-changes">
-                  <li>每次冷启动在后台静默检查更新；点「稍后再说」同一版本不再打扰，下载支持收起后台继续。</li>
-                  <li>新增 Android 专注/锁机前台保活服务（复用专注状态通知）与「后台运行不限制」一键设置及品牌指引。</li>
-                  <li>优化单段原生猫头开屏节奏，并打磨更新与权限设置界面的冷静克制体验。</li>
+                  <li>覆盖安装升级后在系统替换广播自动重连已授权的通知监听服务，减少升级后“已授权但等待连接”。</li>
+                  <li>新增开发期一键真机覆盖安装与自动恢复调试权限脚本（`android:dev-install` / `android:install` / `android:grant`），适配 OPPO/ColorOS 权限监控指引。</li>
+                  <li>沿用原包名与内测签名，支持从「我的 → 检查更新」或直接覆盖安装并保留本地数据。</li>
                 </ul>
                 <a
                   class="about-link"
-                  href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.13"
+                  href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.14"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

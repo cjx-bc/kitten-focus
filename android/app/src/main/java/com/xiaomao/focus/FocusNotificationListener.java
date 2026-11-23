@@ -28,6 +28,13 @@ public final class FocusNotificationListener extends NotificationListenerService
         return current;
     }
     static void rebind(Context context) { requestRebind(new ComponentName(context, FocusNotificationListener.class)); }
+    static boolean shouldRequestRebind(int sdkInt, boolean authorized, boolean connected) {
+        return sdkInt >= Build.VERSION_CODES.N && authorized && !connected;
+    }
+    static void rebindIfAuthorized(Context context) {
+        if (!shouldRequestRebind(Build.VERSION.SDK_INT, new AndroidNotificationSystem(context).authorized(), connected())) return;
+        try { rebind(context); } catch (RuntimeException ignored) { }
+    }
     @Override public void onListenerConnected() {
         listener = this; update(null, null, false);
         maintenance.removeCallbacks(renewLeases); maintenance.postDelayed(renewLeases, 15000);
