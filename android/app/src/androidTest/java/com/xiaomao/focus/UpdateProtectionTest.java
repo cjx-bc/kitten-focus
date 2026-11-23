@@ -197,17 +197,19 @@ public class UpdateProtectionTest {
         assertEquals("retained", store.read("data").getString("marker"));
     }
 
-    @Test public void networkFailureKeepsLocalDataAndDailyCheckRunsOnlyOnce() throws Exception {
+    @Test public void networkFailureKeepsLocalDataAndAutoCheckRunsEachLaunchWithCooldown() throws Exception {
         android.content.SharedPreferences prefs = context.getSharedPreferences("app-updates", Context.MODE_PRIVATE);
         Map<String, ?> previous = new HashMap<>(prefs.getAll());
         try {
             prefs.edit().clear().commit();
             store.write("data", new JSONObject().put("schemaVersion", 1).put("marker", "offline retained"));
             final int[] attempts = {0};
-            AppUpdateManager manager = new AppUpdateManager(context, () -> {
+            final long[] nowMs = {1000L};
+            AppUpdateManager.ManifestSource failingSource = () -> {
                 attempts[0]++;
                 throw new java.io.IOException("test network unavailable");
-            });
+            };
+            AppUpdateManager manager = new AppUpdateManager(context, failingSource, () -> nowMs[0]);
             JSONObject state = manager.check(false);
             assertFalse(state.getString("checkError").isEmpty());
             manager.check(false);
@@ -215,6 +217,9 @@ public class UpdateProtectionTest {
             try { manager.check(true); fail("Manual checks must report unavailable network"); }
             catch (IllegalStateException expected) { }
             assertEquals(2, attempts[0]);
+            AppUpdateManager nextLaunch = new AppUpdateManager(context, failingSource, () -> nowMs[0]);
+            nextLaunch.check(false);
+            assertEquals(3, attempts[0]);
             assertEquals("offline retained", store.read("data").getString("marker"));
         } finally {
             android.content.SharedPreferences.Editor editor = prefs.edit().clear();

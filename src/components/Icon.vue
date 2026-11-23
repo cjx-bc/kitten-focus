@@ -41,6 +41,7 @@ import {
   AlertTriangle,
   Timer,
   History,
+  BatteryCharging,
 } from '@lucide/vue'
 withDefaults(defineProps<{ name: string; size?: number }>(), { size: 22 })
 const icons: Record<string, unknown> = {
@@ -85,6 +86,7 @@ const icons: Record<string, unknown> = {
   warning: AlertTriangle,
   timer: Timer,
   history: History,
+  battery: BatteryCharging,
 }
 </script>
 <template>

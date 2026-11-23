@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApp } from '../stores/app'
 import { protectionHelpSections as sections } from '../content/protectionHelp'
@@ -15,6 +15,13 @@ function goToSection(id: string) {
   const target = document.getElementById(`help-${id}`)
   target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: 'start' })
 }
+
+onMounted(() => {
+  if (route.path === '/help' && route.hash?.startsWith('#help-')) {
+    const id = route.hash.slice('#help-'.length)
+    goToSection(id)
+  }
+})
 </script>
 <template>
   <div class="page protection-help-page">
@@ -40,7 +47,16 @@ function goToSection(id: string) {
     <template v-else>
       <p class="muted">这些正文随应用提供，无需联网。实际支持与保护效果请到权限页逐项检查。</p>
       <nav class="help-contents" aria-label="帮助目录"><a v-for="section in sections" :key="section.id" :href="`#help-${section.id}`" @click.prevent="goToSection(section.id)">{{ section.title }}</a></nav>
-      <section v-for="section in sections" :id="`help-${section.id}`" :key="section.id" class="help-section" tabindex="-1"><h2>{{ section.title }}</h2><p v-for="paragraph in section.paragraphs" :key="paragraph">{{ paragraph }}</p></section>
+      <section v-for="section in sections" :id="`help-${section.id}`" :key="section.id" class="help-section" tabindex="-1">
+        <h2>{{ section.title }}</h2>
+        <p v-for="paragraph in section.paragraphs" :key="paragraph">{{ paragraph }}</p>
+        <div v-if="section.steps?.length" class="brand-steps" data-ux-card>
+          <div v-for="step in section.steps" :key="step.brand" class="brand-step">
+            <strong>{{ step.brand }}</strong>
+            <span>{{ step.path }}</span>
+          </div>
+        </div>
+      </section>
       <RouterLink class="secondary wide" to="/recovery">查看本轮恢复清单</RouterLink>
     </template>
     <RouterLink :to="returnPath" class="secondary wide">{{ app.lock.session ? '返回锁机控制' : app.focus.session ? '返回专注计时' : '返回我的' }}</RouterLink>
@@ -59,5 +75,9 @@ p { font-size: 14px; line-height: 1.9; overflow-wrap: anywhere; }
 .help-section { display: grid; gap: 14px; scroll-margin-top: 24px; }
 .help-section h2 { font-size: 19px; line-height: 1.6; }
 .help-section:focus { outline: 2px solid var(--focus); outline-offset: 8px; border-radius: 4px; }
+.brand-steps { background: var(--surface); border-radius: var(--radius); padding: 4px 18px; }
+.brand-step { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.65; }
+.brand-step:last-child { border-bottom: 0; }
+.brand-step span { color: var(--muted-surface); }
 .protection-help-page :deep(a.secondary.wide), .protection-help-page :deep(button.secondary.wide), .protection-help-page :deep(button.primary.wide) { min-height: 48px; min-width: 48px; }
 </style>

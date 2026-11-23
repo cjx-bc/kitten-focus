@@ -12,6 +12,7 @@ import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.SystemClock;
 import android.provider.Settings;
 import androidx.core.content.FileProvider;
 import org.json.JSONObject;
@@ -21,8 +22,6 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.net.URL;
 import java.security.MessageDigest;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -36,15 +35,23 @@ final class AppUpdateManager {
     private final LocalStore store;
     final UpgradeBackups backups;
     interface ManifestSource { JSONObject load() throws Exception; }
+    interface ElapsedClock { long now(); }
     private final ManifestSource manifestSource;
+    private final ElapsedClock elapsedClock;
+    private final UpdateCheckPolicy checkPolicy = new UpdateCheckPolicy();
 
     AppUpdateManager(Context context) {
-        this(context, AppUpdateManager::fetchManifest);
+        this(context, AppUpdateManager::fetchManifest, SystemClock::elapsedRealtime);
     }
 
     AppUpdateManager(Context context, ManifestSource manifestSource) {
+        this(context, manifestSource, SystemClock::elapsedRealtime);
+    }
+
+    AppUpdateManager(Context context, ManifestSource manifestSource, ElapsedClock elapsedClock) {
         this.context = context.getApplicationContext();
         this.manifestSource = manifestSource;
+        this.elapsedClock = elapsedClock;
         preferences = context.getSharedPreferences("app-updates", Context.MODE_PRIVATE);
         downloads = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
         store = LocalStore.get(context);
@@ -86,10 +93,7 @@ final class AppUpdateManager {
     }
 
     synchronized JSONObject check(boolean force) throws Exception {
-        String day = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
-        if (!force && day.equals(preferences.getString("attemptDay", ""))
-            && preferences.getInt("attemptVersion", 0) == BuildConfig.VERSION_CODE) return status();
-        preferences.edit().putString("attemptDay", day).putInt("attemptVersion", BuildConfig.VERSION_CODE).apply();
+        if (!checkPolicy.shouldFetch(force, elapsedClock.now())) return status();
         try {
             JSONObject manifest = manifestSource.load();
             if (manifest.getInt("schemaVersion") != 1 || !manifest.has("release"))

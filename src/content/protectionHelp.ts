@@ -1,5 +1,12 @@
 ﻿// Shipped with the app: every section remains readable without a network connection.
-export const protectionHelpSections = [
+export interface ProtectionHelpSection {
+  id: string
+  title: string
+  paragraphs: string[]
+  steps?: Array<{ brand: string; path: string }>
+}
+
+export const protectionHelpSections: ProtectionHelpSection[] = [
   { id: 'modes', title: '计时与保护怎样组合', paragraphs: [
     '正计时与倒计时只决定怎样计时。学霸模式限制名单外应用；严格模式限制暂停和提前结束；通知拦截控制通知显示；声音免打扰辅助减少声音和振动。这些选项分别选择，首次使用默认关闭。只想计时可以全部关闭。',
     '普通倒计时可以暂停或提前结束，普通正计时可以暂停并主动正常结束。普通暂停不解除已选的应用、通知及增强保护。严格模式仅对倒计时生效，开始前需确认，开始后不能暂停、取消或提前结束，也不能临时放行；正计时不受严格模式约束。',
@@ -34,6 +41,15 @@ export const protectionHelpSections = [
     '无障碍已授权、服务已连接、本轮已请求和实际效果是不同状态；通知访问、勿扰和小猫自身通知授权也各自独立。权限页逐项读取本机结果，拒绝某项授权仍可使用基础计时。授权后返回会刷新，也可以点击“重新检查”。',
     '普通无障碍、普通设备管理员、设备所有者与资料所有者是不同身份。激活普通管理员不等于拥有系统防卸载策略。本应用当前精确防关闭使用普通无障碍；即便检测到额外所有者身份，也不代表已实施系统禁止卸载。不会自动申请管理员、配置所有者或重置设备。',
     '低系统版本、厂商后台策略、进程回收和授权被关闭都可能影响保护。请依据每项支持、连接、核验与失败原因判断。模拟器或接口调用成功不能代替实际设备、真实来电、声音和厂商兼容验证。',
+  ] },
+  { id: 'keepalive', title: '后台保活与各品牌设置', paragraphs: [
+    '专注或独立锁机进行中，小猫会自动启动 Android 前台保活服务并复用同一条专注状态通知（不额外弹窗）；结束后立即停止，平时不在后台驻留耗电。在「我的 → 提醒与声音」或学霸模式帮助中开启「后台运行不限制」，可以减少锁屏后专注保护与准时提醒被系统暂停的概率。',
+  ], steps: [
+    { brand: '小米 / Redmi（澎湃 / MIUI）', path: '应用信息 → 省电策略 → 选择“无限制”' },
+    { brand: '华为 / 荣耀（HarmonyOS / MagicOS）', path: '设置 → 应用 → 应用启动管理 → 关闭自动管理，允许后台活动' },
+    { brand: 'OPPO / 一加 / realme（ColorOS）', path: '应用信息 → 耗电管理 → 开启“允许完全后台行为”' },
+    { brand: 'vivo / iQOO（OriginOS）', path: '应用信息 → 耗电 → 后台耗电管理 → 选择“允许后台高耗电”' },
+    { brand: '三星 / 原生 Android', path: '应用信息 → 电池 → 选择“不受限制”' },
   ] },
   { id: 'temporary', title: '临时放行的范围与次数', paragraphs: [
     '普通受限会话可在阻挡页明确选择一个受限应用，并选择 1、3 或 5 分钟，每轮最多成功使用 3 次。一次只放行一个目标；替换尚未到期的目标需再次确认，并消耗一次成功次数。取消、拒绝、失败或重复请求不会额外消耗。',

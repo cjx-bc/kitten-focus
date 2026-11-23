@@ -1,5 +1,7 @@
 # 应用内更新
 
+2026-11-23 已发布 0.2.13 / versionCode 19：新增每次启动后台自动检查更新与非打扰单层更新弹窗（支持 Option A 按版本持久化「稍后再说」免打扰及下载中收起后台继续）；新增 Android 专注/锁机 `specialUse` 前台保活服务（复用现有专注通知 ID `40`）与冷静零红标焦虑的「后台运行不限制」一键放行及各品牌设置指引。22 个测试文件 / 169 项宿主单元测试、5 个 E2E 文件 / 32 项浏览器及 UX 门禁检查、`impeccable detect --json --changed`（0 告警）与 390px/320px 视觉巡检、TypeScript/Vite 生产构建、安卓 APK 构建、11 项安卓 JVM 单元测试（`ExampleUnitTest` 1、`SplashCoordinatorTest` 4、`UpdateCheckPolicyTest` 3、`BackgroundKeepAliveTest` 3）、安卓仪器测试编译检查与包名/签名/完整性校验（`prepare-update.py`）通过，未运行模拟器与真机回归。GitHub Release、官网下载页、`/download` 跳转及线上 `domain-stable.json` 已同步。详见 [0.2.13 发布说明](../releases/release-0.2.13.md)。
+
 2026-11-23 已发布 0.2.12 / versionCode 18：优化单段原生小猫开屏节奏（增加约 320ms 静候反应停顿后再触发歪头抖耳 Wink，总动画时长 1000ms，`MAX_WAIT_MS` 调整为 2000ms，继续保留进行中会话与减少动态效果直通及 180ms 淡出退场）。20 个测试文件 / 161 项宿主单元测试、5 个 E2E 文件 / 32 项浏览器及 UX 门禁检查、TypeScript/Vite 生产构建、安卓 APK 构建、5 项安卓 JVM 单元测试、安卓仪器测试编译检查与包名/签名/完整性校验（`prepare-update.py`）通过，未运行模拟器与真机回归。GitHub Release、官网下载页、`/download` 跳转及线上 `domain-stable.json` 已同步。详见 [0.2.12 发布说明](../releases/release-0.2.12.md)。
 
 2026-11-23 已发布 0.2.11 / versionCode 17：单段原生「歪头抖耳 Wink」纯黑白猫头开屏动画（`AnimatedVectorDrawable` + 底部「小猫专注 / 专注此刻，陪小猫一起长大」品牌标识 + `SplashCoordinator` 首帧就绪保持与 180ms 淡出退场，消除原生/前端两段切换闪屏；进行中会话拉回与减少动态效果跳过等待，Android 7–11 静默降级为纯猫头静态图标）。20 个测试文件 / 161 项宿主单元测试、5 个 E2E 文件 / 32 项浏览器及 UX 门禁检查、TypeScript/Vite 生产构建、安卓 APK 构建、5 项安卓 JVM 单元测试、安卓仪器测试编译检查与包名/签名/完整性校验（`prepare-update.py`）通过，未运行模拟器与真机回归。GitHub Release、官网下载页、`/download` 跳转及线上 `domain-stable.json` 已同步。详见 [0.2.11 发布说明](../releases/release-0.2.11.md)。
@@ -24,7 +26,7 @@
 
 - 面向本人和少量朋友。用户后续已明确要求将 cjx-bc/kitten-focus 改为公有，源码及 Releases 现已公开，安装包免登录下载。
 - 更新清单通过 `focus.linma.asia` 提供，IP 保留备用；80 用于证书验证，443 用于 HTTPS。0.2.1 APK 正式来源为公开 GitHub Releases，默认尝试免费代理候选，失败再换备用。
-- 每天首次打开时后台检查一次，仅显示红点；手动检查不受时间限制，不自动下载。
+- 每次启动自动在后台检查一次更新（进程内 60 秒恢复冷却防重，离线或网络失败静默处理）；发现新版本时，若当前无进行中专注/休息/锁机、未打开其他弹窗且该版本未被点击过「稍后再说」，则以单层弹窗提示并可在「我的」显示红点（手动点击随时可用，下载支持收起后台继续），绝不自动下载。
 - 更新可跳过，离线仍可使用原有功能。
 - 有未结束专注（包括暂停）时，可查看更新，结束后才能下载或安装。
 - Wi-Fi 下点击直接下载；计费网络先确认包大小。系统下载管理器负责后台传输，支持取消、失败重试。

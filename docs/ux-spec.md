@@ -38,9 +38,9 @@
 ### 2.2 原生会话所有权与插件契约不变量
 
 1. **单一会话与存储所有权**：Java `FocusEngine`、`RestEngine`、`LockEngine`、`FocusControl` 与 SQLite（`LocalStore`）拥有计时、互斥（专注 / 休息 / 锁机）与专注记录的唯一所有权。Vue 层（`src/`）**禁止**建立第二套计时引擎或第二套业务数据库，仅编辑偏好并渲染原生返回快照。
-2. **保留全部 40 个 `CatFocus` 方法 + 9 个 `AppUpdates` 方法 + 6 个窗口自定义事件**：
-   - `CatFocusPlugin.java` 全部 **40 个 `@PluginMethod`** 签名保持不变：
-     - `src/platform/bridge.ts`（**34 个**）：`resolveMainEntry`, `startLock`, `lockAction`, `loadData`, `saveData`, `replaceData`, `startFocus`, `focusAction`, `startRest`, `restAction`, `grantTemporaryAccess`, `observeControl`, `getRecentTasksStatus`, `getLauncherStatus`, `getWallpaperStatus`, `prepareWallpaper`, `requestWallpaperPicker`, `importWallpaperOriginal`, `confirmWallpaperManualRecovery`, `openWallpaperSettings`, `consumeFocusReturn`, `consumeLockReturn`, `protectionStatus`, `listProtectionApps`, `openProtectionSettings`, `previewRecovery`, `confirmRecovery`, `consumeRecoveryReturn`, `exportFile`, `importFile`, `permissions`, `requestNotifications`, `openAlarmSettings`, `syncReminders`。
+2. **保留全部 40 个 `CatFocus` 方法（支持增量扩展） + 9 个 `AppUpdates` 方法 + 6 个窗口自定义事件**：
+   - `CatFocusPlugin.java` 原有 **40 个 `@PluginMethod`** 签名保持不变：
+     - `src/platform/bridge.ts`（原有 **34 个** + `1` 个增量）：`resolveMainEntry`, `startLock`, `lockAction`, `loadData`, `saveData`, `replaceData`, `startFocus`, `focusAction`, `startRest`, `restAction`, `grantTemporaryAccess`, `observeControl`, `getRecentTasksStatus`, `getLauncherStatus`, `getWallpaperStatus`, `prepareWallpaper`, `requestWallpaperPicker`, `importWallpaperOriginal`, `confirmWallpaperManualRecovery`, `openWallpaperSettings`, `consumeFocusReturn`, `consumeLockReturn`, `protectionStatus`, `listProtectionApps`, `openProtectionSettings`, `previewRecovery`, `confirmRecovery`, `consumeRecoveryReturn`, `exportFile`, `importFile`, `permissions`（增量返回可选字段 `batteryOptimizationIgnored`、`foregroundServiceActive`）, `requestNotifications`, `openAlarmSettings`, `openBatteryOptimizationSettings`（增量）, `syncReminders`。
      - `src/platform/dnd.ts`（**3 个**）：`getDndStatus`, `openDndSettings`, `restoreDnd`。
      - `src/platform/notifications.ts`（**3 个**）：`getNotificationStatus`, `openNotificationAccessSettings`, `rebindNotificationListener`。
    - `AppUpdatesPlugin.java` / `src/platform/updates.ts` 全部 **9 个 `@PluginMethod`** 签名保持不变：`status`, `check`, `download`, `cancel`, `backups`, `exportBackup`, `restoreBackup`, `installPermission`, `install`。
@@ -67,6 +67,12 @@
    - Android 启动阶段采用单段原生开屏（`#FFFFFF` 纯白背景 + 纯黑白猫头「歪头抖耳 Wink」1000ms 矢量动画，含约 320ms 静候反应停顿后开始歪头抖耳眨眼 + 底部品牌字标「小猫专注 / 专注此刻，陪小猫一起长大」，Android 11 及以下静默降级为纯猫头静态图标），由 `SplashCoordinator` 保持开屏直至 Vue 首帧就绪且至少播完 1000ms 动画（极端情况最长 2000ms 超时放行），随后以 180ms 轻淡出直接进入目标页面。
    - 存在进行中会话（专注 / 休息 / 锁机或系统拉回 `returnToFocus` / `returnToLock` / `openRecovery`）或系统开启减少动态效果时，跳过 1000ms 等待并在前端就绪后立即无阻碍放行。
    - 在原生 Android 环境下，`App.vue` 初始化期 `.boot`（`.boot-native`）保持纯白底不渲染第二段文字闪屏，彻底消除两段割裂；纯网页预览保留 `.boot`（副标「专注此刻，陪小猫一起长大」）。保持全部 40 个 `CatFocus` `@PluginMethod` 签名不变，仅在 `MainActivity` 暴露极简 `window.KittenSplash.notifyReady()` `JavascriptInterface` 通知首帧就绪。
+9. **每次启动自动检查更新与不打扰单层提示（Option A）**：
+   - 每次冷启动（及 60 秒进程内冷却窗口之外的前台恢复）在后台静默检查更新（`force = false`）；网络异常或离线保持静默，绝不打断学习或阻塞启动。
+   - 发现新版本后，在 `App.vue` 仅当 `native === true`、`app.ready`、无进行中专注/休息/锁机会话、处于主标签页（`!full`）、DOM 中无任何打开的 `<dialog>` 且该 `versionCode` 未被用户点击过 `稍后再说` 时，弹出 1 次单层 `<Sheet>`（版本与包大小卡片 + 限高可滚更新说明 + 安心数据备份提示 + 1 个主 CTA `下载更新` / `安装更新` + 次按钮 `稍后再说`）。点击 `稍后再说` 或非下载中关闭弹窗后将该 `versionCode` 记入 `localStorage`，此后同一版本不再主动弹窗打扰（仍保留「我的」小红点与手动检查入口，直到更高 `versionCode` 发布）；下载中提供 `收起，后台继续下载` 出口而不永久忽略当前版本。绝不静默自动下载，且可被 `RecoverySheet` / `ux-close-sheets` 抢占关闭。
+10. **Android 前台保活服务与冷静、零焦虑后台授权（遵守 ADR 0004）**：
+   - **专注/锁机期间前台保活**：`FocusKeepAliveService`（`foregroundServiceType="specialUse"`）仅在专注或独立锁机进行中运行，并复用现有专注常驻通知（`Reminders.FOCUS_ID = 40`、`focus-status` 低打扰频道），不弹出第二条通知；会话结束、重启或故障恢复后立即停止，平时不在后台驻留耗电。
+   - **冷静、一步直达、零红标焦虑的「后台运行不限制」**：电池优化放行属于推荐增强项，**绝不**阻塞专注/锁机或学霸模式启动，**绝不**计入待办顶栏或 `StudyModeSheet` `missingPermissions` 缺失权限计数，**绝不**使用红色警示 badge/文字。仅在 Tier 2（`SettingsView` `提醒与声音 → 系统提醒与后台`、`StudyModeSheet` `权限与使用帮助` 可选卡片）与 Tier 3（`/permissions` 独立诊断卡片及 `/help#help-keepalive` 分品牌单行设置路径）提供入口；点击后直接调起系统 1-tap 授权或电池优化设置（经 `openAuthorizationSettings` 放行），切回应用时自动刷新并在首次放行成功时轻提示 `已允许后台运行`。严格如实披露能力边界：可显著降低锁屏或后台期间被系统清理的概率，但不承诺免疫用户主动强停或激进厂商策略。
 
 ### 2.3 `GLOSSARY.md` 术语契约与禁用词表
 
@@ -586,9 +592,10 @@
                                           │ 数据保存在本机；恢复会替换当前  │
 [弹窗: sound (提醒与声音)]                │ 数据，请先结束专注或锁机。      │
 ┌ 提醒与声音 ────────────────── × ┐       │ [          导出备份            ]│ ← 1 主 CTA
-│ 专注免打扰在「学霸模式→免打扰」。│       │ [         从备份恢复           ]│
-│ (原 InfoHint 改为内联说明文字) │       └─────────────────────────────────┘
-│ [通知权限] / [准时提醒] (native)│
+│ [ 前往学霸模式 · 免打扰设置 ]    │       │ [         从备份恢复           ]│
+│ 系统提醒与后台 (native, 3行<=4) │       └─────────────────────────────────┘
+│  通知权限 / 准时提醒 /           │
+│  后台运行不限制 (中性状态)       │
 │ [            完成              ]│
 └─────────────────────────────────┘
 ```

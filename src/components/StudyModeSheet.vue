@@ -41,7 +41,14 @@ import {
   type StudyPermissionId,
 } from '../domain/studyPermissions'
 import { capabilityToggleDisabled } from '../domain/protectionDisplay'
-import { protectionDriver, requestNotifications } from '../platform/bridge'
+import {
+  native,
+  openBatteryOptimizationSettings,
+  permissionStatus,
+  protectionDriver,
+  requestNotifications,
+  type SystemPermissions,
+} from '../platform/bridge'
 import { dndDriver, type DndStatus } from '../platform/dnd'
 import { notificationDriver, type NotificationStatus } from '../platform/notifications'
 import Sheet from './Sheet.vue'
@@ -72,10 +79,17 @@ const notificationStatus = ref<NotificationStatus | null>(null)
 const recentTasksStatus = ref<RecentTasksStatus | null>(null)
 const launcherStatus = ref<LauncherStatus | null>(null)
 const wallpaperStatus = ref<WallpaperStatus | null>(null)
+const systemPermissions = ref<SystemPermissions>({
+  notifications: false,
+  exactAlarms: false,
+  batteryOptimizationIgnored: false,
+  foregroundServiceActive: false,
+})
 
 const error = ref('')
 const readError = ref('')
 const busy = ref(false)
+const pendingBatteryFeedback = ref(false)
 const pendingOptionalGrant = ref<'dnd' | 'notificationListener' | null>(null)
 const limitsAccepted = ref(false)
 const originalMatches = ref(false)
@@ -276,13 +290,14 @@ async function saveStudy(study: boolean) {
 
 async function refresh() {
   const request = ++revision
-  const [protRes, dndRes, notifRes, recentRes, launcherRes, wallpaperRes] = await Promise.allSettled([
+  const [protRes, dndRes, notifRes, recentRes, launcherRes, wallpaperRes, sysRes] = await Promise.allSettled([
     protectionDriver.status(),
     dndDriver.read(),
     notificationDriver.read(),
     protectionDriver.recentTasks(),
     protectionDriver.launcher(),
     protectionDriver.wallpaper(),
+    permissionStatus(),
   ])
   if (request !== revision) return
   if (dndRes.status === 'fulfilled') dndStatus.value = dndRes.value
@@ -290,6 +305,16 @@ async function refresh() {
   if (recentRes.status === 'fulfilled') recentTasksStatus.value = recentRes.value
   if (launcherRes.status === 'fulfilled') launcherStatus.value = launcherRes.value
   if (wallpaperRes.status === 'fulfilled') wallpaperStatus.value = wallpaperRes.value
+  if (sysRes.status === 'fulfilled' && sysRes.value) {
+    systemPermissions.value = {
+      ...systemPermissions.value,
+      ...sysRes.value,
+    }
+    if (pendingBatteryFeedback.value && sysRes.value.batteryOptimizationIgnored) {
+      pendingBatteryFeedback.value = false
+      app.notify('已允许后台运行')
+    }
+  }
 
   if (protRes.status === 'fulfilled') {
     status.value = protRes.value
@@ -360,11 +385,27 @@ onBeforeUnmount(() => {
   stopPolling()
 })
 
-async function openRoute(path: '/permissions' | '/help') {
+async function openRoute(path: '/permissions' | '/help' | '/help#help-keepalive') {
   if (busy.value) return
   emit('close')
   await waitForDialogClose()
   await router?.push(path)
+}
+
+async function openBatteryKeepAlive() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  pendingBatteryFeedback.value = !systemPermissions.value.batteryOptimizationIgnored
+  try {
+    await openBatteryOptimizationSettings()
+    await refresh()
+  } catch (e) {
+    pendingBatteryFeedback.value = false
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
 }
 
 async function openRecovery() {
@@ -1147,7 +1188,7 @@ function subItemMissingPerm(id: StudyPermissionId): RequiredPermissionItem | und
       <p v-else-if="requiredPermissions.length === 0" class="notice">
         当前没有需要授权的已开启项目。打开学霸模式或相关模块后，这里会显示所需授权。
       </p>
-      <div v-else class="perm-list">
+      <div v-if="requiredPermissions.length > 0 || status?.supported || native" class="perm-list">
         <article v-for="perm in requiredPermissions" :key="perm.id" class="perm-card">
           <div class="perm-head">
             <span class="row">
@@ -1168,6 +1209,42 @@ function subItemMissingPerm(id: StudyPermissionId): RequiredPermissionItem | und
             @click="authorizePermission(perm.id)"
           >
             {{ perm.ready ? '查看系统设置' : perm.actionLabel }}
+          </button>
+        </article>
+
+        <article v-if="status?.supported || native" class="perm-card perm-card-optional">
+          <div class="perm-head">
+            <span class="row">
+              <strong>后台运行不限制</strong>
+              <span class="perm-badge">建议</span>
+            </span>
+            <span
+              class="perm-state"
+              :class="systemPermissions.batteryOptimizationIgnored ? 'ok' : 'calm'"
+            >
+              {{ systemPermissions.batteryOptimizationIgnored ? '已放行' : '未放行 · 可选' }}
+            </span>
+          </div>
+          <p class="field-help">
+            减少长时间专注或锁屏时被系统省电清理。不开启也能正常计时。
+          </p>
+          <button
+            type="button"
+            class="secondary wide"
+            :disabled="busy"
+            @click="openBatteryKeepAlive"
+          >
+            {{
+              systemPermissions.batteryOptimizationIgnored ? '查看系统电池设置' : '一键允许后台运行'
+            }}
+          </button>
+          <button
+            type="button"
+            class="text-button perm-guide-link"
+            :disabled="busy"
+            @click="openRoute('/help#help-keepalive')"
+          >
+            查看各品牌防清理设置 <Icon name="right" :size="14" />
           </button>
         </article>
       </div>
@@ -1438,6 +1515,15 @@ small {
 }
 .perm-state.ok {
   color: var(--ink);
+}
+.perm-state.calm {
+  color: var(--muted-surface);
+}
+.perm-guide-link {
+  justify-self: start;
+  padding-inline: 0;
+  gap: 4px;
+  font-size: 13px;
 }
 .perm-used {
   color: var(--ink);

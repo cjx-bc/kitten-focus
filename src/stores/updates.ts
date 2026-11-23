@@ -6,6 +6,7 @@ import { initialUpdateState, updatesDriver } from '../platform/updates'
 export const useUpdates = defineStore('updates', () => {
   const state = ref(initialUpdateState()),
     checking = ref(false),
+    startupChecked = ref(false),
     error = ref('')
   const hasUpdate = computed(() => !!state.value.release)
   let initialized = false,
@@ -35,17 +36,23 @@ export const useUpdates = defineStore('updates', () => {
   async function init() {
     if (initialized || !native) return
     initialized = true
-    await refresh().catch(() => {})
-    void check()
-    window.setInterval(() => {
-      if (!document.hidden && !checking.value) void refresh().catch(() => {})
-    }, 1200)
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        void refresh().catch(() => {})
-        void check()
-      }
-    })
+    try {
+      await refresh().catch(() => {})
+      await check()
+    } finally {
+      startupChecked.value = true
+    }
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      window.setInterval(() => {
+        if (!document.hidden && !checking.value) void refresh().catch(() => {})
+      }, 1200)
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          void refresh().catch(() => {})
+          void check()
+        }
+      })
+    }
   }
-  return { state, checking, hasUpdate, error, init, refresh, check }
+  return { state, checking, startupChecked, hasUpdate, error, init, refresh, check }
 })

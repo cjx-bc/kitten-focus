@@ -9,12 +9,15 @@ import Icon from './Icon.vue'
 const props = withDefaults(
   defineProps<{
     view?: 'about' | 'backups'
+    compact?: boolean
   }>(),
-  { view: 'about' },
+  { view: 'about', compact: false },
 )
 const emit = defineEmits<{
   'update:view': [view: 'about' | 'backups']
   'busy-change': [busy: boolean]
+  dismiss: []
+  hide: []
 }>()
 
 const app = useApp(),
@@ -33,6 +36,10 @@ const state = computed(() => updates.state),
       ? state.value.downloadRelease || state.value.release
       : state.value.release,
   ),
+  formattedVersion = computed(() => {
+    const name = release.value?.versionName ?? ''
+    return name.startsWith('v') ? name : `v${name}`
+  }),
   progress = computed(() =>
     state.value.total
       ? Math.min(100, Math.floor((state.value.received / state.value.total) * 100))
@@ -87,7 +94,7 @@ async function loadBackups(silent = false) {
 onMounted(() => {
   if (!native) return
   void updates.refresh().catch(() => {})
-  void loadBackups(true)
+  if (!props.compact) void loadBackups(true)
 })
 
 async function checkUpdate() {
@@ -162,25 +169,47 @@ async function restoreRecovery() {
 <template>
   <template v-if="view === 'about'">
     <div v-if="native" class="stack update-content">
-      <p v-if="updates.checking" role="status">正在检查新版本…</p>
+      <p v-if="updates.checking" class="field-help" role="status">正在检查新版本…</p>
       <template v-else-if="release">
-        <div class="update-version">
-          <h3>{{ release.versionName }}</h3>
-          <span>{{ size(release.size) }}</span>
+        <div class="update-release-card" data-ux-card>
+          <div class="update-version">
+            <h3>{{ formattedVersion }}</h3>
+            <span class="update-size number">{{ size(release.size) }}</span>
+          </div>
+          <p class="update-notes">{{ release.notes || '优化日常专注体验。' }}</p>
         </div>
-        <p class="update-notes">{{ release.notes || '优化使用体验。' }}</p>
-        <div v-if="state.phase === 'downloading'" class="stack" role="status">
+
+        <div v-if="state.phase === 'downloading'" class="stack update-downloading" role="status">
           <div class="row between">
-            <span>正在下载</span><span class="number">{{ progress }}%</span>
+            <span>正在下载</span>
+            <span class="number">{{ progress }}%</span>
           </div>
           <progress :value="state.received" :max="state.total || 1" aria-label="更新下载进度" />
-          <p class="field-help">{{ state.message || '切到后台后也会继续下载。' }}</p>
-          <button type="button" class="secondary wide" :disabled="busy" @click="cancelDownload">
+          <p class="field-help update-progress-meta">
+            <template v-if="state.total > 0">{{ size(state.received) }} / {{ size(state.total) }} · </template>
+            {{ state.message || '切到后台或收起后也会继续下载。' }}
+          </p>
+          <button
+            v-if="compact"
+            type="button"
+            class="secondary wide"
+            :disabled="busy"
+            @click="emit('hide')"
+          >
+            收起，后台继续下载
+          </button>
+          <button
+            type="button"
+            :class="[compact ? 'text-button wide' : 'secondary wide']"
+            :disabled="busy"
+            @click="cancelDownload"
+          >
             取消下载
           </button>
         </div>
+
         <template v-else-if="state.phase === 'ready'">
-          <p class="field-help">安装包已校验。安装前会自动保存本地恢复副本。</p>
+          <p class="field-help">安装包已校验。安装前会自动保存本地恢复副本，专注记录不受影响。</p>
           <p v-if="!state.canInstall" class="notice">
             首次更新需要允许“小猫专注”安装应用。开启后返回这里，点击安装。
           </p>
@@ -192,7 +221,17 @@ async function restoreRecovery() {
           >
             {{ state.canInstall ? '安装更新' : '允许安装更新' }}
           </button>
+          <button
+            v-if="compact"
+            type="button"
+            class="text-button wide"
+            :disabled="busy"
+            @click="emit('dismiss')"
+          >
+            稍后再说
+          </button>
         </template>
+
         <template v-else>
           <p v-if="state.phase === 'failed'" class="form-error" role="alert">{{ state.message }}</p>
           <div v-if="meteredConfirm" class="metered-confirm stack">
@@ -210,6 +249,9 @@ async function restoreRecovery() {
             </button>
           </div>
           <template v-else>
+            <p v-if="!app.focus.session" class="field-help">
+              更新前自动保留本机恢复副本，专注数据不丢失。
+            </p>
             <button
               type="button"
               class="primary wide"
@@ -218,7 +260,22 @@ async function restoreRecovery() {
             >
               {{ state.phase === 'failed' ? '重新下载' : '下载更新' }}
             </button>
-            <button type="button" class="text-button update-recheck" :disabled="busy" @click="checkUpdate">
+            <button
+              v-if="compact"
+              type="button"
+              class="text-button wide"
+              :disabled="busy"
+              @click="emit('dismiss')"
+            >
+              稍后再说
+            </button>
+            <button
+              v-else
+              type="button"
+              class="text-button update-recheck"
+              :disabled="busy"
+              @click="checkUpdate"
+            >
               重新检查
             </button>
           </template>
@@ -246,7 +303,7 @@ async function restoreRecovery() {
 
     <slot />
 
-    <div v-if="native" class="settings-group">
+    <div v-if="native && !compact" class="settings-group">
       <button type="button" class="settings-row" @click="openBackups">
         <span class="row"><Icon name="download" :size="20" />升级恢复副本（{{ backups.length }} 份）</span>
         <Icon name="right" :size="16" />
@@ -335,23 +392,37 @@ async function restoreRecovery() {
 .settings-row > svg {
   color: var(--muted-surface);
 }
+.update-release-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: grid;
+  gap: 10px;
+}
 .update-version {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 12px;
 }
 .update-version h3 {
   font-size: 16px;
 }
-.update-version span {
-  color: var(--muted);
+.update-size {
+  color: var(--muted-surface);
   font-size: 13px;
+  font-weight: 700;
 }
 .update-notes {
   white-space: pre-wrap;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  max-height: 30dvh;
+  overflow-y: auto;
   overflow-wrap: anywhere;
+}
+.update-downloading {
+  gap: 10px;
 }
 .update-recheck {
   min-height: 48px;
@@ -387,7 +458,7 @@ progress {
   height: 6px;
   accent-color: var(--ink);
   border: 0;
-  border-radius: 6px;
+  border-radius: 999px;
   overflow: hidden;
 }
 progress::-webkit-progress-bar {
@@ -395,5 +466,6 @@ progress::-webkit-progress-bar {
 }
 progress::-webkit-progress-value {
   background: var(--ink);
+  transition: width 180ms ease;
 }
 </style>

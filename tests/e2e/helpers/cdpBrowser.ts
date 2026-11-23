@@ -130,7 +130,7 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
         recoveryReturnRequested: false,
         recoveryRevision: 'rev-1',
         recoverySteps: [],
-        permissions: { notifications: true, exactAlarms: true },
+        permissions: { notifications: true, exactAlarms: true, batteryOptimizationIgnored: false, foregroundServiceActive: false },
         cfg: initialCfg,
       };
     }
@@ -690,6 +690,7 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
       async permissions() { return clone(state.permissions); },
       async requestNotifications() { state.permissions.notifications = true; persist(); return clone(state.permissions); },
       async openAlarmSettings() {},
+      async openBatteryOptimizationSettings() {},
       async syncReminders() {},
     };
 

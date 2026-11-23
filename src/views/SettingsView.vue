@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { App as CapacitorApp } from '@capacitor/app'
+import type { PluginListenerHandle } from '@capacitor/core'
 import { useApp } from '../stores/app'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
 import { migrateProtectionPreferences } from '../domain/protectionModules'
@@ -12,6 +14,8 @@ import {
   permissionStatus,
   requestNotifications,
   openAlarmSettings,
+  openBatteryOptimizationSettings,
+  type SystemPermissions,
 } from '../platform/bridge'
 import Icon from '../components/Icon.vue'
 import AppMark from '../components/AppMark.vue'
@@ -34,7 +38,15 @@ const app = useApp(),
   backup = ref<Backup | null>(null),
   error = ref(''),
   busy = ref(false),
-  permissions = ref({ notifications: false, exactAlarms: false })
+  pendingBatteryFeedback = ref(false),
+  permissions = ref<SystemPermissions>({
+    notifications: false,
+    exactAlarms: false,
+    batteryOptimizationIgnored: false,
+    foregroundServiceActive: false,
+  })
+let appStateListener: PluginListenerHandle | undefined
+let disposed = false
 
 const studySummary = computed(() => {
   const migrated = migrateProtectionPreferences(app.data.preferences.protection)
@@ -117,7 +129,15 @@ async function openStudy(view: 'home' | 'apps' | 'strict' | 'quiet' | 'permissio
 
 async function refreshPermissions() {
   try {
-    permissions.value = await permissionStatus()
+    const next = await permissionStatus()
+    permissions.value = {
+      ...permissions.value,
+      ...next,
+    }
+    if (pendingBatteryFeedback.value && next.batteryOptimizationIgnored) {
+      pendingBatteryFeedback.value = false
+      app.notify('已允许后台运行')
+    }
   } catch {}
 }
 function onVisible() {
@@ -127,8 +147,18 @@ onMounted(() => {
   void refreshPermissions()
   window.addEventListener('focus', onVisible)
   document.addEventListener('visibilitychange', onVisible)
+  if (native) {
+    void CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void refreshPermissions()
+    }).then((handle) => {
+      if (disposed) void handle.remove()
+      else appStateListener = handle
+    })
+  }
 })
 onBeforeUnmount(() => {
+  disposed = true
+  void appStateListener?.remove()
   window.removeEventListener('focus', onVisible)
   document.removeEventListener('visibilitychange', onVisible)
 })
@@ -256,6 +286,17 @@ async function openAlarms() {
     await openAlarmSettings()
     await refreshPermissions()
   } catch (e) {
+    app.notify(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function openBatteryOptimization() {
+  pendingBatteryFeedback.value = !permissions.value.batteryOptimizationIgnored
+  try {
+    await openBatteryOptimizationSettings()
+    await refreshPermissions()
+  } catch (e) {
+    pendingBatteryFeedback.value = false
     app.notify(e instanceof Error ? e.message : String(e))
   }
 }
@@ -399,7 +440,7 @@ async function openAlarms() {
         </button>
         <p class="field-help">专注免打扰在「学霸模式→免打扰」。</p>
         <template v-if="native">
-          <h3 class="settings-section-label">系统提醒</h3>
+          <h3 class="settings-section-label">系统提醒与后台</h3>
           <div class="settings-group">
             <button type="button" class="settings-row" @click="enableNotifications">
               <span class="row"><Icon name="bell" :size="20" />通知权限</span>
@@ -410,11 +451,30 @@ async function openAlarms() {
             <button type="button" class="settings-row" @click="openAlarms">
               <span class="row"><Icon name="clock" :size="20" />准时提醒</span>
               <span class="row settings-value">
-                {{ permissions.exactAlarms ? '已允许' : '系统设置' }}<Icon name="right" :size="16" />
+                {{ permissions.exactAlarms ? '已允许' : '去设置' }}<Icon name="right" :size="16" />
+              </span>
+            </button>
+            <button type="button" class="settings-row" @click="openBatteryOptimization">
+              <span class="row settings-row-lead">
+                <Icon name="battery" :size="20" />
+                <span class="settings-row-copy">
+                  <span>后台运行不限制</span>
+                  <small>减少锁屏后专注保护与提醒被系统暂停</small>
+                </span>
+              </span>
+              <span
+                class="row"
+                :class="permissions.batteryOptimizationIgnored ? 'settings-value-ok' : 'settings-value'"
+              >
+                <Icon v-if="permissions.batteryOptimizationIgnored" name="check" :size="14" />
+                {{ permissions.batteryOptimizationIgnored ? '已放行' : '去放行' }}
+                <Icon v-if="!permissions.batteryOptimizationIgnored" name="right" :size="16" />
               </span>
             </button>
           </div>
-          <p class="field-help">日程和课程的提醒可以单独设置。关闭系统提醒不影响专注记录。</p>
+          <p class="field-help">
+            日程和课程的提醒可以单独设置；不放行后台优化也可正常计时。
+          </p>
         </template>
         <button type="button" class="primary wide" @click="closeSheet">完成</button>
       </div>
@@ -508,15 +568,15 @@ async function openAlarms() {
                   <h3 id="latest-release-title">最近更新</h3>
                   <time datetime="2026-11-23">2026.11.23</time>
                 </div>
-                <p class="release-name">v0.2.10 <span>交互精简、窄屏适配与状态防误触</span></p>
+                <p class="release-name">v0.2.13 <span>启动自动查更新、前台保活与后台运行授权</span></p>
                 <ul class="release-changes">
-                  <li>全页面贯彻单层弹窗与三层渐进披露，去除主屏工程状态词并支持高频操作 2 步直达。</li>
-                  <li>优化专注结果页情绪与休息出口、待办单区防误触学霸胶囊、独立线性图标及新建待办自动聚焦。</li>
-                  <li>修复日历起止时间窄屏截断与 320px 周条溢出，提升选中态对比度，并精简统计日视图与权限诊断展示。</li>
+                  <li>每次冷启动在后台静默检查更新；点「稍后再说」同一版本不再打扰，下载支持收起后台继续。</li>
+                  <li>新增 Android 专注/锁机前台保活服务（复用专注状态通知）与「后台运行不限制」一键设置及品牌指引。</li>
+                  <li>优化单段原生猫头开屏节奏，并打磨更新与权限设置界面的冷静克制体验。</li>
                 </ul>
                 <a
                   class="about-link"
-                  href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.10"
+                  href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.13"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -608,10 +668,23 @@ async function openAlarms() {
 .settings-row .row {
   gap: 12px;
 }
+.settings-row-lead {
+  flex: 1;
+  min-width: 0;
+}
 .settings-value {
   font-size: 12px;
   color: var(--muted-surface);
   white-space: nowrap;
+  flex-shrink: 0;
+}
+.settings-value-ok {
+  font-size: 12px;
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  gap: 4px !important;
 }
 .settings-row > svg {
   color: var(--muted-surface);

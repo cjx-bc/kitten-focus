@@ -29,6 +29,13 @@ vi.mock('vue-router', () => ({ useRouter: () => mocks.router }))
 vi.mock('../src/platform/bridge', () => ({
   native: false,
   requestNotifications: mocks.requestNotifications,
+  permissionStatus: vi.fn(async () => ({
+    notifications: false,
+    exactAlarms: false,
+    batteryOptimizationIgnored: false,
+    foregroundServiceActive: false,
+  })),
+  openBatteryOptimizationSettings: vi.fn(),
   protectionDriver: {
     status: mocks.protection,
     openSettings: mocks.protectionOpenSettings,

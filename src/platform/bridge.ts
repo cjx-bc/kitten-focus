@@ -23,6 +23,13 @@ import { isMasterFocusLockActive, resolveEffectiveProtection } from '../domain/p
 import { elapsed, settle } from '../domain/focus'
 import { makeRest, readRest, REST_DURATION_MS } from '../domain/rest'
 
+export interface SystemPermissions {
+  notifications: boolean
+  exactAlarms: boolean
+  batteryOptimizationIgnored?: boolean
+  foregroundServiceActive?: boolean
+}
+
 interface NativeBridge {
   resolveMainEntry(options: { path: string }): Promise<{ path: string }>
   startLock(options: { configurationId: string; strictLockConfirmed: boolean }): Promise<LockSnapshot>
@@ -57,9 +64,10 @@ interface NativeBridge {
   consumeRecoveryReturn(): Promise<{ requested: boolean }>
   exportFile(options: { text: string; name: string }): Promise<void>
   importFile(): Promise<{ text: string }>
-  permissions(): Promise<{ notifications: boolean; exactAlarms: boolean }>
+  permissions(): Promise<SystemPermissions>
   requestNotifications(): Promise<{ notifications: boolean }>
   openAlarmSettings(): Promise<void>
+  openBatteryOptimizationSettings(): Promise<void>
   syncReminders(): Promise<void>
 }
 export const native = Capacitor.isNativePlatform()
@@ -262,11 +270,20 @@ export async function exportFile(text: string, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 export const importNativeFile = () => plugin.importFile()
-export const permissionStatus = () =>
-  native ? plugin.permissions() : Promise.resolve({ notifications: false, exactAlarms: false })
+export const permissionStatus = (): Promise<SystemPermissions> =>
+  native
+    ? plugin.permissions()
+    : Promise.resolve({
+        notifications: false,
+        exactAlarms: false,
+        batteryOptimizationIgnored: false,
+        foregroundServiceActive: false,
+      })
 export const requestNotifications = () =>
   native ? plugin.requestNotifications() : Promise.resolve({ notifications: false })
 export const openAlarmSettings = () => plugin.openAlarmSettings()
+export const openBatteryOptimizationSettings = () =>
+  native ? plugin.openBatteryOptimizationSettings() : Promise.resolve()
 export const syncReminders = () => (native ? plugin.syncReminders() : Promise.resolve())
 
 export const protectionDriver = {

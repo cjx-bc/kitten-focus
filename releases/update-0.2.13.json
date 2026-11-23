@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 19,
+    "versionName": "0.2.13",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.13/xiaomao-focus-0.2.13-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.13/xiaomao-focus-0.2.13-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.13-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.13/xiaomao-focus-0.2.13-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.13-debug.apk"
+    ],
+    "size": 4871742,
+    "sha256": "74413f4c6c45b378bbb2e77ed974de2e41e71ed8baaafeb8a58cf5aaefb3be18",
+    "notes": "每次启动自动静默检查更新（点「稍后再说」同版本不再弹窗打扰，仍保留「我的」入口随时检查，下载支持收起后在后台继续）；新增 Android 专注/锁机期间前台保活服务（直接复用现有专注状态通知）及「后台运行不限制」一键放行与各品牌防清理指引，并优化更新和权限页面排版，使用更平静克制。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

@@ -8,12 +8,18 @@ import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
 import Sheet from './components/Sheet.vue'
 import RecoverySheet from './components/RecoverySheet.vue'
+import UpdateSettings from './components/UpdateSettings.vue'
 import { waitForDialogClose } from './components/sheetClose'
 import { createTabSwipe } from './navigation/tabSwipe'
 import { isStudyFocusSafePath, isStudySessionLocked } from './navigation/mainEntry'
+import { shouldAutoPromptUpdate, readDismissedUpdateCode, saveDismissedUpdateCode } from './domain/updatePrompt'
 import { useUpdates } from './stores/updates'
 const app = useApp(),
   recoveryOpen = ref(false),
+  updatePromptOpen = ref(false),
+  promptedReleaseCode = ref<number | null>(null),
+  dismissedReleaseCode = ref<number | null>(readDismissedUpdateCode()),
+  updatePromptBusy = ref(false),
   toastEl = ref<HTMLElement | null>(null),
   updates = useUpdates(),
   route = useRoute(),
@@ -60,11 +66,60 @@ const swipe = createTabSwipe({
   isBlocked: () => !app.ready || isStudySessionLocked(app.focus.session),
   navigate: (path) => void router.replace(path),
 })
+function maybeOpenUpdatePrompt() {
+  const releaseCode = updates.state?.release?.versionCode ?? null
+  if (
+    shouldAutoPromptUpdate({
+      native,
+      ready: app.ready,
+      releaseCode,
+      promptedCode: promptedReleaseCode.value,
+      dismissedCode: dismissedReleaseCode.value,
+      hasActiveSession: Boolean(app.focus.session || app.rest.session || app.lock.session),
+      isFullscreenRoute: full.value,
+      hasOpenDialog:
+        typeof document !== 'undefined' && document.querySelectorAll('dialog[open]').length > 0,
+      recoveryOpen: recoveryOpen.value,
+      strictConfirmationOpen: Boolean(app.strictConfirmation),
+    })
+  ) {
+    promptedReleaseCode.value = releaseCode
+    updatePromptOpen.value = true
+  }
+}
+function dismissUpdatePrompt(persistForVersion: boolean) {
+  updatePromptOpen.value = false
+  const releaseCode = updates.state?.release?.versionCode ?? null
+  if (persistForVersion && releaseCode !== null && releaseCode > 0) {
+    dismissedReleaseCode.value = releaseCode
+    saveDismissedUpdateCode(releaseCode)
+  }
+}
+watch(
+  [() => updates.startupChecked, () => updates.state?.release?.versionCode, () => app.ready],
+  ([checked]) => {
+    if (checked) maybeOpenUpdatePrompt()
+  },
+  { flush: 'post' },
+)
+watch(
+  [() => Boolean(app.focus.session || app.rest.session || app.lock.session), full],
+  ([active, isFull]) => {
+    if (active || isFull) updatePromptOpen.value = false
+  },
+)
+watch(
+  () => app.sheetCloseSignal,
+  () => {
+    updatePromptOpen.value = false
+  },
+)
 let recoveryPreemptPromise: Promise<void> | null = null
 async function openRecoveryPreempting() {
   if (recoveryOpen.value) return
   if (recoveryPreemptPromise) return recoveryPreemptPromise
   recoveryPreemptPromise = (async () => {
+    updatePromptOpen.value = false
     if (app.strictConfirmation) app.confirmStrictStart(false)
     app.requestCloseSheets()
     await waitForDialogClose(220)
@@ -95,11 +150,15 @@ function scheduleSplashReady() {
     notifyNativeSplashReady()
   }
 }
+const onCloseSheets = () => {
+  updatePromptOpen.value = false
+}
 onMounted(async () => {
   window.addEventListener('open-recovery', onOpenRecovery)
   window.addEventListener('recovery-return-request', onRecoveryReturnRequest)
   window.addEventListener('focus-return-request', onFocusReturnRequest)
   window.addEventListener('lock-return-request', onLockReturnRequest)
+  window.addEventListener('ux-close-sheets', onCloseSheets)
   try {
     await app.init()
     if (await consumeFocusReturn()) {
@@ -143,6 +202,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('recovery-return-request', onRecoveryReturnRequest)
   window.removeEventListener('focus-return-request', onFocusReturnRequest)
   window.removeEventListener('lock-return-request', onLockReturnRequest)
+  window.removeEventListener('ux-close-sheets', onCloseSheets)
 })
 </script>
 <template>
@@ -189,6 +249,19 @@ onBeforeUnmount(() => {
           <button type="button" class="primary" @click="app.confirmStrictStart(true)">确认开始</button>
         </div>
       </div>
+    </Sheet><Sheet
+      :open="updatePromptOpen"
+      :title="updates.state?.phase === 'ready' ? '更新已就绪' : '发现新版本'"
+      :close-disabled="updatePromptBusy"
+      @close="dismissUpdatePrompt(updates.state?.phase !== 'downloading')"
+    >
+      <UpdateSettings
+        view="about"
+        compact
+        @busy-change="updatePromptBusy = $event"
+        @dismiss="dismissUpdatePrompt(true)"
+        @hide="dismissUpdatePrompt(false)"
+      />
     </Sheet><RecoverySheet :open="recoveryOpen" @close="recoveryOpen = false" /><Transition name="toast"
       ><div v-if="app.toast" ref="toastEl" popover="manual" class="toast" role="status">{{ app.toast }}</div></Transition
     >

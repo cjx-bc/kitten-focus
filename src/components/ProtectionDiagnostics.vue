@@ -4,18 +4,45 @@ import { App } from '@capacitor/app'
 import type { PluginListenerHandle } from '@capacitor/core'
 import { useApp } from '../stores/app'
 import { defaultProtection } from '../domain/model'
-import { native, protectionDriver, requestNotifications } from '../platform/bridge'
+import {
+  native,
+  openBatteryOptimizationSettings,
+  permissionStatus,
+  protectionDriver,
+  requestNotifications,
+  type SystemPermissions,
+} from '../platform/bridge'
 import { dndDriver } from '../platform/dnd'
 import { notificationDriver } from '../platform/notifications'
 import { readProtectionDiagnostics, protectionStateLabels, type CapabilityDiagnostic, type ProtectionDiagnostics } from '../platform/protectionDiagnostics'
 import Sheet from './Sheet.vue'
 const app = useApp(), result = ref<ProtectionDiagnostics>(), busy = ref(false), rebindBusy = ref(false), error = ref(''), checkedAt = ref('')
+const sysPerm = ref<SystemPermissions>({
+  notifications: false,
+  exactAlarms: false,
+  batteryOptimizationIgnored: false,
+  foregroundServiceActive: false,
+})
 const permission = ref<CapabilityDiagnostic['settings']>()
 let interval: ReturnType<typeof setInterval> | undefined, listener: PluginListenerHandle | undefined, disposed = false
 async function refresh() {
   if (busy.value) return
   busy.value = true; error.value = ''
-  try { result.value = await readProtectionDiagnostics(app.data.preferences.protection ?? defaultProtection()); checkedAt.value = new Date().toLocaleTimeString() }
+  try {
+    const [diagRes, permRes] = await Promise.allSettled([
+      readProtectionDiagnostics(app.data.preferences.protection ?? defaultProtection()),
+      permissionStatus(),
+    ])
+    if (diagRes.status === 'fulfilled') {
+      result.value = diagRes.value
+    } else {
+      throw diagRes.reason
+    }
+    if (permRes.status === 'fulfilled' && permRes.value) {
+      sysPerm.value = { ...sysPerm.value, ...permRes.value }
+    }
+    checkedAt.value = new Date().toLocaleTimeString()
+  }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
@@ -32,6 +59,15 @@ async function rebindNotifications() {
     rebindBusy.value = false
   }
   await refresh()
+}
+async function openBattery() {
+  error.value = ''
+  try {
+    await openBatteryOptimizationSettings()
+    await refresh()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
 }
 function visible() { if (!document.hidden) void refresh() }
 async function authorize() {
@@ -101,6 +137,31 @@ onBeforeUnmount(() => {
         >{{ rebindBusy ? '正在重连通知监听…' : '重连通知监听' }}</button>
         <button v-if="native && row.supported && row.settings" type="button" class="secondary wide" @click="permission = row.settings">查看用途与系统授权</button>
         <RouterLink v-if="row.recoveryPending" class="secondary wide" to="/recovery">查看恢复清单与重试</RouterLink>
+      </div>
+    </details>
+    <details class="capability" data-capability="backgroundKeepAlive">
+      <summary>
+        <span>后台运行与电池优化<small v-if="!native" class="support-note">仅 Android 本机可用</small></span>
+        <span class="capability-state">{{
+          !native ? '不支持' : sysPerm.batteryOptimizationIgnored ? '已放行' : '未放行'
+        }}</span>
+      </summary>
+      <div class="capability-body">
+        <p>专注或锁机进行中启动前台保活服务并复用专注通知，结束即停。电池优化放行用于减少锁屏后后台与提醒被系统暂停。</p>
+        <dl>
+          <div>
+            <dt>电池优化白名单</dt>
+            <dd>{{ !native ? '仅 Android 本机' : sysPerm.batteryOptimizationIgnored ? '已放行' : '受省电限制' }}</dd>
+          </div>
+          <div>
+            <dt>专注保活服务</dt>
+            <dd>{{ !native ? '仅 Android 本机' : sysPerm.foregroundServiceActive ? '运行中（复用专注通知）' : '待专注或锁机启动' }}</dd>
+          </div>
+        </dl>
+        <p class="surface-help">可降低后台被系统回收概率，但不承诺免疫用户主动强停或激进厂商后台策略。</p>
+        <button v-if="native" type="button" class="secondary wide" :disabled="busy" @click="openBattery">
+          前往系统电池优化设置
+        </button>
       </div>
     </details>
     <p v-if="result" class="field-help">{{ result.identity }}</p>
