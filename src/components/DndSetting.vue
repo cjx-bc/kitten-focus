@@ -165,7 +165,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .dnd-setting { gap: 10px; text-align: left; }
 .dnd-setting.compact { gap: 0; }
-.compact-status { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 4px; }
+.compact-status { display: block; color: var(--muted-surface); font-size: 12px; font-weight: 400; margin-top: 4px; }
 .dnd-actions:empty { display: none; }
 .dnd-status { padding: 12px 0; }
 .dnd-status strong { font-size: 13px; font-weight: 500; }

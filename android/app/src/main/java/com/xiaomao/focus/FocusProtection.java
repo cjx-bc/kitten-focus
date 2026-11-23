@@ -49,9 +49,24 @@ final class FocusProtection {
     }
 
     static boolean authorized(Context context) {
+        ComponentName own = new ComponentName(context, FocusAccessibilityService.class);
+
+        // The AccessibilityManager list is populated from currently bound services.
+        // During an application/process restart it can be temporarily empty even
+        // though Android has retained the user's grant in its secure settings.
+        // Read that persistent grant first so a reconnecting service is reported as
+        // authorized, while connected() continues to expose the separate runtime
+        // connection state.
+        String enabled = Settings.Secure.getString(
+            context.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (enabled != null) {
+            for (String component : enabled.split(":")) {
+                if (own.equals(ComponentName.unflattenFromString(component))) return true;
+            }
+        }
+
         AccessibilityManager manager = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
         if (manager == null) return false;
-        ComponentName own = new ComponentName(context, FocusAccessibilityService.class);
         for (AccessibilityServiceInfo service : manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)) {
             if (own.equals(ComponentName.unflattenFromString(service.getId()))) return true;
         }

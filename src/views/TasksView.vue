@@ -2,35 +2,56 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
-import type { Theme, FocusItem, Mode } from '../domain/model'
+import type { Theme, FocusItem, Mode, ProtectionStatus } from '../domain/model'
 import { uid, THEME_COLORS } from '../domain/model'
 import { dateKey, duration, readableDate, timer, weekdayName } from '../domain/dates'
 import { todaySummary } from '../domain/statistics'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
-import ConfirmationDialog from '../components/ConfirmationDialog.vue'
-import { useConfirmation } from '../components/useConfirmation'
+import { waitForDialogClose } from '../components/sheetClose'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
 import AppWhitelistEditor from '../components/AppWhitelistEditor.vue'
 import { protectionDriver } from '../platform/bridge'
-import type { ProtectionStatus } from '../domain/model'
-import { studyDisplay } from '../domain/protectionDisplay'
-const { confirmation, confirm, resolveConfirmation } = useConfirmation()
+import { studyCapsuleDisplay } from '../domain/protectionDisplay'
+import {
+  classifyStartError,
+  getUnreadyProtectionIds,
+  isCancelledStartError,
+  type StartErrorKind,
+} from '../domain/startRecovery'
+
+type TasksSheet = 'theme' | 'removeTheme' | 'item' | 'itemWhitelist' | 'free' | 'startError' | null
+type StudyInitialView =
+  | 'home'
+  | 'apps'
+  | 'whitelist'
+  | 'strict'
+  | 'wallpaperConsent'
+  | 'quiet'
+  | 'permissions'
+  | 'permissionGuide'
+
 const app = useApp(),
   router = useRouter(),
-  sheet = ref<'theme' | 'item' | 'free' | 'removeTheme' | null>(null),
+  sheet = ref<TasksSheet>(null),
   formError = ref(''),
   busy = ref(false),
-  studyOpen = ref(false)
+  studyOpen = ref(false),
+  studyInitialView = ref<StudyInitialView>('home')
 const protectionState = ref<ProtectionStatus | null>(null)
-const protectionReadFailed = ref(false)
 let protectionRevision = 0
-const itemWhitelistOpen = ref(false)
-const itemWhitelistExpanded = ref(false)
-const itemNoteExpanded = ref(false)
+const itemMoreExpanded = ref(false)
+const itemDeleteConfirm = ref(false)
 const newThemeMode = ref(false)
 const newThemeName = ref('')
 const deleteChoice = ref<'move' | 'delete' | null>(null)
+const startError = ref<{
+  message: string
+  kind: StartErrorKind
+  item: FocusItem | null
+  requestedMode?: Mode
+  requestedMinutes?: number
+} | null>(null)
 const defaultMinutes = computed(() => app.data.preferences.defaultMinutes || 25)
 const itemPackages = computed(() => itemForm.whitelist?.source === 'custom' ? itemForm.whitelist.packages : app.data.preferences.protection?.globalWhitelist ?? [])
 function setItemWhitelist(source: 'global' | 'custom') {
@@ -53,17 +74,31 @@ const blocker = computed(() =>
 function isCurrentFocusItem(item: FocusItem) {
   return app.focus.session?.itemId === item.id
 }
-const activeProtection = computed(() => app.focus?.session?.protection ?? app.lock?.session?.protection)
-const studyEntry = computed(() => studyDisplay(app.data.preferences.protection?.study === true,
-  activeProtection.value?.study === true, activeProtection.value?.applicationsWithdrawn === true,
-  protectionState.value, protectionReadFailed.value))
+const studyCapsule = computed(() =>
+  studyCapsuleDisplay(app.data.preferences.protection, protectionState.value),
+)
+const studyCapsuleAriaLabel = computed(() => {
+  if (studyCapsule.value.tone === 'warning') return '学霸模式待授权，点击处理权限'
+  return studyCapsule.value.masterOn ? '学霸模式已开启，点击配置或关闭' : '学霸模式未开启，点击开启或配置'
+})
+function openStudyConfig(initialView: StudyInitialView = 'home') {
+  studyInitialView.value = initialView
+  studyOpen.value = true
+}
+function openStudyFromCapsule() {
+  openStudyConfig(studyCapsule.value.tone === 'warning' ? 'permissions' : 'home')
+}
 async function refreshProtection() {
   const revision = ++protectionRevision
   try {
     const value = await protectionDriver.status()
-    if (revision === protectionRevision) { protectionState.value = value; protectionReadFailed.value = false }
+    if (revision === protectionRevision) {
+      protectionState.value = value
+    }
   } catch {
-    if (revision === protectionRevision) { protectionState.value = null; protectionReadFailed.value = true }
+    if (revision === protectionRevision) {
+      protectionState.value = null
+    }
   }
 }
 function syncToday() {
@@ -122,6 +157,33 @@ const removeThemeButtonText = computed(() => {
   if (deleteChoice.value === 'delete') return `删除主题和 ${removingCount.value} 个待办`
   return '请选择待办的去向'
 })
+const sheetTitle = computed(() => {
+  if (sheet.value === 'theme') return isEditingTheme.value ? '编辑主题' : '新建主题'
+  if (sheet.value === 'removeTheme') return '删除主题'
+  if (sheet.value === 'item') return savedItem.value ? '编辑待办' : '新建待办'
+  if (sheet.value === 'itemWhitelist') return '子待办独立白名单'
+  if (sheet.value === 'free') return '自由专注'
+  if (sheet.value === 'startError') return '无法开始专注'
+  return ''
+})
+const sheetBackLabel = computed(() => {
+  if (sheet.value === 'removeTheme') return '编辑主题'
+  if (sheet.value === 'itemWhitelist') return savedItem.value ? '编辑待办' : '新建待办'
+  return undefined
+})
+function onSheetBack() {
+  if (busy.value) return
+  formError.value = ''
+  if (sheet.value === 'removeTheme') sheet.value = 'theme'
+  else if (sheet.value === 'itemWhitelist') sheet.value = 'item'
+}
+function closeSheet() {
+  if (busy.value) return
+  sheet.value = null
+  itemDeleteConfirm.value = false
+  formError.value = ''
+  startError.value = null
+}
 function openTheme(theme?: Theme) {
   Object.assign(
     themeForm,
@@ -140,12 +202,11 @@ function openTheme(theme?: Theme) {
 }
 function openItem(themeId: string, item?: FocusItem) {
   delete itemForm.whitelist
-  itemWhitelistOpen.value = false
-  itemWhitelistExpanded.value = false
-  itemNoteExpanded.value = false
-  newThemeName.value = ''
+  itemMoreExpanded.value = false
+  itemDeleteConfirm.value = false
   if (item) {
     newThemeMode.value = false
+    newThemeName.value = ''
     Object.assign(itemForm, {
       id: item.id,
       themeId: item.themeId,
@@ -162,6 +223,7 @@ function openItem(themeId: string, item?: FocusItem) {
     }
   } else {
     newThemeMode.value = !app.themes.length
+    newThemeName.value = !app.themes.length ? '日常学习' : ''
     Object.assign(itemForm, {
       id: uid(),
       themeId: themeId || app.themes[0]?.id || '',
@@ -185,24 +247,50 @@ function onItemThemeSelect(event: Event) {
     itemForm.themeId = value
   }
 }
-async function submitItem() {
+function openItemWhitelist() {
+  formError.value = ''
+  sheet.value = 'itemWhitelist'
+}
+function onConfirmItemWhitelist(packages: string[]) {
+  itemForm.whitelist = { source: 'custom', packages }
+  sheet.value = 'item'
+}
+function onItemFormSubmit() {
+  void submitItem(!savedItem.value && !blocker.value)
+}
+async function submitItem(startAfter = false) {
+  if (busy.value) return
   const payload: FocusItem = {
     ...itemForm,
     title: itemForm.title.trim(),
     minutes: Number(itemForm.minutes),
   }
-  if (newThemeMode.value || !app.themes.length) {
-    await execute(() =>
-      app.saveItemWithNewTheme(
+  busy.value = true
+  formError.value = ''
+  try {
+    if (newThemeMode.value || !app.themes.length) {
+      await app.saveItemWithNewTheme(
         {
           name: newThemeName.value.trim(),
           color: THEME_COLORS[app.themes.length % THEME_COLORS.length]!,
         },
         payload,
-      ),
-    )
-  } else {
-    await execute(() => app.saveItem(payload))
+      )
+    } else {
+      await app.saveItem(payload)
+    }
+    const created = app.items.find((i) => i.id === payload.id) ?? payload
+    sheet.value = null
+    itemDeleteConfirm.value = false
+    busy.value = false
+    if (startAfter) {
+      await waitForDialogClose()
+      await begin(created)
+    }
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
   }
 }
 async function reorder(kind: 'theme' | 'item', id: string, direction: number) {
@@ -229,12 +317,8 @@ async function execute(operation: () => Promise<unknown>) {
     busy.value = false
   }
 }
-async function begin(item: FocusItem | null, requestedMode?: Mode, requestedMinutes?: number) {
+async function runStart(item: FocusItem | null, requestedMode?: Mode, requestedMinutes?: number) {
   if (busy.value) return
-  if (blocker.value) {
-    app.notify(blocker.value.text)
-    return
-  }
   busy.value = true
   try {
     if (requestedMode !== undefined) await app.start(item, requestedMode, requestedMinutes)
@@ -242,13 +326,33 @@ async function begin(item: FocusItem | null, requestedMode?: Mode, requestedMinu
     await router.push('/focus')
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
-    if (message !== '已取消开始专注') app.notify(message)
-    if (app.focus.session) await router.push('/focus')
-    else if (app.rest.session) await router.push('/rest')
-    else if (app.lock.session) await router.push('/lock')
+    if (!isCancelledStartError(message)) {
+      if (app.focus.session) await router.push('/focus')
+      else if (app.rest.session) await router.push('/rest')
+      else if (app.lock.session) await router.push('/lock')
+      else {
+        startError.value = {
+          message,
+          kind: classifyStartError(message),
+          item,
+          requestedMode,
+          requestedMinutes,
+        }
+        formError.value = ''
+        sheet.value = 'startError'
+      }
+    }
   } finally {
     busy.value = false
   }
+}
+async function begin(item: FocusItem | null, requestedMode?: Mode, requestedMinutes?: number) {
+  if (busy.value) return
+  if (blocker.value) {
+    app.notify(blocker.value.text)
+    return
+  }
+  await runStart(item, requestedMode, requestedMinutes)
 }
 function onTaskCardClick(item: FocusItem) {
   if (isCurrentFocusItem(item)) {
@@ -266,18 +370,16 @@ function startDefaultFree() {
 }
 async function startFree() {
   if (busy.value) return
-  busy.value = true
-  formError.value = ''
-  try {
-    await app.start(null, freeForm.mode, Number(freeForm.minutes))
-    sheet.value = null
-    await router.push('/focus')
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    formError.value = message === '已取消开始专注' ? '' : message
-  } finally {
-    busy.value = false
+  const minutes = Number(freeForm.minutes)
+  if (freeForm.mode === 'countdown' && (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes))) {
+    formError.value = '请填写正整数分钟'
+    return
   }
+  const mode = freeForm.mode
+  formError.value = ''
+  sheet.value = null
+  await waitForDialogClose()
+  await runStart(null, mode, minutes)
 }
 function openFree() {
   if (blocker.value) {
@@ -288,10 +390,50 @@ function openFree() {
   formError.value = ''
   sheet.value = 'free'
 }
-async function deleteItem() {
+async function goRecoveryFromStartError() {
+  if (busy.value) return
+  sheet.value = null
+  startError.value = null
+  await waitForDialogClose()
+  await router.push('/recovery')
+}
+async function openStudyFromStartError() {
+  if (busy.value) return
+  sheet.value = null
+  startError.value = null
+  await waitForDialogClose()
+  openStudyConfig('permissions')
+}
+async function clearUnreadyAndRetry() {
+  const pending = startError.value
+  if (!pending || busy.value) return
+  busy.value = true
+  formError.value = ''
+  try {
+    const ids = await getUnreadyProtectionIds(app.data.preferences.protection)
+    if (!ids.length) {
+      sheet.value = null
+      startError.value = null
+      await waitForDialogClose()
+      openStudyConfig('permissions')
+      return
+    }
+    await app.clearUnreadyProtections(ids, true)
+    sheet.value = null
+    startError.value = null
+    await waitForDialogClose()
+    busy.value = false
+    await runStart(pending.item, pending.requestedMode, pending.requestedMinutes)
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+async function confirmDeleteItem() {
   const id = itemForm.id
-  if (!(await confirm('删除这个待办？历史专注记录会保留。'))) return
   await execute(() => app.removeItem(id))
+  itemDeleteConfirm.value = false
 }
 function removeTheme() {
   deleteChoice.value = null
@@ -314,41 +456,58 @@ function toggleTheme(theme: Theme) {
 </script>
 <template>
   <div class="page tasks-page">
-    <ConfirmationDialog :request="confirmation" @resolve="resolveConfirmation" />
     <header class="page-header">
       <div class="task-title">
         <h1>待办</h1>
-        <button class="study-entry" aria-haspopup="dialog" :aria-expanded="studyOpen"
-          :aria-label="'学霸模式，' + studyEntry.text"
-          @click="studyOpen = true">
-          <span class="study-chip" :data-tone="studyEntry.tone">学霸模式<span class="study-entry-state" role="status">· {{ studyEntry.text }}</span><Icon name="down" :size="12" /></span>
+        <button
+          type="button"
+          class="study-capsule"
+          :data-tone="studyCapsule.tone"
+          data-decision-group
+          :aria-label="studyCapsuleAriaLabel"
+          aria-haspopup="dialog"
+          :aria-expanded="studyOpen"
+          :disabled="busy"
+          @click="openStudyFromCapsule"
+        >
+          <Icon name="shield" :size="15" class="study-shield" />
+          <span class="study-label">{{ studyCapsule.text }}</span>
+          <Icon name="right" :size="14" class="study-chevron" />
         </button>
       </div>
       <div class="actions">
-        <button class="icon-button" aria-label="自由专注" :aria-disabled="blocker ? 'true' : undefined" @click="openFree">
-          <Icon name="clock" /></button
-        ><button class="icon-button soft" aria-label="新建主题" @click="openTheme()">
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="自由专注"
+          :aria-disabled="blocker ? 'true' : undefined"
+          @click="openFree"
+        >
+          <Icon name="timer" /></button
+        ><button type="button" class="icon-button soft" aria-label="新建主题" @click="openTheme()">
           <Icon name="plus" />
         </button>
       </div>
     </header>
-    <StudyModeSheet v-if="studyOpen" :open="studyOpen" @close="studyOpen = false" />
-    <AppWhitelistEditor :open="itemWhitelistOpen && sheet === 'item'" title="子待办独立白名单" :packages="itemPackages"
-      @close="itemWhitelistOpen = false" @confirm="(packages) => { itemForm.whitelist = { source: 'custom', packages }; itemWhitelistOpen = false }" />
+    <StudyModeSheet
+      :open="studyOpen"
+      :initial-view="studyInitialView"
+      @close="studyOpen = false"
+    />
     <div class="daily-line">
       <span>{{ readableDate(today) }} {{ weekdayName(today) }}</span
       ><span
         >今日专注 <strong class="number">{{ duration(todayStats.totalMs) }}</strong></span
       >
     </div>
-    <button v-if="app.lock.session" class="ongoing" @click="router.push('/lock')">
+    <button v-if="app.lock.session" class="ongoing" data-ux-card @click="router.push('/lock')">
       <span class="row">
-        <Icon name="clock" />
+        <Icon name="lock" />
         <span>{{ app.lock.session.title }}<small>锁机进行中 · 返回处理</small></span>
       </span>
       <Icon name="right" :size="18" />
     </button>
-    <button v-if="app.focus.session" class="ongoing" @click="router.push('/focus')">
+    <button v-if="app.focus.session" class="ongoing" data-ux-card @click="router.push('/focus')">
       <span class="row"
         ><span class="status-dot" /><span
           >返回{{ app.focus.session.title
@@ -359,7 +518,12 @@ function toggleTheme(theme: Theme) {
         ><Icon name="right" :size="18"
       /></span>
     </button>
-    <button v-if="app.rest.session?.state === 'running'" class="ongoing" @click="router.push('/rest')">
+    <button
+      v-if="app.rest.session?.state === 'running'"
+      class="ongoing"
+      data-ux-card
+      @click="router.push('/rest')"
+    >
       <span class="row"
         ><span class="status-dot" /><span
           >{{ app.rest.session.record.title
@@ -370,7 +534,6 @@ function toggleTheme(theme: Theme) {
         ><Icon name="right" :size="18"
       /></span>
     </button>
-    <p v-if="blocker" class="blocker-hint" role="status">{{ blocker.text }}</p>
     <section v-for="theme in app.themes" :key="theme.id" class="theme-section">
       <header class="theme-header">
         <button
@@ -387,14 +550,14 @@ function toggleTheme(theme: Theme) {
         </button>
         <div class="row theme-actions">
           <button
-            class="icon-button small"
+            class="icon-button"
             :aria-label="'在' + theme.name + '下添加待办'"
             @click="openItem(theme.id)"
           >
             <Icon name="plus" :size="19" />
           </button>
           <button
-            class="icon-button small"
+            class="icon-button"
             :aria-label="'编辑主题' + theme.name"
             @click="openTheme(theme)"
           >
@@ -485,24 +648,16 @@ function toggleTheme(theme: Theme) {
       </div>
       <p class="empty-example">例如「英语 → 背单词」，以后每天点它就能开始</p>
     </div>
-    <template v-else>
-      <button class="add-theme" @click="openTheme()">
-        <Icon name="plus" :size="17" />新建主题
-      </button>
-      <button
-        class="free-focus secondary wide"
-        :aria-disabled="blocker ? 'true' : undefined"
-        @click="openFree"
-      >
-        <Icon name="clock" :size="18" />自由专注
-      </button>
-    </template>
     <Sheet
-      :open="sheet === 'theme'"
-      :title="isEditingTheme ? '编辑主题' : '新建主题'"
+      :open="sheet !== null"
+      :title="sheetTitle"
+      :back-label="sheetBackLabel"
       :close-disabled="busy"
-      @close="!busy && (sheet = null)"
-      ><form
+      @back="onSheetBack"
+      @close="closeSheet"
+    >
+      <form
+        v-if="sheet === 'theme'"
         @submit.prevent="
           execute(() => app.saveTheme({ ...themeForm, name: themeForm.name.trim() }))
         "
@@ -523,11 +678,12 @@ function toggleTheme(theme: Theme) {
               type="button"
               class="color-swatch"
               :class="{ active: color === themeForm.color }"
-              :style="{ background: color }"
               :aria-label="color"
               :aria-pressed="color === themeForm.color"
               @click="themeForm.color = color"
-            />
+            >
+              <span class="color-swatch-dot" :style="{ background: color }" aria-hidden="true" />
+            </button>
           </div>
         </fieldset>
         <div v-if="isEditingTheme" class="row between">
@@ -562,219 +718,8 @@ function toggleTheme(theme: Theme) {
         >
           删除主题
         </button>
-      </form></Sheet
-    >
-    <Sheet
-      :open="sheet === 'item'"
-      :title="savedItem ? '编辑待办' : '新建待办'"
-      :close-disabled="busy"
-      @close="!busy && (sheet = null)"
-      ><form class="item-form" @submit.prevent="submitItem">
-        <label
-          >待办名称<input
-            v-model="itemForm.title"
-            placeholder="例如：背单词"
-            maxlength="120"
-            required /></label
-        >
-        <fieldset>
-          <legend class="sr-only">计时方式</legend>
-          <div class="segmented">
-            <button
-              type="button"
-              :class="{ active: itemForm.mode === 'countdown' }"
-              :aria-pressed="itemForm.mode === 'countdown'"
-              @click="itemForm.mode = 'countdown'"
-            >
-              倒计时</button
-            ><button
-              type="button"
-              :class="{ active: itemForm.mode === 'stopwatch' }"
-              :aria-pressed="itemForm.mode === 'stopwatch'"
-              @click="itemForm.mode = 'stopwatch'"
-            >
-              正计时
-            </button>
-          </div>
-        </fieldset>
-        <div v-if="itemForm.mode === 'countdown'" class="item-duration">
-          <label for="item-minutes">专注时长（分钟）</label>
-          <div class="duration-controls">
-            <input id="item-minutes" v-model.number="itemForm.minutes" type="number" min="1" step="1" required />
-            <div class="chip-row">
-              <button
-                v-for="m in [25, 45, 60]"
-                :key="m"
-                type="button"
-                class="chip"
-                :class="{ active: itemForm.minutes === m }"
-                :aria-pressed="itemForm.minutes === m"
-                :aria-label="m + ' 分钟'"
-                @click="itemForm.minutes = m"
-              >
-                {{ m }}
-              </button>
-            </div>
-          </div>
-        </div>
-        <label v-if="app.themes.length"
-          >所属主题<select :value="newThemeMode ? '' : itemForm.themeId" @change="onItemThemeSelect">
-            <option v-for="theme in app.themes" :key="theme.id" :value="theme.id">
-              {{ theme.name }}
-            </option>
-            <option value="">+ 新建主题…</option>
-          </select></label
-        >
-        <div v-if="!app.themes.length || newThemeMode" class="new-theme-field">
-          <label
-            >{{ app.themes.length ? '新主题名称' : '所属主题' }}<input
-              v-model="newThemeName"
-              placeholder="例如：英语、数学、阅读"
-              maxlength="80"
-              required
-          /></label>
-          <div class="chip-row" aria-label="推荐主题名称">
-            <button
-              v-for="preset in ['英语', '数学', '阅读']"
-              :key="preset"
-              type="button"
-              class="chip"
-              :class="{ active: newThemeName.trim() === preset }"
-              @click="newThemeName = preset"
-            >
-              {{ preset }}
-            </button>
-          </div>
-        </div>
-        <div class="item-options">
-          <button
-            type="button"
-            class="collapse-row"
-            :aria-expanded="itemNoteExpanded"
-            aria-controls="item-note"
-            @click="itemNoteExpanded = !itemNoteExpanded"
-          >
-            <span>备注</span>
-            <span v-if="itemForm.note.trim()" class="option-value">已填写</span>
-            <Icon name="down" :size="16" :class="{ open: itemNoteExpanded }" />
-          </button>
-          <div v-if="itemNoteExpanded" id="item-note" class="option-panel">
-            <textarea v-model="itemForm.note" aria-label="备注" maxlength="1000" />
-          </div>
-          <button
-            type="button"
-            class="collapse-row whitelist-row"
-            :aria-expanded="itemWhitelistExpanded"
-            aria-controls="item-whitelist-panel"
-            @click="itemWhitelistExpanded = !itemWhitelistExpanded"
-          >
-            <span>应用限制</span>
-            <span class="option-value">
-              {{ itemForm.whitelist?.source === 'custom' ? `独立 · ${itemPackages.length} 个应用` : '跟随全局' }}
-            </span>
-            <Icon name="down" :size="16" :class="{ open: itemWhitelistExpanded }" />
-          </button>
-          <fieldset v-if="itemWhitelistExpanded" id="item-whitelist-panel" class="option-panel">
-            <legend class="sr-only">应用白名单</legend>
-            <label class="switch">
-              跟随全局
-              <input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source !== 'custom'" @change="setItemWhitelist('global')" />
-            </label>
-            <label class="switch">
-              独立白名单
-              <input type="radio" name="item-whitelist" :checked="itemForm.whitelist?.source === 'custom'" @change="setItemWhitelist('custom')" />
-            </label>
-            <button v-if="itemForm.whitelist?.source === 'custom'" type="button" class="secondary wide" :disabled="!protectionState?.supported" @click="itemWhitelistOpen = true">编辑独立白名单</button>
-            <details class="whitelist-help">
-              <summary>规则说明</summary>
-              <div class="field-help">
-                <p>跟随全局时，每轮开始使用最新的全局名单。独立白名单会替代全局名单，留空时只放行小猫专注和必要功能。</p>
-                <p>保存后的修改从下一轮专注开始生效。</p>
-              </div>
-            </details>
-          </fieldset>
-        </div>
-        <div v-if="savedItem" class="row between">
-          <span class="muted">{{ savedItemThemeChanged ? '更换主题后，保存再调整顺序' : '调整顺序 · 立即生效' }}</span>
-          <div class="row">
-            <button
-              type="button"
-              class="icon-button soft"
-              aria-label="待办上移"
-              :disabled="busy || savedItemThemeChanged || itemIndex <= 0"
-              @click="reorder('item', itemForm.id, -1)"
-            >
-              <Icon name="up" /></button
-            ><button
-              type="button"
-              class="icon-button soft"
-              aria-label="待办下移"
-              :disabled="busy || savedItemThemeChanged || itemIndex < 0 || itemIndex >= savedItemSiblings.length - 1"
-              @click="reorder('item', itemForm.id, 1)"
-            >
-              <Icon name="arrowDown" />
-            </button>
-          </div>
-        </div>
-        <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
-        <button class="primary wide" :disabled="busy">保存待办</button
-        ><button
-          v-if="savedItem"
-          type="button"
-          class="text-button danger"
-          @click="deleteItem"
-        >
-          删除待办
-        </button>
-      </form></Sheet
-    >
-    <Sheet :open="sheet === 'free'" title="自由专注" :close-disabled="busy" @close="!busy && (sheet = null)"
-      ><form
-        @submit.prevent="startFree"
-      >
-        <div class="segmented">
-          <button
-            type="button"
-            :class="{ active: freeForm.mode === 'countdown' }"
-            @click="freeForm.mode = 'countdown'"
-          >
-            倒计时</button
-          ><button
-            type="button"
-            :class="{ active: freeForm.mode === 'stopwatch' }"
-            @click="freeForm.mode = 'stopwatch'"
-          >
-            正计时
-          </button>
-        </div>
-        <label v-if="freeForm.mode === 'countdown'"
-          >专注时长（分钟）<input
-            v-model.number="freeForm.minutes"
-            type="number"
-            min="1"
-            step="1"
-            required
-          /><span class="chip-row"
-            ><button
-              v-for="m in [25, 45, 60]"
-              :key="m"
-              type="button"
-              class="chip"
-              :class="{ active: freeForm.minutes === m }"
-              @click="freeForm.minutes = m"
-            >
-              {{ m }} 分钟
-            </button></span
-          ></label
-        >
-        <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
-        <button class="primary wide" :disabled="busy">
-          <Icon name="play" :size="18" />开始专注
-        </button>
-      </form></Sheet
-    >
-    <Sheet :open="sheet === 'removeTheme'" title="删除主题" :close-disabled="busy" @close="!busy && (sheet = null)"
-      ><form @submit.prevent="submitRemoveTheme">
+      </form>
+      <form v-else-if="sheet === 'removeTheme'" @submit.prevent="submitRemoveTheme">
         <p>删除“{{ removingThemeName }}”后，历史专注记录仍会保留。</p>
         <template v-if="removingCount > 0">
           <fieldset class="delete-choices">
@@ -820,8 +765,280 @@ function toggleTheme(theme: Theme) {
         >
           {{ removeThemeButtonText }}
         </button>
-      </form></Sheet
-    >
+      </form>
+      <form v-else-if="sheet === 'item'" class="item-form" @submit.prevent="onItemFormSubmit">
+        <label
+          >待办名称<input
+            v-model="itemForm.title"
+            placeholder="例如：背单词"
+            maxlength="120"
+            :autofocus="!savedItem"
+            required /></label
+        >
+        <fieldset class="timing-group">
+          <legend>计时设置</legend>
+          <div class="segmented">
+            <button
+              type="button"
+              :class="{ active: itemForm.mode === 'countdown' }"
+              :aria-pressed="itemForm.mode === 'countdown'"
+              @click="itemForm.mode = 'countdown'"
+            >
+              倒计时</button
+            ><button
+              type="button"
+              :class="{ active: itemForm.mode === 'stopwatch' }"
+              :aria-pressed="itemForm.mode === 'stopwatch'"
+              @click="itemForm.mode = 'stopwatch'"
+            >
+              正计时
+            </button>
+          </div>
+          <div v-if="itemForm.mode === 'countdown'" class="item-duration">
+            <label for="item-minutes">专注时长（分钟）</label>
+            <div class="duration-controls">
+              <input id="item-minutes" v-model.number="itemForm.minutes" type="number" min="1" step="1" required />
+              <div class="chip-row">
+                <button
+                  v-for="m in [25, 45, 60]"
+                  :key="m"
+                  type="button"
+                  class="chip"
+                  :class="{ active: itemForm.minutes === m }"
+                  :aria-pressed="itemForm.minutes === m"
+                  :aria-label="m + ' 分钟'"
+                  @click="itemForm.minutes = m"
+                >
+                  {{ m }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+        <label v-if="app.themes.length"
+          >所属主题<select :value="newThemeMode ? '' : itemForm.themeId" @change="onItemThemeSelect">
+            <option v-for="theme in app.themes" :key="theme.id" :value="theme.id">
+              {{ theme.name }}
+            </option>
+            <option value="">+ 新建主题…</option>
+          </select></label
+        >
+        <div v-if="!app.themes.length || newThemeMode" class="new-theme-field">
+          <label
+            >{{ app.themes.length ? '新主题名称' : '所属主题' }}<input
+              v-model="newThemeName"
+              placeholder="例如：日常学习、英语、数学"
+              maxlength="80"
+              required
+          /></label>
+          <div class="chip-row" aria-label="推荐主题名称">
+            <button
+              v-for="preset in ['日常学习', '英语', '数学', '阅读']"
+              :key="preset"
+              type="button"
+              class="chip"
+              :class="{ active: newThemeName.trim() === preset }"
+              @click="newThemeName = preset"
+            >
+              {{ preset }}
+            </button>
+          </div>
+        </div>
+        <details
+          class="more-settings"
+          data-ux-card
+          :open="itemMoreExpanded"
+          @toggle="itemMoreExpanded = ($event.target as HTMLDetailsElement).open"
+        >
+          <summary class="collapse-row">
+            <span>更多设置（备注 · 独立白名单 · 顺序）</span>
+            <Icon name="down" :size="16" :class="{ open: itemMoreExpanded }" />
+          </summary>
+          <div class="more-settings-body">
+            <label>
+              备注
+              <textarea v-model="itemForm.note" maxlength="1000" />
+            </label>
+            <fieldset id="item-whitelist-panel" class="option-panel">
+              <legend>应用限制</legend>
+              <label class="switch">
+                跟随全局
+                <input
+                  type="radio"
+                  name="item-whitelist"
+                  :checked="itemForm.whitelist?.source !== 'custom'"
+                  @change="setItemWhitelist('global')"
+                />
+              </label>
+              <label class="switch">
+                独立白名单
+                <input
+                  type="radio"
+                  name="item-whitelist"
+                  :checked="itemForm.whitelist?.source === 'custom'"
+                  @change="setItemWhitelist('custom')"
+                />
+              </label>
+              <button
+                v-if="itemForm.whitelist?.source === 'custom'"
+                type="button"
+                class="secondary wide"
+                :disabled="!protectionState?.supported"
+                @click="openItemWhitelist"
+              >
+                编辑独立白名单（{{ itemPackages.length }} 个应用）
+              </button>
+              <p class="field-help">独立白名单会替代全局名单；修改从下一轮生效</p>
+            </fieldset>
+            <div v-if="savedItem" class="row between">
+              <span class="option-value">{{
+                savedItemThemeChanged ? '更换主题后，保存再调整顺序' : '调整顺序 · 立即生效'
+              }}</span>
+              <div class="row">
+                <button
+                  type="button"
+                  class="icon-button soft"
+                  aria-label="待办上移"
+                  :disabled="busy || savedItemThemeChanged || itemIndex <= 0"
+                  @click="reorder('item', itemForm.id, -1)"
+                >
+                  <Icon name="up" /></button
+                ><button
+                  type="button"
+                  class="icon-button soft"
+                  aria-label="待办下移"
+                  :disabled="busy || savedItemThemeChanged || itemIndex < 0 || itemIndex >= savedItemSiblings.length - 1"
+                  @click="reorder('item', itemForm.id, 1)"
+                >
+                  <Icon name="arrowDown" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </details>
+        <p v-if="!savedItem && blocker" class="notice" role="status">{{ blocker.text }}</p>
+        <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
+        <template v-if="!savedItem && !blocker">
+          <button class="primary wide" :disabled="busy">保存并开始</button>
+          <button type="button" class="text-button" :disabled="busy" @click="submitItem(false)">
+            仅保存
+          </button>
+        </template>
+        <template v-else>
+          <button class="primary wide" :disabled="busy">保存待办</button>
+          <template v-if="savedItem">
+            <button
+              v-if="!itemDeleteConfirm"
+              type="button"
+              class="text-button danger"
+              :disabled="busy"
+              @click="itemDeleteConfirm = true"
+            >
+              删除待办
+            </button>
+            <div v-else class="inline-confirm" role="region" aria-label="确认删除待办">
+              <p class="field-help">确认删除？历史专注记录仍保留。</p>
+              <div class="form-footer">
+                <button
+                  type="button"
+                  class="secondary"
+                  :disabled="busy"
+                  @click="itemDeleteConfirm = false"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="danger-button"
+                  :disabled="busy"
+                  @click="confirmDeleteItem"
+                >
+                  确认删除
+                </button>
+              </div>
+            </div>
+          </template>
+        </template>
+      </form>
+      <AppWhitelistEditor
+        v-else-if="sheet === 'itemWhitelist'"
+        inline
+        :open="sheet === 'itemWhitelist'"
+        title="子待办独立白名单"
+        :packages="itemPackages"
+        @close="sheet = 'item'"
+        @confirm="onConfirmItemWhitelist"
+      />
+      <form v-else-if="sheet === 'free'" @submit.prevent="startFree">
+        <div class="segmented">
+          <button
+            type="button"
+            :class="{ active: freeForm.mode === 'countdown' }"
+            @click="freeForm.mode = 'countdown'"
+          >
+            倒计时</button
+          ><button
+            type="button"
+            :class="{ active: freeForm.mode === 'stopwatch' }"
+            @click="freeForm.mode = 'stopwatch'"
+          >
+            正计时
+          </button>
+        </div>
+        <label v-if="freeForm.mode === 'countdown'"
+          >专注时长（分钟）<input
+            v-model.number="freeForm.minutes"
+            type="number"
+            min="1"
+            step="1"
+            required
+          /><span class="chip-row"
+            ><button
+              v-for="m in [25, 45, 60]"
+              :key="m"
+              type="button"
+              class="chip"
+              :class="{ active: freeForm.minutes === m }"
+              @click="freeForm.minutes = m"
+            >
+              {{ m }} 分钟
+            </button></span
+          ></label
+        >
+        <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
+        <button class="primary wide" :disabled="busy">
+          <Icon name="play" :size="18" />开始专注
+        </button>
+      </form>
+      <div v-else-if="sheet === 'startError' && startError" class="stack">
+        <p class="notice" role="alert">{{ startError.message }}</p>
+        <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
+        <template v-if="startError.kind === 'recovery'">
+          <button type="button" class="primary wide" :disabled="busy" @click="goRecoveryFromStartError">
+            前往故障恢复
+          </button>
+          <button type="button" class="secondary wide" :disabled="busy" @click="closeSheet">
+            取消
+          </button>
+        </template>
+        <template v-else-if="startError.kind === 'protection'">
+          <button type="button" class="primary wide" :disabled="busy" @click="openStudyFromStartError">
+            前往学霸模式处理
+          </button>
+          <button type="button" class="secondary wide" :disabled="busy" @click="clearUnreadyAndRetry">
+            关闭未就绪保护并开始
+          </button>
+          <button type="button" class="text-button" :disabled="busy" @click="closeSheet">
+            取消
+          </button>
+        </template>
+        <template v-else>
+          <button type="button" class="primary wide" :disabled="busy" @click="closeSheet">
+            知道了
+          </button>
+        </template>
+      </div>
+    </Sheet>
   </div>
 </template>
 <style scoped>
@@ -833,20 +1050,102 @@ function toggleTheme(theme: Theme) {
 .tasks-page > * {
   flex-shrink: 0;
 }
-.task-title { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
-.task-title h1 { flex-shrink: 0; }
-.page-header .actions { flex-shrink: 0; }
-.study-entry { display: inline-flex; align-items: center; min-height: 44px; min-width: 0; max-width: 100%; border-radius: 100px; font-size: 12px; font-weight: 500; color: var(--muted); }
-.study-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; overflow: hidden; padding: 5px 8px; background: var(--surface); border-radius: 100px; white-space: nowrap; line-height: 18px; }
-.study-entry-state { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.study-chip[data-tone='enabled'] { background: var(--ink); color: var(--white); }
-.study-chip[data-tone='warning'] { background: #fff1ef; color: #c13a25; }
-@media (max-width: 360px) {
-  .page-header { gap: 4px; }
-  .page-header .actions .icon-button { width: 44px; height: 44px; }
-  .task-title { gap: 6px; }
-  .study-chip { gap: 3px; padding-inline: 6px; font-size: 11px; }
-  .study-chip > svg { display: none; }
+.page-header {
+  flex-wrap: wrap;
+  row-gap: 8px;
+  align-items: flex-start;
+}
+.task-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  flex: 1;
+  min-width: 0;
+}
+.task-title h1 {
+  flex-shrink: 0;
+}
+.page-header .actions {
+  flex-shrink: 0;
+}
+.study-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-width: 48px;
+  min-height: 48px;
+  max-width: 100%;
+  padding: 0 12px 0 14px;
+  border-radius: 100px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted-surface);
+  font-size: 12px;
+  font-weight: 600;
+}
+.study-capsule[data-tone='enabled'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--white);
+}
+.study-capsule[data-tone='warning'] {
+  background: #fff1ef;
+  border-color: rgba(193, 58, 37, 0.22);
+  color: #c13a25;
+}
+.study-shield,
+.study-chevron {
+  flex-shrink: 0;
+}
+.study-capsule[data-tone='enabled'] .study-shield {
+  color: var(--accent);
+}
+.study-chevron {
+  opacity: 0.72;
+}
+.study-label {
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+}
+@media (max-width: 400px) {
+  .page-header {
+    gap: 6px;
+  }
+  .page-header .actions {
+    gap: 6px;
+  }
+  .page-header .actions .icon-button {
+    width: 48px;
+    height: 48px;
+  }
+  .task-title {
+    gap: 6px;
+  }
+  .study-capsule {
+    gap: 4px;
+    padding: 0 10px 0 12px;
+    font-size: 12px;
+  }
+  .page-header:has(.study-capsule[data-tone='warning']) {
+    align-items: center;
+  }
+  .task-title:has(.study-capsule[data-tone='warning']) {
+    display: contents;
+  }
+  .task-title:has(.study-capsule[data-tone='warning']) h1 {
+    order: 1;
+  }
+  .page-header:has(.study-capsule[data-tone='warning']) .actions {
+    order: 2;
+    margin-left: auto;
+  }
+  .task-title:has(.study-capsule[data-tone='warning']) .study-capsule {
+    order: 3;
+  }
 }
 .daily-line {
   display: flex;
@@ -911,6 +1210,8 @@ function toggleTheme(theme: Theme) {
   color: var(--muted);
 }
 .theme-actions .icon-button {
+  width: 48px;
+  height: 48px;
   transition: background-color 120ms ease;
 }
 .theme-items {
@@ -938,7 +1239,7 @@ function toggleTheme(theme: Theme) {
   display: flex;
   align-items: stretch;
   min-height: 64px;
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .task-card.current {
@@ -954,7 +1255,7 @@ function toggleTheme(theme: Theme) {
   text-align: left;
   padding: 10px 12px 10px 14px;
   min-height: 64px;
-  border-radius: 14px 0 0 14px;
+  border-radius: var(--radius) 0 0 var(--radius);
   transition: background-color 120ms ease;
 }
 .task-text {
@@ -970,7 +1271,7 @@ function toggleTheme(theme: Theme) {
 }
 .task-text p {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-surface);
   margin-top: 3px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -1004,12 +1305,12 @@ function toggleTheme(theme: Theme) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
+  width: 48px;
   flex-shrink: 0;
   min-height: 64px;
-  color: var(--muted);
+  color: var(--muted-surface);
   border-left: 1px solid var(--line);
-  border-radius: 0 14px 14px 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
   transition: background-color 120ms ease;
 }
 .theme-title:active,
@@ -1031,22 +1332,11 @@ function toggleTheme(theme: Theme) {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: var(--muted);
+  color: var(--muted-surface);
   font-size: 13px;
   border: 1px dashed #ddd;
-  border-radius: 14px;
+  border-radius: var(--radius);
   width: 100%;
-}
-.add-theme {
-  width: 100%;
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  justify-content: center;
-  min-height: 46px;
-  color: var(--muted);
-  font-size: 13px;
-  margin-bottom: 8px;
 }
 .task-empty {
   margin-block: auto;
@@ -1062,11 +1352,6 @@ function toggleTheme(theme: Theme) {
 .empty-example {
   font-size: 12px;
 }
-.free-focus {
-  margin-top: auto;
-  background: white;
-  border: 1px solid var(--line);
-}
 .ongoing {
   width: 100%;
   display: flex;
@@ -1074,7 +1359,7 @@ function toggleTheme(theme: Theme) {
   justify-content: space-between;
   padding: 12px 16px;
   background: #fff4f1;
-  border-radius: 18px;
+  border-radius: var(--radius);
   margin-bottom: 14px;
   text-align: left;
   font-size: 14px;
@@ -1082,15 +1367,10 @@ function toggleTheme(theme: Theme) {
 .ongoing small {
   display: block;
   margin-top: 5px;
+  color: var(--muted-surface);
 }
 .ongoing .number {
   font-size: 18px;
-}
-.blocker-hint {
-  font-size: 12px;
-  color: var(--muted);
-  margin: -6px 0 14px 4px;
-  line-height: 1.5;
 }
 .new-theme-field {
   display: grid;
@@ -1098,6 +1378,13 @@ function toggleTheme(theme: Theme) {
 }
 .item-form {
   gap: 14px;
+}
+.timing-group {
+  display: grid;
+  gap: 12px;
+}
+.timing-group > legend {
+  margin-bottom: 0;
 }
 .item-duration {
   display: grid;
@@ -1114,29 +1401,52 @@ function toggleTheme(theme: Theme) {
   min-width: 64px;
   width: auto;
 }
-.duration-controls .chip {
-  min-width: 44px;
-  min-height: 44px;
+.duration-controls .chip,
+.chip-row .chip {
+  min-width: 48px;
+  min-height: 48px;
 }
-.item-options {
+.segmented button {
+  min-height: 48px;
+  color: var(--muted-surface);
+}
+.segmented button.active {
+  color: var(--ink);
+}
+.more-settings {
   background: var(--surface);
-  border-radius: 14px;
+  border-radius: var(--radius);
   overflow: hidden;
+}
+.more-settings > summary {
+  list-style: none;
+}
+.more-settings > summary::-webkit-details-marker {
+  display: none;
+}
+.more-settings-body {
+  display: grid;
+  gap: 14px;
+  padding: 4px 14px 14px;
+}
+.more-settings-body textarea {
+  background: var(--white);
 }
 .collapse-row {
   width: 100%;
-  min-height: 46px;
-  padding: 10px 14px;
+  min-height: 48px;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
   gap: 8px;
   text-align: left;
   font-size: 14px;
+  cursor: pointer;
 }
 .collapse-row svg {
   flex: none;
   margin-inline-start: auto;
-  color: var(--muted);
+  color: var(--muted-surface);
   transform: rotate(-90deg);
   transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
@@ -1144,37 +1454,52 @@ function toggleTheme(theme: Theme) {
   transform: rotate(0deg);
 }
 .option-value {
-  margin-inline-start: auto;
-  color: var(--muted);
+  color: var(--muted-surface);
   font-size: 13px;
-}
-.option-value + svg {
-  margin-inline-start: 0;
-}
-.whitelist-row {
-  border-top: 1px solid var(--line);
 }
 .option-panel {
-  padding: 0 14px 10px;
+  display: grid;
+  gap: 8px;
+}
+.option-panel > legend {
+  margin-bottom: 2px;
 }
 .option-panel .switch {
-  min-height: 44px;
+  min-height: 48px;
 }
-.option-panel textarea {
-  display: block;
-  background: var(--white);
+.option-panel .field-help {
+  color: var(--muted-surface);
 }
-.whitelist-help summary {
-  width: fit-content;
-  padding: 12px 0;
-  min-height: 44px;
-  color: var(--muted);
-  font-size: 13px;
-  cursor: pointer;
-}
-.whitelist-help .field-help {
+.inline-confirm {
   display: grid;
-  gap: 6px;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+.inline-confirm .field-help {
+  color: var(--muted-surface);
+}
+.color-swatch {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  box-shadow: none;
+}
+.color-swatch-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid var(--white);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.color-swatch.active .color-swatch-dot {
+  box-shadow: 0 0 0 2px var(--ink);
 }
 .delete-choices {
   display: grid;
@@ -1190,11 +1515,19 @@ function toggleTheme(theme: Theme) {
   background: #fff1ef;
   color: #a32a19;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   font-size: 13px;
   line-height: 1.6;
 }
+.notice {
+  border-radius: var(--radius);
+  color: var(--muted-surface);
+}
+.text-button {
+  min-height: 48px;
+}
 .danger-button {
+  min-height: 48px;
   height: auto;
   line-height: 1.4;
   text-align: center;

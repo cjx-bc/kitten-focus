@@ -6,27 +6,51 @@ import { duration, timer } from '../domain/dates'
 import { REST_DURATION_MS } from '../domain/rest'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
+import { waitForDialogClose } from '../components/sheetClose'
+import StudyModeSheet from '../components/StudyModeSheet.vue'
+import {
+  classifyStartError,
+  getUnreadyProtectionIds,
+  isCancelledStartError,
+  type StartErrorKind,
+} from '../domain/startRecovery'
+
+type RestSheet = 'confirmExit' | 'startError' | null
 
 const app = useApp(),
   router = useRouter()
 const busy = ref(false),
-  confirmExit = ref(false),
-  leaving = ref(false)
+  sheet = ref<RestSheet>(null),
+  leaving = ref(false),
+  studyOpen = ref(false),
+  startError = ref<{ message: string; kind: StartErrorKind } | null>(null)
 const session = computed(() => app.rest.session)
 const running = computed(() => session.value?.state === 'running')
 const progress = computed(() => Math.max(0, Math.min(1, app.rest.remainingMs / REST_DURATION_MS)))
+const sheetTitle = computed(() => {
+  if (sheet.value === 'confirmExit') return '退出休息？'
+  if (sheet.value === 'startError') return '无法开始专注'
+  return ''
+})
+
+function closeSheet() {
+  if (busy.value) return
+  sheet.value = null
+  startError.value = null
+}
 
 function requestExit() {
   if (busy.value) return
-  if (running.value) confirmExit.value = true
+  if (running.value) sheet.value = 'confirmExit'
   else void exit()
 }
+
 async function exit() {
   if (busy.value) return
   busy.value = true
   try {
     await app.exitRest()
-    confirmExit.value = false
+    sheet.value = null
     leaving.value = true
     await router.replace('/tasks')
   } catch (error) {
@@ -35,6 +59,7 @@ async function exit() {
     busy.value = false
   }
 }
+
 async function again() {
   const previous = session.value?.record
   if (!previous || running.value || busy.value) return
@@ -46,11 +71,66 @@ async function again() {
     await router.replace('/focus')
   } catch (error) {
     leaving.value = false
-    app.notify(error instanceof Error ? error.message : String(error))
+    const message = error instanceof Error ? error.message : String(error)
+    if (!isCancelledStartError(message)) {
+      startError.value = { message, kind: classifyStartError(message) }
+      sheet.value = 'startError'
+    }
   } finally {
     busy.value = false
   }
 }
+
+async function goRecoveryFromStartError() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    await app.exitRest()
+    sheet.value = null
+    startError.value = null
+    leaving.value = true
+    await waitForDialogClose()
+    await router.push('/recovery')
+  } catch (e) {
+    app.notify(e instanceof Error ? e.message : String(e))
+  } finally {
+    busy.value = false
+  }
+}
+
+async function openStudyFromStartError() {
+  if (busy.value) return
+  sheet.value = null
+  startError.value = null
+  await waitForDialogClose()
+  studyOpen.value = true
+}
+
+async function clearUnreadyAndRetry() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    const ids = await getUnreadyProtectionIds(app.data.preferences.protection)
+    if (!ids.length) {
+      sheet.value = null
+      startError.value = null
+      await waitForDialogClose()
+      studyOpen.value = true
+      return
+    }
+    await app.clearUnreadyProtections(ids, true)
+    sheet.value = null
+    startError.value = null
+    await waitForDialogClose()
+    busy.value = false
+    await again()
+  } catch (e) {
+    app.notify(e instanceof Error ? e.message : String(e))
+  } finally {
+    busy.value = false
+  }
+}
+
 watch(
   () => app.rest.session,
   (value) => {
@@ -65,7 +145,7 @@ onBeforeUnmount(() => document.removeEventListener('rest-exit-request', requestE
 onBeforeRouteLeave(async () => {
   if (leaving.value) return true
   if (running.value) {
-    confirmExit.value = true
+    sheet.value = 'confirmExit'
     return false
   }
   await app.exitRest()
@@ -83,7 +163,7 @@ onBeforeRouteLeave(async () => {
       <span class="header-space" aria-hidden="true" />
     </header>
     <div class="rest-center">
-      <div class="rest-stage">
+      <div class="rest-stage" data-ux-card>
         <div class="stage-heading"><span class="rest-phase" role="status"><i :class="{ breathing: running }" aria-hidden="true" />{{ running ? '休息中' : '休息完成' }}</span><span>5 分钟</span></div>
         <div class="rest-clock number" role="timer" aria-label="休息剩余时间" aria-live="off">
           {{ timer(app.rest.remainingMs) }}
@@ -103,12 +183,44 @@ onBeforeRouteLeave(async () => {
         <button type="button" class="text-button" :disabled="busy" @click="exit">返回待办</button>
       </template>
     </div>
-    <Sheet :open="confirmExit" title="退出休息？" :close-disabled="busy" @close="!busy && (confirmExit = false)">
-      <div class="form-footer">
-        <button type="button" class="secondary" :disabled="busy" @click="confirmExit = false">继续休息</button>
+    <Sheet :open="sheet !== null" :title="sheetTitle" :close-disabled="busy" @close="closeSheet">
+      <div v-if="sheet === 'confirmExit'" class="form-footer">
+        <button type="button" class="secondary" :disabled="busy" @click="closeSheet">继续休息</button>
         <button type="button" class="primary" :disabled="busy" @click="exit">退出休息</button>
       </div>
+      <div v-else-if="sheet === 'startError' && startError" class="stack">
+        <p class="notice" role="alert">{{ startError.message }}</p>
+        <template v-if="startError.kind === 'recovery'">
+          <button type="button" class="primary wide" :disabled="busy" @click="goRecoveryFromStartError">
+            前往故障恢复
+          </button>
+          <button type="button" class="secondary wide" :disabled="busy" @click="closeSheet">
+            取消
+          </button>
+        </template>
+        <template v-else-if="startError.kind === 'protection'">
+          <button type="button" class="primary wide" :disabled="busy" @click="openStudyFromStartError">
+            前往学霸模式处理
+          </button>
+          <button type="button" class="secondary wide" :disabled="busy" @click="clearUnreadyAndRetry">
+            关闭未就绪保护并开始
+          </button>
+          <button type="button" class="text-button" :disabled="busy" @click="closeSheet">
+            取消
+          </button>
+        </template>
+        <template v-else>
+          <button type="button" class="primary wide" :disabled="busy" @click="closeSheet">
+            知道了
+          </button>
+        </template>
+      </div>
     </Sheet>
+    <StudyModeSheet
+      :open="studyOpen"
+      initial-view="permissions"
+      @close="studyOpen = false"
+    />
   </div>
 </template>
 
@@ -154,21 +266,22 @@ onBeforeRouteLeave(async () => {
 .rest-stage {
   container-type: inline-size;
   padding: clamp(22px, 5vw, 32px);
-  background: #f5f5f5;
-  border: 1px solid #ededed;
-  border-radius: 32px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
-.stage-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.stage-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--muted-surface); }
 .rest-phase { display: flex; align-items: center; gap: 8px; color: var(--ink); }
-.rest-phase > i { width: 6px; height: 6px; border-radius: 50%; background: #88888d; }
+.rest-phase > i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-surface); }
+.rest-phase > i.breathing { background: var(--accent); }
 .breathing { animation: rest-breathe 3s ease-in-out infinite; }
 @keyframes rest-breathe { 50% { opacity: .3; } }
 .rest-meter { display: flex; gap: 6px; }
-.rest-meter > span { flex: 1; height: 4px; background: #e2e2e5; border-radius: 4px; overflow: hidden; }
-.rest-meter i { display: block; width: 100%; height: 100%; background: #77777c; transform-origin: left; border-radius: inherit; }
+.rest-meter > span { flex: 1; height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.rest-meter i { display: block; width: 100%; height: 100%; background: var(--ink); transform-origin: left; border-radius: inherit; }
 .rest-receipt { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 4px 0; }
 .rest-receipt > div { min-width: 0; }
-.receipt-label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+.receipt-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
 .receipt-duration { font-size: 16px; color: var(--muted); text-align: right; max-width: 45%; overflow-wrap: anywhere; }
 .rest-clock {
   padding-block: clamp(24px, 5dvh, 44px);
@@ -193,11 +306,22 @@ onBeforeRouteLeave(async () => {
   background: var(--white);
   border: 1px solid var(--line);
 }
+.rest-actions .text-button,
+.text-button {
+  min-height: 48px;
+}
+.form-footer button {
+  min-height: 48px;
+}
+.notice {
+  border-radius: var(--radius);
+  color: var(--muted-surface);
+}
 @media (max-height: 500px) and (min-width: 600px) {
   .rest-center {
     padding: 12px 0;
   }
-  .rest-stage { padding: 18px 24px; border-radius: 24px; }
+  .rest-stage { padding: 18px 24px; border-radius: var(--radius); }
   .rest-clock { font-size: 60px; padding-block: 16px; }
   .rest-receipt { padding-top: 12px; }
   .rest-actions {

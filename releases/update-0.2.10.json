@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 16,
+    "versionName": "0.2.10",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.10/xiaomao-focus-0.2.10-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.10/xiaomao-focus-0.2.10-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.10-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.10/xiaomao-focus-0.2.10-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.10-debug.apk"
+    ],
+    "size": 4723588,
+    "sha256": "c5bf753a918e8bfb977d95ce8566ca1055906beb11026fa60c0ec3e2005cd8d3",
+    "notes": "全端交互精简与窄屏适配：去除全流程嵌套弹窗并将低频保护诊断收拢至二级与三级中心；优化专注结果页图标与休息/再来一轮出口，待办顶栏改用防误触单区学霸胶囊并区分自由专注、锁机与专注记录图标；修复日历添加日程起止时间截断、支持今日智能默认时间及 320px 窄屏周条适配；优化统计日视图指标与整数纵轴，并加固无障碍服务重连及权限读取。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

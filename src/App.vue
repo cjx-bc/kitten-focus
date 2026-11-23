@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onMounted, computed, watch, ref } from 'vue'
+import { onBeforeUnmount, onMounted, computed, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App as CapacitorApp } from '@capacitor/app'
 import { consumeFocusReturn, consumeLockReturn, consumeRecoveryReturn, resolveMainEntry, native } from './platform/bridge'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
-import StrictStartConfirmation from './components/StrictStartConfirmation.vue'
+import Sheet from './components/Sheet.vue'
 import RecoverySheet from './components/RecoverySheet.vue'
+import { waitForDialogClose } from './components/sheetClose'
 import { createTabSwipe } from './navigation/tabSwipe'
 import { isStudyFocusSafePath, isStudySessionLocked } from './navigation/mainEntry'
 import { useUpdates } from './stores/updates'
@@ -58,23 +59,46 @@ const swipe = createTabSwipe({
   isBlocked: () => !app.ready || isStudySessionLocked(app.focus.session),
   navigate: (path) => void router.replace(path),
 })
+let recoveryPreemptPromise: Promise<void> | null = null
+async function openRecoveryPreempting() {
+  if (recoveryOpen.value) return
+  if (recoveryPreemptPromise) return recoveryPreemptPromise
+  recoveryPreemptPromise = (async () => {
+    if (app.strictConfirmation) app.confirmStrictStart(false)
+    app.requestCloseSheets()
+    await waitForDialogClose(220)
+    recoveryOpen.value = true
+  })().finally(() => {
+    recoveryPreemptPromise = null
+  })
+  return recoveryPreemptPromise
+}
+const onOpenRecovery = () => {
+  void openRecoveryPreempting()
+}
+const onRecoveryReturnRequest = async () => {
+  if (await consumeRecoveryReturn()) await openRecoveryPreempting()
+}
+const onFocusReturnRequest = async () => {
+  await consumeFocusReturn()
+  void router.replace(app.lock.session ? '/lock' : '/focus')
+}
+const onLockReturnRequest = async () => {
+  await consumeLockReturn()
+  void router.replace('/lock')
+}
 onMounted(async () => {
-  window.addEventListener('open-recovery', () => { recoveryOpen.value = true })
-  window.addEventListener('recovery-return-request', async () => {
-    if (await consumeRecoveryReturn()) recoveryOpen.value = true
-  })
-  window.addEventListener('focus-return-request', async () => {
-    await consumeFocusReturn()
-    void router.replace(app.lock.session ? '/lock' : '/focus')
-  })
-  window.addEventListener('lock-return-request', async () => { await consumeLockReturn(); void router.replace('/lock') })
+  window.addEventListener('open-recovery', onOpenRecovery)
+  window.addEventListener('recovery-return-request', onRecoveryReturnRequest)
+  window.addEventListener('focus-return-request', onFocusReturnRequest)
+  window.addEventListener('lock-return-request', onLockReturnRequest)
   await app.init()
   if (await consumeFocusReturn()) {
     if (app.lock.session) await router.replace('/lock')
     else if (app.focus.session) await router.replace('/focus')
   }
   if (await consumeLockReturn()) await router.replace('/lock')
-  if (await consumeRecoveryReturn()) recoveryOpen.value = true
+  if (await consumeRecoveryReturn()) await openRecoveryPreempting()
   void updates.init()
   if (native) {
     await CapacitorApp.addListener('appStateChange', (state) => {
@@ -99,6 +123,12 @@ onMounted(async () => {
       else void CapacitorApp.minimizeApp()
     })
   }
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('open-recovery', onOpenRecovery)
+  window.removeEventListener('recovery-return-request', onRecoveryReturnRequest)
+  window.removeEventListener('focus-return-request', onFocusReturnRequest)
+  window.removeEventListener('lock-return-request', onLockReturnRequest)
 })
 </script>
 <template>
@@ -131,7 +161,19 @@ onMounted(async () => {
             class="nav-update-dot"
             aria-hidden="true"
         /></RouterLink></nav></template
-    ><StrictStartConfirmation /><RecoverySheet :open="recoveryOpen" @close="recoveryOpen = false" /><Transition name="toast"
+    ><Sheet
+      :open="!!app.strictConfirmation"
+      title="开始严格倒计时"
+      @close="app.confirmStrictStart(false)"
+    >
+      <div class="stack">
+        <p>已开启严格倒计时：开始后不能暂停、取消或提前结束，是否开始？</p>
+        <div class="form-footer">
+          <button type="button" class="secondary" @click="app.confirmStrictStart(false)">取消</button>
+          <button type="button" class="primary" @click="app.confirmStrictStart(true)">确认开始</button>
+        </div>
+      </div>
+    </Sheet><RecoverySheet :open="recoveryOpen" @close="recoveryOpen = false" /><Transition name="toast"
       ><div v-if="app.toast" ref="toastEl" popover="manual" class="toast" role="status">{{ app.toast }}</div></Transition
     >
   </div>

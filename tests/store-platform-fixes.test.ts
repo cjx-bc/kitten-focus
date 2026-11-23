@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { defaultProtection, emptyData, type ActiveFocus, type CalendarEvent, type FocusRecord, type FocusSnapshot } from '../src/domain/model'
+import { toggleMasterStudy, toggleProtectionModule } from '../src/domain/protectionModules'
 import { occurrences } from '../src/domain/calendar'
 
 const mocks = vi.hoisted(() => ({
@@ -91,8 +92,33 @@ function makeSession(id = 'f1'): ActiveFocus {
   }
 }
 
+function createMemoryStorage(): Storage {
+  const store = new Map<string, string>()
+  return {
+    get length() {
+      return store.size
+    },
+    clear() {
+      store.clear()
+    },
+    getItem(key: string) {
+      return store.has(key) ? store.get(key)! : null
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null
+    },
+    removeItem(key: string) {
+      store.delete(key)
+    },
+    setItem(key: string, value: string) {
+      store.set(key, String(value))
+    },
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.stubGlobal('localStorage', createMemoryStorage())
   setActivePinia(createPinia())
   vi.useFakeTimers()
   mocks.load.mockResolvedValue(emptyData())
@@ -115,6 +141,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -140,7 +167,7 @@ describe('app store resilience fixes', () => {
     expect(mocks.save.mock.lastCall?.[0].lockConfigurations[0].minutes).toBe(5)
     expect(mocks.save.mock.lastCall?.[0].preferences.protection?.strict).not.toBe(true)
     await app.start(null, 'countdown', 25)
-    expect(app.startConfirmation).toBeNull()
+    expect(app.strictConfirmation).toBeNull()
     expect(mocks.focusStart.mock.lastCall?.[1]).toBe(false)
     app.dispose()
   })
@@ -167,9 +194,11 @@ describe('app store resilience fixes', () => {
     mocks.load.mockResolvedValueOnce(data)
     await app.init()
     const pending = app.start(null, 'countdown', 25)
-    await vi.waitFor(() => expect(app.startConfirmation?.strict).toBe(true))
-    await app.mutate(d => { d.preferences.protection!.strict = false })
-    app.confirmStart(true)
+    await vi.waitFor(() => expect(app.strictConfirmation).toEqual({ title: '自由专注', minutes: 25 }))
+    await app.mutate(d => {
+      d.preferences.protection = toggleProtectionModule(d.preferences.protection ?? defaultProtection(), 'strict', false)
+    })
+    app.confirmStrictStart(true)
     await expect(pending).rejects.toThrow('配置已变化')
     expect(mocks.focusStart).not.toHaveBeenCalled()
 
@@ -306,6 +335,143 @@ describe('app store resilience fixes', () => {
     expect(vibrate).toHaveBeenCalledWith(150)
 
     vi.unstubAllGlobals()
+    app.dispose()
+  })
+
+  it('manages strictConfirmation and strictAcknowledged across stopwatch, countdown confirmation, and mutate(!strict)', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const data = emptyData()
+    data.preferences.protection = toggleMasterStudy(
+      toggleProtectionModule(defaultProtection(), 'strict', true),
+      true,
+    )
+    mocks.load.mockResolvedValueOnce(data)
+
+    const app = useApp()
+    await app.init()
+    expect(app.strictAcknowledged).toBe(false)
+
+    // Stopwatch ignores strict confirmation and leaves strictAcknowledged untouched
+    await app.start(null, 'stopwatch', 25)
+    expect(app.strictConfirmation).toBeNull()
+    expect(mocks.focusStart.mock.lastCall?.[1]).toBe(false)
+    expect(app.strictAcknowledged).toBe(false)
+
+    mocks.focusAction.mockResolvedValueOnce({ session: null, elapsedMs: 0 })
+    await app.action('finish')
+
+    // Cancelling strict countdown confirmation rejects without starting or persisting ack
+    const cancelled = app.start(null, 'countdown', 25)
+    await vi.waitFor(() => expect(app.strictConfirmation).toEqual({ title: '自由专注', minutes: 25 }))
+    app.confirmStrictStart(false)
+    await expect(cancelled).rejects.toThrow('已取消开始专注')
+    expect(mocks.focusStart).toHaveBeenCalledTimes(1)
+    expect(app.strictAcknowledged).toBe(false)
+    expect(localStorage.getItem('xiaomao-strict-acknowledged')).toBeNull()
+
+    // Confirming strict countdown sets strictAcknowledged and bypasses subsequent prompts
+    const confirmed = app.start(null, 'countdown', 25)
+    await vi.waitFor(() => expect(app.strictConfirmation).toEqual({ title: '自由专注', minutes: 25 }))
+    app.confirmStrictStart(true)
+    await confirmed
+    expect(mocks.focusStart.mock.lastCall?.[1]).toBe(true)
+    expect(app.strictAcknowledged).toBe(true)
+    expect(localStorage.getItem('xiaomao-strict-acknowledged')).toBe('1')
+
+    mocks.focusAction.mockResolvedValueOnce({ session: null, elapsedMs: 0 })
+    await app.action('finish')
+
+    await app.start(null, 'countdown', 25)
+    expect(app.strictConfirmation).toBeNull()
+    expect(mocks.focusStart.mock.lastCall?.[1]).toBe(true)
+
+    // Turning off strict via mutate clears strictAcknowledged
+    await app.mutate((d) => {
+      d.preferences.protection = toggleProtectionModule(
+        d.preferences.protection ?? defaultProtection(),
+        'strict',
+        false,
+      )
+    })
+    expect(app.strictAcknowledged).toBe(false)
+    expect(localStorage.getItem('xiaomao-strict-acknowledged')).toBeNull()
+    app.dispose()
+  })
+
+  it('clears strictAcknowledged on legacy init() and restore(), requiring fresh confirmation', async () => {
+    const { useApp } = await import('../src/stores/app')
+
+    // Legacy init() without protection.modules clears stale localStorage acknowledgment
+    localStorage.setItem('xiaomao-strict-acknowledged', '1')
+    const legacyData = emptyData()
+    const legacyProtection: any = { ...defaultProtection(), strict: true }
+    delete legacyProtection.modules
+    legacyData.preferences.protection = legacyProtection
+    mocks.load.mockResolvedValueOnce(legacyData)
+
+    const app = useApp()
+    expect(app.strictAcknowledged).toBe(true)
+    await app.init()
+    expect(app.strictAcknowledged).toBe(false)
+    expect(localStorage.getItem('xiaomao-strict-acknowledged')).toBeNull()
+
+    const firstStart = app.start(null, 'countdown', 25)
+    await vi.waitFor(() => expect(app.strictConfirmation).toEqual({ title: '自由专注', minutes: 25 }))
+    app.confirmStrictStart(true)
+    await firstStart
+    expect(app.strictAcknowledged).toBe(true)
+    expect(localStorage.getItem('xiaomao-strict-acknowledged')).toBe('1')
+
+    mocks.focusAction.mockResolvedValueOnce({ session: null, elapsedMs: 0 })
+    await app.action('finish')
+
+    // restore() clears strictAcknowledged even when restored backup enables strict
+    const restored = emptyData()
+    restored.preferences.protection = toggleMasterStudy(
+      toggleProtectionModule(defaultProtection(), 'strict', true),
+      true,
+    )
+    await app.restore(restored)
+    expect(app.strictAcknowledged).toBe(false)
+    expect(localStorage.getItem('xiaomao-strict-acknowledged')).toBeNull()
+
+    const afterRestore = app.start(null, 'countdown', 25)
+    await vi.waitFor(() => expect(app.strictConfirmation).toEqual({ title: '自由专注', minutes: 25 }))
+    app.confirmStrictStart(false)
+    await expect(afterRestore).rejects.toThrow('已取消开始专注')
+    app.dispose()
+  })
+
+  it('clearUnreadyProtections disables modules.apps.enabled and legacy study flag while keeping other modules', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const data = emptyData()
+    let protection = toggleProtectionModule(defaultProtection(), 'apps', true)
+    protection = toggleProtectionModule(protection, 'strict', true)
+    protection = toggleMasterStudy(protection, true)
+    data.preferences.protection = protection
+    mocks.load.mockResolvedValueOnce(data)
+
+    const app = useApp()
+    await app.init()
+    expect(app.data.preferences.protection?.modules?.apps.enabled).toBe(true)
+    expect(app.data.preferences.protection?.study).toBe(true)
+
+    await app.clearUnreadyProtections(['applications'], true)
+    expect(app.data.preferences.protection?.modules?.apps.enabled).toBe(false)
+    expect(app.data.preferences.protection?.study).toBe(false)
+    expect(app.data.preferences.protection?.modules?.strict.enabled).toBe(true)
+    expect(app.toast).toBe('')
+
+    await app.mutate((d) => {
+      d.preferences.protection = toggleProtectionModule(
+        d.preferences.protection ?? defaultProtection(),
+        'apps',
+        true,
+      )
+    })
+    await app.clearUnreadyProtections(['applications'])
+    expect(app.data.preferences.protection?.modules?.apps.enabled).toBe(false)
+    expect(app.toast).toBe('已关闭未就绪的保护项，请重新点击开始专注')
     app.dispose()
   })
 })

@@ -55,7 +55,14 @@ public class FocusAccessibilityService extends AccessibilityService {
     }
     @Override public void onConfigurationChanged(Configuration config) { super.onConfigurationChanged(config); FocusProtection.invalidateNecessary(); }
     @Override protected void onServiceConnected() { instance = this; running = true; FocusProtection.executionSucceeded(); FocusProtection.invalidateNecessary(); }
-    @Override public boolean onUnbind(Intent intent) { expiry.removeCallbacks(enforce); instance = null; running = false; return super.onUnbind(intent); }
+    @Override public boolean onUnbind(Intent intent) {
+        expiry.removeCallbacks(enforce); instance = null; running = false;
+        // Ask Android to bind the service again when the app process is recreated.
+        // The grant itself remains owned by the system and is reported separately
+        // from this runtime connection state.
+        super.onUnbind(intent);
+        return true;
+    }
     @Override public void onDestroy() { expiry.removeCallbacks(enforce); instance = null; running = false; unregisterReceiver(changes); super.onDestroy(); }
     @Override public void onInterrupt() { }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {

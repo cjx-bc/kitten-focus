@@ -16,7 +16,7 @@ const open = ref(false)
 </template>
 <style scoped>
 .info-hint { display: inline-flex; flex-shrink: 0; }
-.hint-trigger { width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); border-radius: 50%; }
+.hint-trigger { width: 48px; height: 48px; display: grid; place-items: center; color: var(--muted); border-radius: 50%; }
 .hint-trigger > span { width: 17px; height: 17px; border: 1.5px solid currentColor; border-radius: 50%; display: grid; place-items: center; font: 600 12px/1 sans-serif; }
 .hint-trigger:active { background: var(--surface); }
 .hint-copy { display: grid; gap: 14px; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }

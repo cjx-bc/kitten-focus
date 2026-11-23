@@ -39,6 +39,8 @@ import {
   BellOff,
   KeyRound,
   AlertTriangle,
+  Timer,
+  History,
 } from '@lucide/vue'
 withDefaults(defineProps<{ name: string; size?: number }>(), { size: 22 })
 const icons: Record<string, unknown> = {
@@ -81,6 +83,8 @@ const icons: Record<string, unknown> = {
   bellOff: BellOff,
   key: KeyRound,
   warning: AlertTriangle,
+  timer: Timer,
+  history: History,
 }
 </script>
 <template>

@@ -12,15 +12,15 @@ import type {
   Course,
   Occurrence,
   LockSnapshot,
-  ProtectionPreferences,
 } from '../domain/model'
-import { emptyData, uid, effectiveWhitelist, defaultProtection, THEME_COLORS } from '../domain/model'
+import { emptyData, uid, defaultProtection, THEME_COLORS } from '../domain/model'
 import {
-  isMasterFocusLockActive,
   migrateProtectionPreferences,
   resolveEffectiveProtection,
   syncLegacyFlatMutation,
+  toggleProtectionModule,
 } from '../domain/protectionModules'
+import type { ProtectionCapabilityId } from '../domain/startRecovery'
 import {
   focusDriver,
   restDriver,
@@ -33,6 +33,7 @@ import {
 import { makeBackup, readBackup } from '../domain/backup'
 import { validateEvent } from '../domain/calendar'
 import { dateKey, weekday } from '../domain/dates'
+import { waitForDialogClose } from '../components/sheetClose'
 
 export const useApp = defineStore('app', () => {
   const data = shallowRef<AppData>(emptyData()),
@@ -43,26 +44,47 @@ export const useApp = defineStore('app', () => {
     error = ref(''),
     toast = ref('')
   const lastResult = shallowRef<FocusSnapshot['record']>(undefined)
-  const startConfirmation = shallowRef<{
-    title: string
-    mode: ActiveFocus['mode']
-    minutes: number
-    strict: boolean
-    study: boolean
-    whitelistCount: number
-    whitelistSource: 'global' | 'custom'
-    protections: ProtectionPreferences
-  } | null>(null)
-  let resolveStartConfirmation: ((accepted: boolean) => void) | undefined
-  function confirmStart(accepted: boolean) {
-    startConfirmation.value = null
-    resolveStartConfirmation?.(accepted)
-    resolveStartConfirmation = undefined
+  const STRICT_ACK_KEY = 'xiaomao-strict-acknowledged'
+  function readStrictAck(): boolean {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem(STRICT_ACK_KEY) === '1'
+    } catch {
+      return false
+    }
   }
-  async function clearUnreadyProtections(ids: string[]) {
+  function writeStrictAck(value: boolean) {
+    try {
+      if (typeof localStorage === 'undefined') return
+      if (value) localStorage.setItem(STRICT_ACK_KEY, '1')
+      else localStorage.removeItem(STRICT_ACK_KEY)
+    } catch {}
+  }
+  const strictAcknowledged = ref(readStrictAck())
+  function acknowledgeStrict() {
+    strictAcknowledged.value = true
+    writeStrictAck(true)
+  }
+  function clearStrictAcknowledged() {
+    strictAcknowledged.value = false
+    writeStrictAck(false)
+  }
+  const strictConfirmation = ref<{ title: string; minutes: number } | null>(null)
+  let resolveStrictConfirmation: ((accepted: boolean) => void) | undefined
+  function confirmStrictStart(accepted: boolean) {
+    strictConfirmation.value = null
+    resolveStrictConfirmation?.(accepted)
+    resolveStrictConfirmation = undefined
+  }
+  const sheetCloseSignal = ref(0)
+  function requestCloseSheets() {
+    sheetCloseSignal.value += 1
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('ux-close-sheets'))
+    }
+  }
+  async function clearUnreadyProtections(ids: ProtectionCapabilityId[], silent = false) {
     if (!ids.length) return
-    confirmStart(false)
-    const set = new Set(ids)
+    const set = new Set<string>(ids)
     const removeKeys: string[] = []
     if (set.has('navigation')) removeKeys.push('navigationHomeRecents')
     if (set.has('antiClose')) removeKeys.push('preciseAntiClose')
@@ -70,14 +92,19 @@ export const useApp = defineStore('app', () => {
     if (set.has('launcher')) removeKeys.push('launcherIconHidden')
     if (set.has('wallpaper')) removeKeys.push('wallpaperProtection')
     await mutate((d) => {
-      d.preferences.protection = syncLegacyFlatMutation(d.preferences.protection, (p) => {
+      let nextProtection = d.preferences.protection ?? defaultProtection()
+      if (set.has('applications')) {
+        nextProtection = toggleProtectionModule(nextProtection, 'apps', false)
+      }
+      nextProtection = syncLegacyFlatMutation(nextProtection, (p) => {
         if (set.has('applications')) p.study = false
         if (set.has('dnd')) p.dnd = false
         if (set.has('notifications')) p.interceptNotifications = false
         if (removeKeys.length) p.enhancements = p.enhancements.filter((k) => !removeKeys.includes(k))
       })
+      d.preferences.protection = nextProtection
     })
-    notify('已关闭未就绪的保护项，请重新点击开始专注')
+    if (!silent) notify('已关闭未就绪的保护项，请重新点击开始专注')
   }
   const themes = computed(() =>
     data.value.themes.filter((t) => !t.deleted).sort((a, b) => a.order - b.order),
@@ -141,6 +168,9 @@ export const useApp = defineStore('app', () => {
         throw e
       }
       data.value = snapshot
+      if (!resolveEffectiveProtection(snapshot.preferences.protection).strict) {
+        clearStrictAcknowledged()
+      }
       if (error.value.startsWith('保存失败，请重试：')) error.value = ''
       await syncReminders().catch(() => {
         notify('数据已保存，提醒同步未完成')
@@ -186,8 +216,12 @@ export const useApp = defineStore('app', () => {
   async function init() {
     try {
       const loaded = await repository.load()
+      const hadModules = Boolean(loaded.preferences.protection?.modules)
       if (loaded.preferences.protection) {
         loaded.preferences.protection = migrateProtectionPreferences(loaded.preferences.protection)
+      }
+      if (!hadModules || !resolveEffectiveProtection(loaded.preferences.protection).strict) {
+        clearStrictAcknowledged()
       }
       data.value = loaded
       dataLoaded = true
@@ -230,31 +264,21 @@ export const useApp = defineStore('app', () => {
       const protection = startingData.preferences.protection
         ? resolveEffectiveProtection(startingData.preferences.protection)
         : undefined
-      if (
-        protection &&
-        (protection.strict ||
-          protection.study ||
-          isMasterFocusLockActive(protection) ||
-          protection.interceptNotifications ||
-          protection.dnd ||
-          protection.enhancements?.length)
-      ) {
-        const whitelist = effectiveWhitelist(startingData, savedItem?.id ?? null)
-        const accepted = await new Promise<boolean>((resolve) => {
-          resolveStartConfirmation = resolve
-          startConfirmation.value = {
-            title: savedItem?.title || '自由专注',
-            mode,
-            minutes,
-            strict: !!protection.strict,
-            study: !!protection.study,
-            protections: JSON.parse(JSON.stringify({ ...defaultProtection(), ...protection })),
-            whitelistCount: whitelist.whitelist.length,
-            whitelistSource: whitelist.source,
-          }
-        })
-        if (!accepted) throw new Error('已取消开始专注')
-        strictModeConfirmed = true
+      if (protection?.strict && mode === 'countdown') {
+        if (strictAcknowledged.value) {
+          strictModeConfirmed = true
+        } else {
+          const accepted = await new Promise<boolean>((resolve) => {
+            resolveStrictConfirmation = resolve
+            strictConfirmation.value = {
+              title: savedItem?.title || '自由专注',
+              minutes,
+            }
+          })
+          if (!accepted) throw new Error('已取消开始专注')
+          await waitForDialogClose()
+          strictModeConfirmed = true
+        }
       }
       const theme = startingData.themes.find((t) => t.id === savedItem?.themeId),
         now = Date.now()
@@ -279,6 +303,7 @@ export const useApp = defineStore('app', () => {
       }
       const snapshot = await dataOperation(async () => {
         if (data.value !== startingData) throw new Error('专注配置已变化，请重新开始')
+        if (protection?.strict && mode === 'countdown') acknowledgeStrict()
         return focusDriver.start(session, strictModeConfirmed)
       })
       lastResult.value = undefined
@@ -608,6 +633,7 @@ export const useApp = defineStore('app', () => {
       }
       await dataOperation(async () => {
         await repository.replace(restored)
+        clearStrictAcknowledged()
         data.value = restored
         dataLoaded = true
       })
@@ -651,8 +677,13 @@ export const useApp = defineStore('app', () => {
     error,
     toast,
     lastResult,
-    startConfirmation,
-    confirmStart,
+    strictAcknowledged,
+    acknowledgeStrict,
+    clearStrictAcknowledged,
+    strictConfirmation,
+    confirmStrictStart,
+    sheetCloseSignal,
+    requestCloseSheets,
     clearUnreadyProtections,
     themes,
     items,

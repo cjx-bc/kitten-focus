@@ -75,7 +75,7 @@ export function collectRequiredPermissions(
         : !authorized
           ? '未授权 · 未生效'
           : !connected
-            ? '已授权 · 服务未连接'
+            ? '已授权 · 等待服务连接'
             : '已就绪'
     list.push({
       id: 'accessibility',
@@ -134,20 +134,20 @@ export function collectRequiredPermissions(
         : !authorized
           ? '未授权 · 未生效'
           : !connected
-            ? '已授权 · 监听未连接'
+            ? '已授权 · 等待连接'
             : '已就绪'
     list.push({
       id: 'notificationListener',
       title: '通知使用权',
       level: 'optional',
       usedBy: ['免打扰 · 拦截通知'],
-      purpose: '专注期间暂缓白名单外通知并在结束后请求释放，不保存正文。',
+      purpose: '专注期间先收起非白名单应用的普通通知并在结束后释放，不保存正文。',
       supported,
       authorized,
       connected,
       ready,
       statusText,
-      actionLabel: authorized && !connected ? '重连通知监听' : '前往通知访问',
+      actionLabel: authorized && !connected ? '重新连接监听' : '前往通知访问',
     })
   }
 

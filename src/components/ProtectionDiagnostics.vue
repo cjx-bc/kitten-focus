@@ -9,7 +9,7 @@ import { dndDriver } from '../platform/dnd'
 import { notificationDriver } from '../platform/notifications'
 import { readProtectionDiagnostics, protectionStateLabels, type CapabilityDiagnostic, type ProtectionDiagnostics } from '../platform/protectionDiagnostics'
 import Sheet from './Sheet.vue'
-const app = useApp(), result = ref<ProtectionDiagnostics>(), busy = ref(false), error = ref(''), checkedAt = ref('')
+const app = useApp(), result = ref<ProtectionDiagnostics>(), busy = ref(false), rebindBusy = ref(false), error = ref(''), checkedAt = ref('')
 const permission = ref<CapabilityDiagnostic['settings']>()
 let interval: ReturnType<typeof setInterval> | undefined, listener: PluginListenerHandle | undefined, disposed = false
 async function refresh() {
@@ -18,6 +18,20 @@ async function refresh() {
   try { result.value = await readProtectionDiagnostics(app.data.preferences.protection ?? defaultProtection()); checkedAt.value = new Date().toLocaleTimeString() }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
+}
+async function rebindNotifications() {
+  if (busy.value || rebindBusy.value) return
+  rebindBusy.value = true
+  error.value = ''
+  try {
+    await notificationDriver.rebind()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+    return
+  } finally {
+    rebindBusy.value = false
+  }
+  await refresh()
 }
 function visible() { if (!document.hidden) void refresh() }
 async function authorize() {
@@ -45,12 +59,23 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <section class="diagnostics" aria-labelledby="diagnostics-title">
-    <div class="diagnostics-heading"><h2 id="diagnostics-title">当前保护状态</h2><button class="secondary" :disabled="busy" @click="refresh">{{ busy ? '正在检查…' : '重新检查' }}</button></div>
+    <div class="diagnostics-heading"><h2 id="diagnostics-title">当前保护状态</h2><button type="button" class="secondary" :disabled="busy" @click="refresh">{{ busy ? '正在检查…' : '重新检查' }}</button></div>
     <p role="status">{{ result ? protectionStateLabels[result.state] : '正在读取本机状态' }}</p>
-    <small v-if="checkedAt">检查于 {{ checkedAt }}</small>
-    <p class="field-help">未开启：未选择或本轮已撤销；待授权：下一轮所需授权或连接未就绪；已就绪：等待本轮或实际效果核实；保护中：对应执行器或系统状态已确认；保护失效：执行、读取或恢复出现问题。逐项查看原因，单项失效不代表计时停止。</p>
+    <small v-if="checkedAt" class="checked-at">检查于 {{ checkedAt }}</small>
     <p v-if="!native" class="notice">浏览器只预览界面与计时，不能执行 Android 应用、通知或系统入口保护。</p>
-    <p class="field-help">下一轮偏好和本轮请求分别显示。运行中修改偏好不会改变本轮快照；重新检查只读取状态，不会开启保护或自动恢复。</p>
+    <details class="status-legend" data-ux-card>
+      <summary><span>状态含义与检查说明</span></summary>
+      <div class="legend-body">
+        <ul class="legend-list">
+          <li><strong>未开启</strong>：未选择该能力，或本轮已主动撤销</li>
+          <li><strong>待授权</strong>：下一轮所需的系统权限或服务连接未就绪</li>
+          <li><strong>已就绪</strong>：权限已就绪，等待本轮开始或实际效果核实</li>
+          <li><strong>保护中</strong>：对应执行器或系统状态已确认运行</li>
+          <li><strong>保护失效</strong>：执行、读取或恢复遇到问题（单项失效不中断计时）</li>
+        </ul>
+        <p class="surface-help">下一轮偏好和本轮请求分开显示。运行中改偏好不改变本轮快照；重新检查只读状态，不自动开启保护或恢复。</p>
+      </div>
+    </details>
     <details v-for="row in result?.capabilities" :key="row.id" class="capability" :data-capability="row.id">
       <summary><span>{{ row.title }}<small v-if="!row.supported" class="support-note">本环境未支持或尚未接入</small></span><span class="capability-state">{{ protectionStateLabels[row.state] }}</span></summary>
       <div class="capability-body">
@@ -65,9 +90,16 @@ onBeforeUnmount(() => {
           <div><dt>独立效果核验</dt><dd>{{ row.verified === null ? '无独立核验结果' : row.verified ? '已有系统观察结果' : '尚未核实实际效果' }}</dd></div>
           <div><dt>恢复责任</dt><dd>{{ row.recoveryPending === null ? '未核实，请重新检查' : row.recoveryPending ? '仍有待恢复项目' : '未报告待恢复项目' }}</dd></div>
         </dl>
-        <p class="field-help">{{ row.effect }}</p>
+        <p class="surface-help">{{ row.effect }}</p>
         <p v-if="row.requested && ['recovered', 'withdrawn', 'restored', 'released'].includes(row.phase)" class="notice">本轮已停止新保护；主动撤销的能力不会因重连再次启用。剩余恢复项目仍需处理。</p>
-        <button v-if="native && row.supported && row.settings" class="secondary wide" @click="permission = row.settings">查看用途与系统授权</button>
+        <button
+          v-if="row.id === 'notifications' && row.supported && row.authorized && row.connected === false"
+          type="button"
+          class="secondary wide"
+          :disabled="busy || rebindBusy"
+          @click="rebindNotifications"
+        >{{ rebindBusy ? '正在重连通知监听…' : '重连通知监听' }}</button>
+        <button v-if="native && row.supported && row.settings" type="button" class="secondary wide" @click="permission = row.settings">查看用途与系统授权</button>
         <RouterLink v-if="row.recoveryPending" class="secondary wide" to="/recovery">查看恢复清单与重试</RouterLink>
       </div>
     </details>
@@ -79,7 +111,7 @@ onBeforeUnmount(() => {
         <template v-else-if="permission === 'notifications'"><p>专注期间暂缓名单外通知，结束后请求恢复。不保存通知正文。</p><p>电话、闹钟与紧急通知保留。</p></template>
         <template v-else-if="permission === 'dnd'"><p>减少通知声音和振动，保留来电、闹钟与媒体。</p><p>其他勿扰设置不变。</p></template>
         <template v-else><p>隐藏桌面图标或最近任务卡后，需要从小猫控制通知重新进入应用和故障恢复。</p><p>结束后恢复原状态；系统显示刷新可能有延迟。</p></template>
-        <button class="primary wide" @click="authorize">前往系统授权</button><button class="secondary wide" @click="permission = undefined">暂不授权</button>
+        <button type="button" class="primary wide" @click="authorize">前往系统授权</button><button type="button" class="secondary wide" @click="permission = undefined">暂不授权</button>
       </div>
     </Sheet>
   </section>
@@ -87,14 +119,27 @@ onBeforeUnmount(() => {
 <style scoped>
 .diagnostics, .capability-body, .permission-copy { display: grid; gap: 16px; }
 .diagnostics-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.diagnostics-heading h2 { font-size: 19px; } .diagnostics-heading button { flex-shrink: 0; min-height: 48px; }
-.capability { border-radius: 16px; background: var(--surface); padding: 0 16px; min-width: 0; }
+.diagnostics-heading h2 { font-size: 19px; }
+.diagnostics-heading button { flex-shrink: 0; min-height: 48px; min-width: 48px; }
+.checked-at { font-size: 12px; color: var(--muted); }
+.capability, .status-legend { border-radius: var(--radius); background: var(--surface); padding: 0 16px; min-width: 0; }
+.status-legend summary { min-height: 48px; font-size: 13px; color: var(--muted-surface); }
+.legend-body { padding-bottom: 16px; display: grid; gap: 10px; }
+.legend-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 12px; color: var(--muted-surface); line-height: 1.6; }
+.legend-list strong { color: var(--ink); font-weight: 600; }
 summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; cursor: pointer; font-size: 14px; }
-summary::after { content: '+'; color: var(--muted); } details[open] summary::after { content: '−'; }
+summary::after { content: '+'; color: var(--muted-surface); }
+details[open] summary::after { content: '−'; }
 summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 8px; }
-.capability-state { margin-left: auto; flex-shrink: 0; font-size: 12px; color: var(--muted); }
-.support-note { display: block; font-size: 12px; font-weight: 400; margin-top: 4px; }
-.capability-body { padding-bottom: 18px; } p { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
-dl { margin: 0; display: grid; gap: 9px; font-size: 12px; } dl div { display: flex; justify-content: space-between; gap: 14px; }
-dt { color: var(--muted); flex-shrink: 0; } dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.capability-state { margin-left: auto; flex-shrink: 0; font-size: 12px; color: var(--muted-surface); }
+.support-note { display: block; font-size: 12px; font-weight: 400; color: var(--muted-surface); margin-top: 4px; }
+.capability-body { padding-bottom: 18px; }
+.capability-body button, .capability-body a { min-height: 48px; min-width: 48px; }
+.surface-help { font-size: 13px; line-height: 1.7; color: var(--muted-surface); }
+.permission-copy button { min-height: 48px; min-width: 48px; }
+p { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+dl { margin: 0; display: grid; gap: 9px; font-size: 12px; }
+dl div { display: flex; justify-content: space-between; gap: 14px; }
+dt { color: var(--muted-surface); flex-shrink: 0; }
+dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 </style>

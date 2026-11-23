@@ -15,16 +15,15 @@ import {
 import type { FocusRecord } from '../domain/model'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
-import ConfirmationDialog from '../components/ConfirmationDialog.vue'
-import { useConfirmation } from '../components/useConfirmation'
 import Chart from '../components/Chart.vue'
-const { confirmation, confirm, resolveConfirmation } = useConfirmation()
 const app = useApp(),
   period = ref('day'),
   anchor = ref(dateKey()),
   group = ref<'theme' | 'item'>('theme'),
-  showRecords = ref(false),
-  selected = ref<FocusRecord | null>(null)
+  recordsOpen = ref(false),
+  recordView = ref<'list' | 'detail'>('list'),
+  selected = ref<FocusRecord | null>(null),
+  confirmDelete = ref(false)
 const periods = [
   ['day', '日'],
   ['week', '周'],
@@ -50,7 +49,8 @@ const range = computed(() => periodRange(period.value, safeAnchor.value)),
     app.data.records
       .filter((r) => statistics([r], ...range.value).totalMs > 0)
       .sort((a, b) => b.startedAt - a.startedAt),
-  )
+  ),
+  longestMs = computed(() => records.value.reduce((max, r) => Math.max(max, r.durationMs), 0))
 const periodTitle = computed(() =>
   period.value === 'all'
     ? '全部专注'
@@ -103,37 +103,55 @@ const trend = computed(() => {
   }
   return { labels, values }
 })
-const trendOption = computed(() => ({
-  animation: false,
-  tooltip: { trigger: 'axis', valueFormatter: (value: unknown) => duration(Number(value) * 60000) },
-  grid: { left: 40, right: 8, top: 20, bottom: 26 },
-  xAxis: {
-    type: 'category',
-    data: trend.value.labels,
-    axisLine: { lineStyle: { color: '#e5e5e5' } },
-    axisTick: { show: false },
-    axisLabel: { color: '#8e8e93', fontSize: 10 },
-  },
-  yAxis: {
-    type: 'value',
-    name: '分钟',
-    nameTextStyle: { color: '#8e8e93', fontSize: 10 },
-    splitLine: { lineStyle: { color: '#ededed', type: 'dashed' } },
-    axisLabel: { color: '#8e8e93', fontSize: 10 },
-  },
-  series: [
-    {
-      type: 'bar',
-      data: trend.value.values,
-      barMaxWidth: 24,
-      itemStyle: { color: '#222', borderRadius: [5, 5, 0, 0] },
+const trendOption = computed(() => {
+  const values = trend.value.values
+  const peak = Math.max(0, ...values)
+  return {
+    animation: false,
+    tooltip: {
+      trigger: 'axis',
+      textStyle: { fontSize: 12 },
+      valueFormatter: (value: unknown) => duration(Number(value) * 60000),
     },
-  ],
-}))
+    grid: { left: 44, right: 8, top: 24, bottom: 28 },
+    xAxis: {
+      type: 'category',
+      data: trend.value.labels,
+      axisLine: { lineStyle: { color: '#EAEAEA' } },
+      axisTick: { show: false },
+      axisLabel: { color: '#737378', fontSize: 12 },
+    },
+    yAxis: {
+      type: 'value',
+      name: '分钟',
+      min: 0,
+      minInterval: 1,
+      max: peak > 0 && peak < 1 ? 1 : undefined,
+      nameTextStyle: { color: '#737378', fontSize: 12 },
+      splitLine: { lineStyle: { color: '#EAEAEA', type: 'dashed' } },
+      axisLabel: { color: '#737378', fontSize: 12 },
+    },
+    series: [
+      {
+        type: 'bar',
+        data: values.map((value) => ({
+          value,
+          itemStyle: {
+            color: peak > 0 && value === peak ? '#EF4E36' : '#222222',
+            borderRadius: [5, 5, 0, 0],
+          },
+        })),
+        barMaxWidth: 24,
+        itemStyle: { color: '#222222', borderRadius: [5, 5, 0, 0] },
+      },
+    ],
+  }
+})
 const pieOption = computed(() => ({
   animation: false,
   tooltip: {
     trigger: 'item',
+    textStyle: { fontSize: 12 },
     formatter: (p: unknown) => {
       const row = p as { name: string; value: number; percent: number }
       return `${escapeHtml(String(row.name ?? ''))}<br/>${duration(row.value)} · ${row.percent}%`
@@ -145,7 +163,7 @@ const pieOption = computed(() => ({
       radius: ['57%', '78%'],
       center: ['50%', '50%'],
       label: { show: false },
-      itemStyle: { borderColor: '#fff', borderWidth: 4, borderRadius: 5 },
+      itemStyle: { borderColor: '#F5F5F5', borderWidth: 4, borderRadius: 5 },
       data: stats.value.categories.map((c) => ({
         name: c.name,
         value: c.ms,
@@ -154,41 +172,71 @@ const pieOption = computed(() => ({
     },
   ],
 }))
-const hourOption = computed(() => ({
-  ...trendOption.value,
-  xAxis: {
-    ...trendOption.value.xAxis,
-    data: Array.from({ length: 24 }, (_, i) => (i % 4 === 0 ? `${i}时` : '')),
-  },
-  series: [
-    {
-      type: 'bar',
-      data: stats.value.hours.map((v) => v / 60000),
-      barMaxWidth: 12,
-      itemStyle: { color: '#77777c', borderRadius: [4, 4, 0, 0] },
+const hourOption = computed(() => {
+  const values = stats.value.hours.map((v) => v / 60000)
+  const peak = Math.max(0, ...values)
+  return {
+    ...trendOption.value,
+    yAxis: {
+      ...trendOption.value.yAxis,
+      max: peak > 0 && peak < 1 ? 1 : undefined,
     },
-  ],
-}))
+    xAxis: {
+      ...trendOption.value.xAxis,
+      data: Array.from({ length: 24 }, (_, i) => (i % 4 === 0 ? `${i}时` : '')),
+    },
+    series: [
+      {
+        type: 'bar',
+        data: values.map((value) => ({
+          value,
+          itemStyle: {
+            color: peak > 0 && value === peak ? '#EF4E36' : '#737378',
+            borderRadius: [4, 4, 0, 0],
+          },
+        })),
+        barMaxWidth: 12,
+        itemStyle: { color: '#737378', borderRadius: [4, 4, 0, 0] },
+      },
+    ],
+  }
+})
 const stateName = (r: FocusRecord) =>
   r.status === 'completed' ? '正常结束' : r.status === 'early' ? '提前结束' : '中断'
+function openRecords() {
+  recordView.value = 'list'
+  selected.value = null
+  confirmDelete.value = false
+  recordsOpen.value = true
+}
+function closeRecords() {
+  recordsOpen.value = false
+  confirmDelete.value = false
+}
 function showRecord(record: FocusRecord) {
   selected.value = record
-  showRecords.value = false
+  confirmDelete.value = false
+  recordView.value = 'detail'
 }
-async function remove(record: FocusRecord) {
-  if (!(await confirm('删除这条专注记录？对应统计也会更新。'))) return
-  await app.deleteRecord(record.id)
+function backToList() {
+  confirmDelete.value = false
+  recordView.value = 'list'
   selected.value = null
+}
+async function confirmRemove(record: FocusRecord) {
+  await app.deleteRecord(record.id)
+  confirmDelete.value = false
+  selected.value = null
+  recordView.value = 'list'
   app.notify('记录已删除')
 }
 </script>
 <template>
   <div class="page stats-page">
-    <ConfirmationDialog :request="confirmation" @resolve="resolveConfirmation" />
     <header class="page-header">
       <h1>统计</h1>
-      <button class="icon-button" aria-label="查看专注记录" @click="showRecords = true">
-        <Icon name="clock" />
+      <button type="button" class="icon-button" aria-label="查看专注记录" @click="openRecords">
+        <Icon name="history" />
       </button>
     </header>
     <div class="segmented period-tabs">
@@ -203,8 +251,9 @@ async function remove(record: FocusRecord) {
         {{ label }}
       </button>
     </div>
-    <div class="period-selector">
+    <div class="period-selector" data-decision-group>
       <button
+        type="button"
         class="icon-button"
         aria-label="上一个统计周期"
         :disabled="period === 'all'"
@@ -219,6 +268,7 @@ async function remove(record: FocusRecord) {
           aria-label="选择统计日期"
           :disabled="period === 'all'" /></label
       ><button
+        type="button"
         class="icon-button"
         aria-label="下一个统计周期"
         :disabled="period === 'all'"
@@ -245,7 +295,10 @@ async function remove(record: FocusRecord) {
         <div class="main-metric">
           <span>专注时长</span><strong class="number">{{ duration(stats.totalMs) }}</strong>
         </div>
-        <div>
+        <div v-if="period === 'day'">
+          <span>最长单次</span><strong class="number">{{ longestMs > 0 ? duration(longestMs) : '—' }}</strong>
+        </div>
+        <div v-else>
           <span>专注天数</span><strong class="number">{{ stats.days }}<small>天</small></strong>
         </div>
         <div>
@@ -262,7 +315,7 @@ async function remove(record: FocusRecord) {
     <section class="stats-card">
       <div class="row between">
         <h2>专注趋势</h2>
-        <span class="muted chart-caption">{{ periodTitle }}</span>
+        <span class="chart-caption">{{ periodTitle }}</span>
       </div>
       <Chart :option="trendOption" label="专注时长趋势柱状图" :height="205" />
       <p v-if="!stats.totalMs" class="chart-empty">完成一次专注，看看时间留下的痕迹。</p>
@@ -271,12 +324,29 @@ async function remove(record: FocusRecord) {
       <div class="row between">
         <h2>专注分布</h2>
         <div class="mini-distribution">
-          <button type="button" :class="{ active: group === 'theme' }" :aria-pressed="group === 'theme'" @click="group = 'theme'">主题</button
-          ><button type="button" :class="{ active: group === 'item' }" :aria-pressed="group === 'item'" @click="group = 'item'">待办</button>
+          <button
+            type="button"
+            :class="{ active: group === 'theme' }"
+            :aria-pressed="group === 'theme'"
+            @click="group = 'theme'"
+          >
+            主题</button
+          ><button
+            type="button"
+            :class="{ active: group === 'item' }"
+            :aria-pressed="group === 'item'"
+            @click="group = 'item'"
+          >
+            待办
+          </button>
         </div>
       </div>
       <div v-if="stats.totalMs" class="pie-area">
-        <Chart :option="pieOption" label="各主题专注时长占比" :height="200" />
+        <Chart
+          :option="pieOption"
+          :label="group === 'theme' ? '各主题专注时长占比' : '各待办专注时长占比'"
+          :height="200"
+        />
         <div class="pie-center">
           <span class="number">{{ stats.categories.length }}</span><small>个专注方向</small>
         </div>
@@ -284,7 +354,7 @@ async function remove(record: FocusRecord) {
       <div v-else class="no-distribution">
         <span class="empty-ring" /><span>还没有专注记录</span>
       </div>
-      <div class="legend-list">
+      <div v-if="stats.categories.length" class="legend-list">
         <div v-for="row in stats.categories" :key="row.id" class="legend-row">
           <span class="row"><i :style="{ background: row.color }" />{{ row.name }}</span
           ><span
@@ -298,35 +368,19 @@ async function remove(record: FocusRecord) {
       <h2>时段分布</h2>
       <Chart :option="hourOption" label="一天24小时中的实际专注时长分布" :height="190" />
     </section>
-    <button class="secondary wide" @click="showRecords = true">
-      <Icon name="clock" :size="18" />查看专注记录
-    </button>
-    <Sheet :open="showRecords" title="专注记录" @close="showRecords = false"
-      ><template v-if="showRecords"><div v-if="!records.length" class="empty">
-        <Icon name="clock" :size="32" />
-        <p>这个时间范围还没有专注记录。</p>
-      </div>
-      <div class="record-list">
-        <button
-          v-for="record in records"
-          :key="record.id"
-          class="record"
-          @click="showRecord(record)"
-        >
-          <div>
-            <h3>{{ record.title }}</h3>
-            <p>{{ zoneDate(record.startedAt, record.timeZone) }} · {{ record.themeName }}</p>
-          </div>
-          <span class="number">{{ duration(record.durationMs) }}</span>
-        </button>
-      </div></template></Sheet
+    <Sheet
+      :open="recordsOpen"
+      :title="recordView === 'detail' && selected ? '专注详情' : '专注记录'"
+      :back-label="recordView === 'detail' && selected ? '专注记录' : undefined"
+      @back="backToList"
+      @close="closeRecords"
     >
-    <Sheet :open="!!selected" title="专注详情" @close="selected = null"
-      ><div v-if="selected" class="stack">
+      <div v-if="recordView === 'detail' && selected" class="stack">
         <h2>{{ selected.title }}</h2>
         <p class="muted">{{ selected.themeName }} · {{ stateName(selected) }}</p>
         <div class="card result-summary">
-          <strong class="number">{{ duration(selected.durationMs) }}</strong><small>实际专注</small>
+          <strong class="number">{{ duration(selected.durationMs) }}</strong
+          ><small>实际专注时长</small>
         </div>
         <p>
           {{ zoneDate(selected.startedAt, selected.timeZone) }}<br />{{
@@ -338,22 +392,63 @@ async function remove(record: FocusRecord) {
           暂停 {{ duration(selected.pausedMs) }} ·
           {{ selected.mode === 'countdown' ? '倒计时' : '正计时' }}
         </p>
-        <button class="text-button danger" @click="remove(selected)">删除记录</button>
-      </div></Sheet
-    >
+        <div v-if="confirmDelete" class="inline-confirm">
+          <p>删除这条专注记录？对应统计也会更新。</p>
+          <div class="inline-confirm-actions">
+            <button type="button" class="secondary" @click="confirmDelete = false">取消</button>
+            <button type="button" class="danger-button" @click="confirmRemove(selected)">
+              确认删除
+            </button>
+          </div>
+        </div>
+        <button v-else type="button" class="text-button danger" @click="confirmDelete = true">
+          删除记录
+        </button>
+      </div>
+      <template v-else>
+        <div v-if="!records.length" class="empty">
+          <Icon name="clock" :size="32" />
+          <p>这个时间范围还没有专注记录。</p>
+        </div>
+        <div v-else class="record-list">
+          <button
+            v-for="record in records"
+            :key="record.id"
+            type="button"
+            class="record"
+            @click="showRecord(record)"
+          >
+            <div>
+              <h3>{{ record.title }}</h3>
+              <p>{{ zoneDate(record.startedAt, record.timeZone) }} · {{ record.themeName }}</p>
+            </div>
+            <span class="number">{{ duration(record.durationMs) }}</span>
+          </button>
+        </div>
+      </template>
+    </Sheet>
   </div>
 </template>
 <style scoped>
+.stats-page .icon-button {
+  min-width: 48px;
+  min-height: 48px;
+}
+.stats-page .text-button {
+  min-width: 48px;
+  min-height: 48px;
+}
 .mini-distribution {
   display: flex;
   gap: 6px;
-  font-size: 11px;
+  font-size: 13px;
 }
 .mini-distribution button {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0 8px;
-  color: var(--muted);
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--muted-surface);
 }
 .mini-distribution .active {
   color: var(--ink);
@@ -361,6 +456,9 @@ async function remove(record: FocusRecord) {
 }
 .period-tabs {
   margin-bottom: 12px;
+}
+.period-tabs button {
+  min-height: 48px;
 }
 .period-selector {
   display: flex;
@@ -375,8 +473,8 @@ async function remove(record: FocusRecord) {
   justify-content: center;
   font-size: 14px;
   font-weight: 600;
-  min-height: 45px;
-  border-radius: 12px;
+  min-height: 48px;
+  border-radius: var(--radius);
   text-align: center;
   flex: 1;
   user-select: none;
@@ -398,8 +496,9 @@ async function remove(record: FocusRecord) {
   cursor: pointer;
 }
 .stats-overview {
-  padding: 16px;
-  background: #f7f7f7;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: var(--radius);
   margin-bottom: 16px;
 }
 .stats-overview h2,
@@ -415,7 +514,7 @@ async function remove(record: FocusRecord) {
 .overview-grid > div > span {
   display: block;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-surface);
   margin-bottom: 8px;
 }
 .overview-grid strong {
@@ -433,18 +532,25 @@ async function remove(record: FocusRecord) {
   font-weight: 500;
   letter-spacing: 0;
   margin-left: 4px;
+  color: var(--muted-surface);
 }
 .stats-card {
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
+  padding: 20px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+.stats-card:last-of-type {
+  margin-bottom: 0;
 }
 .chart-caption {
-  font-size: 11px;
+  font-size: 12px;
+  color: var(--muted-surface);
 }
 .chart-empty {
   font-size: 12px;
   text-align: center;
-  color: var(--muted);
+  color: var(--muted-surface);
   margin-top: 8px;
 }
 .pie-area {
@@ -464,7 +570,8 @@ async function remove(record: FocusRecord) {
   font-size: 32px;
 }
 .pie-center small {
-  font-size: 10px;
+  font-size: 12px;
+  color: var(--muted-surface);
 }
 .legend-list {
   display: grid;
@@ -495,6 +602,8 @@ async function remove(record: FocusRecord) {
 .legend-row small {
   min-width: 42px;
   text-align: right;
+  font-size: 12px;
+  color: var(--muted-surface);
 }
 .no-distribution {
   display: flex;
@@ -502,21 +611,73 @@ async function remove(record: FocusRecord) {
   gap: 20px;
   align-items: center;
   padding: 32px 0;
-  color: var(--muted);
+  color: var(--muted-surface);
   font-size: 12px;
 }
 .empty-ring {
   width: 112px;
   height: 112px;
-  border: 18px solid #f1f1f1;
+  border: 18px solid var(--line);
   border-radius: 50%;
+}
+.record {
+  min-height: 48px;
+  border-radius: var(--radius);
+}
+.record > div {
+  min-width: 0;
+  flex: 1;
+}
+.record h3 {
+  overflow-wrap: anywhere;
+}
+.record p {
+  font-size: 12px;
+  color: var(--muted-surface);
+  overflow-wrap: anywhere;
+}
+.record .number {
+  flex-shrink: 0;
 }
 .result-summary {
   text-align: center;
   display: grid;
   gap: 6px;
+  background: var(--surface);
+  border-radius: var(--radius);
 }
 .result-summary strong {
   font-size: 38px;
+}
+.result-summary small {
+  font-size: 12px;
+  color: var(--muted-surface);
+}
+.inline-confirm {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: #fff1ef;
+}
+.inline-confirm p {
+  font-size: 14px;
+  color: var(--ink);
+}
+.inline-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.inline-confirm-actions button {
+  min-height: 48px;
+}
+.danger-button {
+  min-height: 48px;
+  border-radius: 999px;
+  background: #c13a25;
+  color: #ffffff;
+  font-weight: 600;
+  padding: 0 16px;
 }
 </style>

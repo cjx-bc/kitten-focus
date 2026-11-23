@@ -1,41 +1,66 @@
 <script setup lang="ts">
-import { computed, ref, reactive } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import ConfirmationDialog from '../components/ConfirmationDialog.vue'
-import { useConfirmation } from '../components/useConfirmation'
 import { useApp } from '../stores/app'
-import type { CalendarEvent, Semester, Course, Occurrence, FocusRecord } from '../domain/model'
-import { uid, defaultPeriods } from '../domain/model'
+import type { CalendarEvent, Course, FocusItem, FocusRecord, Occurrence, Semester } from '../domain/model'
+import { defaultPeriods, uid } from '../domain/model'
 import { findEventConflict, occurrences, semesterWeek, validateEvent } from '../domain/calendar'
 import {
-  dateKey,
-  weekStart,
   addDays,
-  localDate,
-  readableDate,
-  weekdayName,
-  localInput,
-  zoneTime,
+  dateKey,
   duration,
-  weekday,
-  zoneDate,
   intervalBuckets,
+  localDate,
+  localInput,
+  readableDate,
+  weekday,
+  weekdayName,
+  weekStart,
+  zoneDate,
+  zoneTime,
 } from '../domain/dates'
+import {
+  classifyStartError,
+  getUnreadyProtectionIds,
+  isCancelledStartError,
+  type StartErrorKind,
+} from '../domain/startRecovery'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
-const { confirmation, confirm, resolveConfirmation } = useConfirmation()
+import { waitForDialogClose } from '../components/sheetClose'
+import StudyModeSheet from '../components/StudyModeSheet.vue'
+
+type CalendarSheet =
+  | 'menu'
+  | 'event'
+  | 'detail'
+  | 'semester'
+  | 'course'
+  | 'adjust'
+  | 'startError'
+  | null
+
 const app = useApp(),
   router = useRouter(),
   tab = ref<'schedule' | 'timetable'>('schedule'),
   view = ref<'plan' | 'actual'>('plan'),
   day = ref(dateKey()),
   monthOpen = ref(false)
-const sheet = ref<'event' | 'detail' | 'semester' | 'course' | 'adjust' | null>(null),
+const sheet = ref<CalendarSheet>(null),
+  studyOpen = ref(false),
   error = ref(''),
   busy = ref(false),
   selected = ref<Occurrence | null>(null),
   source = ref<Occurrence | undefined>(),
-  scope = ref<'once' | 'all'>('all')
+  scope = ref<'once' | 'all'>('all'),
+  eventConflict = ref<string | null>(null),
+  detailDeleteStep = ref<'idle' | 'choose'>('idle'),
+  eventBackToDetail = ref(false),
+  courseBackToDetail = ref(false),
+  semesterBackToMenu = ref(false),
+  startError = ref<{ message: string; kind: StartErrorKind } | null>(null),
+  pendingStartItem = ref<FocusItem | null>(null)
+
 const eventForm = reactive<CalendarEvent>({
   id: '',
   title: '',
@@ -72,6 +97,7 @@ const courseForm = reactive<Course>({
   reminderMinutes: null,
 })
 const adjust = reactive({ start: '', end: '' })
+
 const currentSemester = computed(() =>
     app.data.semesters.find((s) => s.id === app.data.preferences.activeSemesterId),
   ),
@@ -106,41 +132,168 @@ const monthDays = computed(() => {
 })
 const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const slotCount = computed(() => currentSemester.value?.periods.length || 10)
+const scheduleHasEmptyPrimary = computed(
+  () => tab.value === 'schedule' && view.value === 'plan' && dayItems.value.length === 0,
+)
+const timetableHasEmptyPrimary = computed(
+  () => tab.value === 'timetable' && !currentSemester.value,
+)
+const selectedLinkedItem = computed(() =>
+  selected.value?.itemId
+    ? app.items.find((i) => i.id === selected.value!.itemId) ?? null
+    : null,
+)
+const isSelectedWeeklyEvent = computed(() => {
+  if (!selected.value || selected.value.kind !== 'event') return false
+  return app.data.events.find((e) => e.id === selected.value!.sourceId)?.repeat === 'weekly'
+})
+
+const sheetTitle = computed(() => {
+  switch (sheet.value) {
+    case 'menu':
+      return '日历视图与设置'
+    case 'event':
+      return source.value ? '编辑日程' : '添加日程'
+    case 'detail':
+      return selected.value?.kind === 'course' ? '课程详情' : '日程详情'
+    case 'semester':
+      return app.data.semesters.some((s) => s.id === semesterForm.id)
+        ? '学期与上课时间'
+        : '新建学期'
+    case 'course':
+      return app.data.courses.some((c) => c.id === courseForm.id) ? '编辑课程' : '添加课程'
+    case 'adjust':
+      return '仅本次调课'
+    case 'startError':
+      return '无法开始专注'
+    default:
+      return ''
+  }
+})
+
+const sheetBackLabel = computed<string | undefined>(() => {
+  if (sheet.value === 'event' && eventBackToDetail.value) return '日程详情'
+  if (sheet.value === 'course' && courseBackToDetail.value) return '课程详情'
+  if (sheet.value === 'adjust' && selected.value) {
+    return selected.value.kind === 'course' ? '课程详情' : '日程详情'
+  }
+  if (sheet.value === 'semester' && semesterBackToMenu.value) return '日历视图与设置'
+  return undefined
+})
+
+watch(
+  () => [
+    eventForm.start,
+    eventForm.end,
+    eventForm.allDay,
+    eventForm.repeat,
+    eventForm.weekdays.join(','),
+    eventForm.until,
+    scope.value,
+  ],
+  () => {
+    eventConflict.value = null
+  },
+)
+
 function clearError() {
   error.value = ''
 }
+
+function closeSheet(force = false) {
+  if (busy.value && force !== true) return
+  sheet.value = null
+  clearError()
+  eventConflict.value = null
+  detailDeleteStep.value = 'idle'
+  eventBackToDetail.value = false
+  courseBackToDetail.value = false
+  semesterBackToMenu.value = false
+  startError.value = null
+}
+
+function handleSheetBack() {
+  if (busy.value) return
+  clearError()
+  if (sheet.value === 'event' && eventBackToDetail.value) {
+    eventConflict.value = null
+    eventBackToDetail.value = false
+    sheet.value = 'detail'
+    return
+  }
+  if (sheet.value === 'course' && courseBackToDetail.value) {
+    courseBackToDetail.value = false
+    sheet.value = 'detail'
+    return
+  }
+  if (sheet.value === 'adjust') {
+    sheet.value = 'detail'
+    return
+  }
+  if (sheet.value === 'semester' && semesterBackToMenu.value) {
+    semesterBackToMenu.value = false
+    sheet.value = 'menu'
+  }
+}
+
 async function execute(fn: () => Promise<unknown>) {
+  if (busy.value) return
   busy.value = true
   error.value = ''
   try {
     await fn()
-    sheet.value = null
+    closeSheet(true)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
     busy.value = false
   }
 }
+
+function openMenu() {
+  clearError()
+  sheet.value = 'menu'
+}
+
 function changeWeek(delta: number) {
   day.value = addDays(day.value, delta * 7)
 }
+
 function changeMonth(delta: number) {
   const d = localDate(day.value)
   day.value = dateKey(new Date(d.getFullYear(), d.getMonth() + delta, 1))
 }
+
 function selectDay(date: string) {
   day.value = date
   monthOpen.value = false
 }
+
+function defaultEventRange(selectedDay: string) {
+  if (selectedDay === dateKey()) {
+    const now = new Date()
+    const nextSlot = Math.floor((now.getHours() * 60 + now.getMinutes()) / 30 + 1) * 30
+    if (nextSlot >= 23 * 60) {
+      return { start: `${selectedDay}T23:00`, end: `${selectedDay}T23:59` }
+    }
+    const startMs = new Date(`${selectedDay}T00:00:00`).getTime() + nextSlot * 60000
+    return { start: localInput(startMs), end: localInput(startMs + 3600000) }
+  }
+  const start = new Date(`${selectedDay}T09:00:00`)
+  return { start: localInput(start), end: localInput(start.getTime() + 3600000) }
+}
+
 function newEvent() {
   source.value = undefined
   scope.value = 'all'
-  const start = new Date(`${day.value}T09:00:00`)
+  eventBackToDetail.value = false
+  eventConflict.value = null
+  const range = defaultEventRange(day.value)
   Object.assign(eventForm, {
     id: uid(),
     title: '',
-    start: localInput(start),
-    end: localInput(start.getTime() + 3600000),
+    start: range.start,
+    end: range.end,
     allDay: false,
     note: '',
     repeat: 'none',
@@ -152,12 +305,16 @@ function newEvent() {
   clearError()
   sheet.value = 'event'
 }
+
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
-function editEvent(o: Occurrence) {
+
+function editEvent(o: Occurrence, fromDetail = false) {
   const event = app.data.events.find((e) => e.id === o.sourceId)
   if (!event) return
   source.value = o
   scope.value = event.repeat === 'weekly' ? 'once' : 'all'
+  eventBackToDetail.value = fromDetail
+  eventConflict.value = null
   Object.assign(eventForm, clone(event))
   if (eventForm.allDay) eventForm.end = addDays(eventForm.end.slice(0, 10), -1) + 'T23:59'
   if (scope.value === 'once') {
@@ -168,6 +325,7 @@ function editEvent(o: Occurrence) {
   clearError()
   sheet.value = 'event'
 }
+
 function changeScope() {
   if (!source.value) return
   const event = app.data.events.find((e) => e.id === source.value!.sourceId)
@@ -180,7 +338,8 @@ function changeScope() {
   }
   if (eventForm.allDay) eventForm.end = addDays(eventForm.end.slice(0, 10), -1) + 'T23:59'
 }
-async function saveEvent() {
+
+async function saveEvent(allowConflict = false): Promise<boolean> {
   const payload = structuredClone({ ...eventForm, weekdays: [...eventForm.weekdays] })
   payload.title = payload.title.trim()
   if (scope.value === 'once') payload.repeat = 'none'
@@ -190,26 +349,51 @@ async function saveEvent() {
     payload.end = `${addDays(payload.end.slice(0, 10), 1)}T00:00`
   }
   validateEvent(payload)
-  const conflict = findEventConflict(app.data, payload, scope.value === 'once' ? source.value?.id : undefined)
-  if (conflict && !(await confirm(`与“${conflict.title}”时间重叠，仍然保存吗？`, {
-    title: '时间有重叠', confirmLabel: '仍然保存', danger: false,
-  }))) {
-    throw new Error('可以调整时间后再保存，刚才填写的内容已保留')
+  if (!allowConflict) {
+    const conflict = findEventConflict(
+      app.data,
+      payload,
+      scope.value === 'once' ? source.value?.id : undefined,
+    )
+    if (conflict) {
+      eventConflict.value = conflict.title
+      return false
+    }
   }
+  eventConflict.value = null
   await app.saveEvent(payload, source.value, scope.value)
+  return true
 }
+
+async function submitEvent(allowConflict = false) {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const saved = await saveEvent(allowConflict)
+    if (saved) closeSheet(true)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
 function showDetail(o: Occurrence) {
   selected.value = o
+  detailDeleteStep.value = 'idle'
   clearError()
   sheet.value = 'detail'
 }
-async function deleteSelected(which: 'once' | 'all') {
+
+async function confirmDelete(which: 'once' | 'all') {
   const occurrence = selected.value
-  if (!occurrence) return
-  if (!(await confirm(which === 'all' ? '删除整组安排？' : '删除这一次安排？'))) return
+  if (!occurrence || busy.value) return
   await execute(() => app.removeOccurrence(occurrence, which))
 }
-function openSemester(semester?: Semester) {
+
+function openSemester(semester?: Semester, fromMenu = false) {
+  semesterBackToMenu.value = fromMenu
   Object.assign(
     semesterForm,
     semester
@@ -225,15 +409,18 @@ function openSemester(semester?: Semester) {
   clearError()
   sheet.value = 'semester'
 }
+
 async function saveSemester() {
   await app.saveSemester(clone(semesterForm))
   day.value = semesterForm.startDate
 }
-function openCourse(course?: Course) {
+
+function openCourse(course?: Course, fromDetail = false) {
   if (!currentSemester.value) {
-    openSemester()
+    openSemester(undefined, false)
     return
   }
+  courseBackToDetail.value = fromDetail
   Object.assign(
     courseForm,
     course
@@ -257,12 +444,15 @@ function openCourse(course?: Course) {
   clearError()
   sheet.value = 'course'
 }
-async function selectSemester(event: Event) {
-  const id = (event.target as HTMLSelectElement).value
+
+async function selectSemesterById(id: string) {
+  if (busy.value) return
   await app.mutate((d) => (d.preferences.activeSemesterId = id))
   const semester = app.data.semesters.find((s) => s.id === id)
   if (semester) day.value = semester.startDate
+  closeSheet()
 }
+
 function openAdjust() {
   if (!selected.value) return
   adjust.start = selected.value.start
@@ -270,23 +460,89 @@ function openAdjust() {
   clearError()
   sheet.value = 'adjust'
 }
-async function startFromEvent() {
-  if (busy.value || !selected.value?.itemId) return
-  const item = app.items.find((i) => i.id === selected.value!.itemId)
-  if (!item) return
+
+async function runStartItem(item: FocusItem) {
   busy.value = true
   error.value = ''
+  startError.value = null
   try {
     await app.start(item)
-    sheet.value = null
     await router.push('/focus')
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
-    if (message !== '已取消开始专注') error.value = message
+    if (!isCancelledStartError(message)) {
+      startError.value = { message, kind: classifyStartError(message) }
+      sheet.value = 'startError'
+    }
   } finally {
     busy.value = false
   }
 }
+
+async function startFromEvent() {
+  if (busy.value || !selected.value?.itemId) return
+  const item = app.items.find((i) => i.id === selected.value!.itemId)
+  if (!item) return
+  pendingStartItem.value = item
+  busy.value = true
+  error.value = ''
+  startError.value = null
+  sheet.value = null
+  await waitForDialogClose()
+  busy.value = false
+  await runStartItem(item)
+}
+
+async function goRecoveryFromStartError() {
+  if (busy.value) return
+  sheet.value = null
+  startError.value = null
+  await waitForDialogClose()
+  await router.push('/recovery')
+}
+
+async function openStudyFromStartError() {
+  if (busy.value) return
+  sheet.value = null
+  startError.value = null
+  await waitForDialogClose()
+  studyOpen.value = true
+}
+
+async function clearUnreadyAndRetry() {
+  if (busy.value) return
+  const item = pendingStartItem.value
+  if (!item) {
+    closeSheet()
+    return
+  }
+  busy.value = true
+  try {
+    const ids = await getUnreadyProtectionIds(app.data.preferences.protection)
+    if (!ids.length) {
+      sheet.value = null
+      startError.value = null
+      await waitForDialogClose()
+      studyOpen.value = true
+      return
+    }
+    await app.clearUnreadyProtections(ids, true)
+    sheet.value = null
+    startError.value = null
+    await waitForDialogClose()
+    busy.value = false
+    await runStartItem(item)
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    if (!isCancelledStartError(message)) {
+      startError.value = { message, kind: classifyStartError(message) }
+      sheet.value = 'startError'
+    }
+  } finally {
+    busy.value = false
+  }
+}
+
 function actualDuration(r: FocusRecord) {
   return r.segments.reduce(
     (sum, s) =>
@@ -297,9 +553,11 @@ function actualDuration(r: FocusRecord) {
     0,
   )
 }
+
 function timeLabel(o: Occurrence) {
   return `${o.start.slice(0, 10) === day.value ? o.start.slice(11, 16) : '前一天'} — ${o.end.slice(0, 10) === day.value ? o.end.slice(11, 16) : '次日 ' + o.end.slice(11, 16)}`
 }
+
 function coursePosition(o: Occurrence) {
   const periods = currentSemester.value?.periods || [],
     first = periods.findIndex((p) => o.start.slice(11, 16) <= p.end),
@@ -311,50 +569,81 @@ function coursePosition(o: Occurrence) {
     gridColumn: String(column + 1),
     gridRow: `${row + 2} / span ${Math.max(1, end - row)}`,
     background: o.color + '16',
-    borderLeft: `3px solid ${o.color}`,
+    border: `1px solid ${o.color}33`,
     color: '#222',
   }
 }
 </script>
 <template>
   <div class="page calendar-page">
-    <ConfirmationDialog :request="confirmation" @resolve="resolveConfirmation" />
-    <header class="page-header">
+    <header v-if="tab === 'schedule'" class="page-header">
       <h1>日历</h1>
       <div class="actions">
-        <button class="icon-button" aria-label="回到今天" @click="day = dateKey()">
-          <Icon name="calendar" /></button
-        ><button
-          class="icon-button soft"
-          :aria-label="tab === 'timetable' ? '添加课程' : '添加日程'"
-          @click="tab === 'timetable' ? openCourse() : newEvent()"
+        <button
+          type="button"
+          class="today-jump"
+          :class="{ highlight: day !== dateKey() }"
+          aria-label="回到今天"
+          @click="day = dateKey()"
         >
-          <Icon name="plus" />
+          今天
+        </button>
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="日历视图与设置"
+          aria-haspopup="dialog"
+          :aria-expanded="sheet === 'menu'"
+          @click="openMenu"
+        >
+          <Icon name="more" />
         </button>
       </div>
     </header>
-    <div class="segmented calendar-tabs">
-      <button type="button" :class="{ active: tab === 'schedule' }" :aria-pressed="tab === 'schedule'" @click="tab = 'schedule'">日程</button
-      ><button type="button" :class="{ active: tab === 'timetable' }" :aria-pressed="tab === 'timetable'" @click="tab = 'timetable'">课表</button>
-    </div>
-    <template v-if="tab === 'schedule'"
-      ><div class="calendar-month">
-        <button
-          class="icon-button small"
-          aria-label="上周或上月"
-          @click="monthOpen ? changeMonth(-1) : changeWeek(-1)"
-        >
-          <Icon name="left" :size="18" /></button
-        ><button class="row" :aria-expanded="monthOpen" @click="monthOpen = !monthOpen">
-          {{ monthTitle }}<Icon name="down" :size="14" /></button
-        ><button
-          class="icon-button small"
-          aria-label="下周或下月"
-          @click="monthOpen ? changeMonth(1) : changeWeek(1)"
-        >
+    <header v-else class="page-header timetable-header">
+      <button type="button" class="detail-back timetable-back" @click="tab = 'schedule'">
+        <Icon name="left" :size="16" /><span>日程</span>
+      </button>
+      <div v-if="currentSemester" class="week-stepper">
+        <button type="button" class="icon-button" aria-label="上一教学周" @click="changeWeek(-1)">
+          <Icon name="left" :size="18" />
+        </button>
+        <span class="week-stepper-label">
+          {{
+            currentWeek >= 1 && currentWeek <= currentSemester.weeks
+              ? '第 ' + currentWeek + ' 周'
+              : '学期范围外'
+          }}
+        </span>
+        <button type="button" class="icon-button" aria-label="下一教学周" @click="changeWeek(1)">
           <Icon name="right" :size="18" />
         </button>
       </div>
+      <h1 v-else class="timetable-empty-title">课表</h1>
+      <div class="actions">
+        <button
+          type="button"
+          class="icon-button"
+          :class="timetableHasEmptyPrimary ? 'soft' : 'primary'"
+          aria-label="添加课程"
+          @click="openCourse()"
+        >
+          <Icon name="plus" />
+        </button>
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="日历视图与设置"
+          aria-haspopup="dialog"
+          :aria-expanded="sheet === 'menu'"
+          @click="openMenu"
+        >
+          <Icon name="more" />
+        </button>
+      </div>
+    </header>
+
+    <template v-if="tab === 'schedule'">
       <div class="week-strip">
         <button
           v-for="date in week"
@@ -365,37 +654,81 @@ function coursePosition(o: Occurrence) {
           :aria-current="date === dateKey() ? 'date' : undefined"
           @click="day = date"
         >
-          <span>{{ weekdayName(date) }}</span><strong class="number">{{
-            Number(date.slice(8))
-          }}</strong
-          ><i :class="{ present: occurrences(app.data, date, date).length > 0 }" />
+          <span>{{ weekdayName(date) }}</span>
+          <strong class="number">{{ Number(date.slice(8)) }}</strong>
+          <i :class="{ present: occurrences(app.data, date, date).length > 0 }" />
         </button>
       </div>
-      <div v-if="monthOpen" class="month-grid">
-        <span v-for="name in weekdays" :key="name">{{ name.slice(1) }}</span><button
-          v-for="date in monthDays"
-          :key="date"
-          type="button"
-          :class="{ active: date === day, outside: date.slice(0, 7) !== day.slice(0, 7) }"
-          :aria-pressed="date === day"
-          :aria-current="date === dateKey() ? 'date' : undefined"
-          @click="selectDay(date)"
-        >
-          {{ Number(date.slice(8)) }}
-        </button>
-      </div>
+
+      <template v-if="monthOpen">
+        <div class="calendar-month">
+          <div class="month-nav">
+            <button type="button" class="icon-button" aria-label="上一月" @click="changeMonth(-1)">
+              <Icon name="left" :size="18" />
+            </button>
+            <span class="month-title">{{ monthTitle }}</span>
+            <button type="button" class="icon-button" aria-label="下一月" @click="changeMonth(1)">
+              <Icon name="right" :size="18" />
+            </button>
+          </div>
+          <button type="button" class="text-button month-collapse" @click="monthOpen = false">
+            收起
+          </button>
+        </div>
+        <div class="month-grid">
+          <span v-for="name in weekdays" :key="name">{{ name.slice(1) }}</span>
+          <button
+            v-for="date in monthDays"
+            :key="date"
+            type="button"
+            :class="{ active: date === day, outside: date.slice(0, 7) !== day.slice(0, 7) }"
+            :aria-pressed="date === day"
+            :aria-current="date === dateKey() ? 'date' : undefined"
+            @click="selectDay(date)"
+          >
+            {{ Number(date.slice(8)) }}
+          </button>
+        </div>
+      </template>
+
       <div class="timeline-header">
         <h2>
           {{ readableDate(day) }} <span>{{ weekdayName(day) }}</span>
         </h2>
-        <div class="mini-switch">
-          <button type="button" :class="{ active: view === 'plan' }" :aria-pressed="view === 'plan'" @click="view = 'plan'">计划</button
-          ><button type="button" :class="{ active: view === 'actual' }" :aria-pressed="view === 'actual'" @click="view = 'actual'">实际</button>
+        <div class="timeline-controls">
+          <button
+            type="button"
+            class="icon-button"
+            :class="scheduleHasEmptyPrimary ? 'soft' : 'primary'"
+            aria-label="添加日程"
+            @click="newEvent()"
+          >
+            <Icon name="plus" />
+          </button>
+          <div class="mini-switch">
+            <button
+              type="button"
+              :class="{ active: view === 'plan' }"
+              :aria-pressed="view === 'plan'"
+              @click="view = 'plan'"
+            >
+              计划
+            </button>
+            <button
+              type="button"
+              :class="{ active: view === 'actual' }"
+              :aria-pressed="view === 'actual'"
+              @click="view = 'actual'"
+            >
+              实际
+            </button>
+          </div>
         </div>
       </div>
-      <template v-if="view === 'plan'"
-        ><div v-if="allDay.length" class="all-day-list">
-          <button v-for="o in allDay" :key="o.id" @click="showDetail(o)">
+
+      <template v-if="view === 'plan'">
+        <div v-if="allDay.length" class="all-day-list">
+          <button v-for="o in allDay" :key="o.id" type="button" @click="showDetail(o)">
             <span>全天</span>{{ o.title }}
           </button>
         </div>
@@ -403,7 +736,7 @@ function coursePosition(o: Occurrence) {
           <div v-for="o in timed" :key="o.id" class="timeline-entry">
             <div class="timeline-dot" :style="{ borderColor: o.color }" />
             <div class="timeline-time">{{ timeLabel(o) }}</div>
-            <button class="timeline-card" @click="showDetail(o)">
+            <button type="button" class="timeline-card" @click="showDetail(o)">
               <div class="row between">
                 <h3>{{ o.title }}</h3>
                 <Icon v-if="o.kind === 'course'" name="book" :size="16" />
@@ -417,17 +750,20 @@ function coursePosition(o: Occurrence) {
           <div class="empty-mark"><Icon name="calendar" :size="31" /></div>
           <h2>今天，留一点时间给自己</h2>
           <p>安排一段学习，也安排一段休息。</p>
-          <button class="primary" @click="newEvent"><Icon name="plus" :size="17" />添加日程</button>
-        </div></template
-      >
-      <template v-else
-        ><div class="timeline">
+          <button type="button" class="primary" @click="newEvent">
+            <Icon name="plus" :size="17" />添加日程
+          </button>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="timeline">
           <div v-for="record in actualRecords" :key="record.id" class="timeline-entry">
             <div class="timeline-dot" />
             <div class="timeline-time">
               {{ zoneTime(record.startedAt, record.timeZone) }} —
-              {{ zoneTime(record.endedAt, record.timeZone)
-              }}<small>{{ duration(actualDuration(record)) }}</small>
+              {{ zoneTime(record.endedAt, record.timeZone) }}
+              <small>{{ duration(actualDuration(record)) }}</small>
             </div>
             <div class="timeline-card actual-card">
               <h3>{{ record.title }}</h3>
@@ -448,410 +784,736 @@ function coursePosition(o: Occurrence) {
           <div class="empty-mark"><Icon name="clock" :size="31" /></div>
           <h2>今天还没有专注记录</h2>
           <p>计划是起点，行动会留下时间。</p>
-          <button class="secondary" @click="router.push('/tasks')">去专注</button>
-        </div></template
-      ></template
-    >
-    <template v-else
-      ><div v-if="app.data.semesters.length" class="semester-toolbar">
-        <select
-          :value="app.data.preferences.activeSemesterId"
-          aria-label="选择学期"
-          @change="selectSemester"
-        >
-          <option v-for="semester in app.data.semesters" :key="semester.id" :value="semester.id">
-            {{ semester.name }}
-          </option></select
-        ><button
-          class="icon-button"
-          aria-label="编辑学期和节次"
-          @click="openSemester(currentSemester)"
-        >
-          <Icon name="settings" :size="20" /></button
-        ><button class="icon-button" aria-label="新建学期" @click="openSemester()">
-          <Icon name="plus" :size="20" />
-        </button>
-      </div>
-      <template v-if="currentSemester"
-        ><div class="course-week-nav">
-          <button class="icon-button" aria-label="上一教学周" @click="changeWeek(-1)">
-            <Icon name="left" :size="18" /></button
-          ><span
-            >{{
-              currentWeek >= 1 && currentWeek <= currentSemester.weeks
-                ? '第 ' + currentWeek + ' 周'
-                : '学期范围外'
-            }}<small>{{ readableDate(week[0]!) }} — {{ readableDate(week[6]!) }}</small></span
-          ><button class="icon-button" aria-label="下一教学周" @click="changeWeek(1)">
-            <Icon name="right" :size="18" />
-          </button>
+          <button type="button" class="secondary" @click="router.push('/tasks')">去专注</button>
         </div>
-        <div
-          class="course-grid"
-          :style="{ gridTemplateRows: '42px repeat(' + slotCount + ', 72px)' }"
-        >
-          <div class="course-grid-corner">节次</div>
+      </template>
+    </template>
+
+    <template v-else>
+      <template v-if="currentSemester">
+        <p class="timetable-range">
+          {{ currentSemester.name }} · {{ readableDate(week[0]!) }} — {{ readableDate(week[6]!) }}
+        </p>
+        <div class="course-grid-scroll">
           <div
-            v-for="date in week"
-            :key="date"
-            class="course-day"
-            :class="{ today: date === dateKey() }"
+            class="course-grid"
+            :style="{ gridTemplateRows: '48px repeat(' + slotCount + ', 76px)' }"
           >
-            <span>{{ weekdayName(date).slice(1) }}</span><strong>{{
-              Number(date.slice(8))
-            }}</strong>
-          </div>
-          <template v-for="period in currentSemester.periods" :key="period.index"
-            ><div
-              class="period-label"
-              :style="{ gridColumn: '1', gridRow: String(period.index + 1) }"
-            >
-              <strong>{{ period.index }}</strong><small>{{ period.start }}</small
-              ><small>{{ period.end }}</small>
-            </div>
+            <div class="course-grid-corner">节次</div>
             <div
-              v-for="d in 7"
-              :key="d"
-              class="course-cell"
-              :style="{ gridColumn: String(d + 1), gridRow: String(period.index + 1) }" /></template
-          ><button
-            v-for="o in weekCourses"
-            :key="o.id"
-            class="course-block"
-            :style="coursePosition(o)"
-            @click="showDetail(o)"
-          >
-            <strong>{{ o.title }}</strong><small>{{ o.note }}</small>
-          </button>
+              v-for="date in week"
+              :key="date"
+              class="course-day"
+              :class="{ today: date === dateKey() }"
+            >
+              <span>{{ weekdayName(date).slice(1) }}</span>
+              <strong>{{ Number(date.slice(8)) }}</strong>
+            </div>
+            <template v-for="period in currentSemester.periods" :key="period.index">
+              <div
+                class="period-label"
+                :style="{ gridColumn: '1', gridRow: String(period.index + 1) }"
+              >
+                <strong>{{ period.index }}</strong>
+                <small>{{ period.start }}</small>
+                <small>{{ period.end }}</small>
+              </div>
+              <div
+                v-for="d in 7"
+                :key="d"
+                class="course-cell"
+                :style="{ gridColumn: String(d + 1), gridRow: String(period.index + 1) }"
+              />
+            </template>
+            <button
+              v-for="o in weekCourses"
+              :key="o.id"
+              type="button"
+              class="course-block"
+              :style="coursePosition(o)"
+              @click="showDetail(o)"
+            >
+              <strong>{{ o.title }}</strong>
+              <small v-if="o.note">{{ o.note }}</small>
+            </button>
+          </div>
         </div>
-        <button class="add-course secondary wide" @click="openCourse()">
+        <button type="button" class="add-course secondary wide" @click="openCourse()">
           <Icon name="plus" :size="17" />添加课程
-        </button></template
-      >
+        </button>
+      </template>
       <div v-else class="empty calendar-empty">
         <div class="empty-mark"><Icon name="book" :size="31" /></div>
         <h2>开始一个新的学期</h2>
         <p>设置学期和上课时间，课程就会按周排好。</p>
-        <button class="primary" @click="openSemester()">设置学期</button>
-      </div></template
+        <button type="button" class="primary" @click="openSemester()">设置学期</button>
+      </div>
+    </template>
+
+    <Sheet
+      :open="sheet !== null"
+      :title="sheetTitle"
+      :back-label="sheetBackLabel"
+      :close-disabled="busy"
+      @back="handleSheetBack"
+      @close="closeSheet()"
     >
-    <Sheet v-if="sheet === 'event'" :title="source ? '编辑日程' : '添加日程'" :close-disabled="busy" @close="!busy && (sheet = null)"
-      ><form @submit.prevent="execute(saveEvent)">
+      <div v-if="sheet === 'menu'" class="stack">
+        <div class="menu-list">
+          <button
+            type="button"
+            class="menu-row"
+            @click="
+              tab = tab === 'schedule' ? 'timetable' : 'schedule';
+              closeSheet()
+            "
+          >
+            <span>{{ tab === 'schedule' ? '切换到课表视图' : '切换到日程视图' }}</span>
+            <Icon name="right" :size="18" class="menu-chevron" />
+          </button>
+          <button
+            v-if="tab === 'schedule'"
+            type="button"
+            class="menu-row"
+            @click="
+              monthOpen = !monthOpen;
+              closeSheet()
+            "
+          >
+            <span>{{ monthOpen ? `收起月历（${monthTitle}）` : `展开月历（${monthTitle}）` }}</span>
+            <Icon name="right" :size="18" class="menu-chevron" />
+          </button>
+          <button type="button" class="menu-row" @click="openSemester(currentSemester, true)">
+            <span>{{
+              tab === 'timetable' && currentSemester ? '编辑学期与每日节次' : '学期与每日节次设置'
+            }}</span>
+            <Icon name="right" :size="18" class="menu-chevron" />
+          </button>
+          <button
+            v-if="tab === 'timetable'"
+            type="button"
+            class="menu-row"
+            @click="openSemester(undefined, true)"
+          >
+            <span>新建学期</span>
+            <Icon name="right" :size="18" class="menu-chevron" />
+          </button>
+        </div>
+        <div v-if="app.data.semesters.length > 1" class="menu-section">
+          <p class="menu-section-title">切换当前学期</p>
+          <div class="menu-list">
+            <button
+              v-for="semester in app.data.semesters"
+              :key="semester.id"
+              type="button"
+              class="menu-row"
+              :aria-pressed="semester.id === app.data.preferences.activeSemesterId"
+              @click="selectSemesterById(semester.id)"
+            >
+              <span>{{ semester.name }}</span>
+              <span
+                v-if="semester.id === app.data.preferences.activeSemesterId"
+                class="menu-active-tag"
+              >
+                当前
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <form v-else-if="sheet === 'event'" @submit.prevent="submitEvent(false)">
         <label
           v-if="
             source && app.data.events.find((e) => e.id === source?.sourceId)?.repeat === 'weekly'
           "
-          >修改范围<select v-model="scope" @change="changeScope">
+        >
+          修改范围
+          <select v-model="scope" @change="changeScope">
             <option value="once">仅本次</option>
             <option value="all">整组日程</option>
-          </select></label
-        ><label
-          >日程名称<input
+          </select>
+        </label>
+        <label>
+          日程名称
+          <input
             v-model="eventForm.title"
             required
             maxlength="120"
             placeholder="例如：复习英语"
-            autofocus /></label
-        ><label v-if="!source || scope === 'all'" class="switch"
-          ><span>全天日程</span><input v-model="eventForm.allDay" type="checkbox"
-        /></label>
-        <div v-if="eventForm.allDay" class="two-cols">
-          <label
-            >开始日期<input
+            autofocus
+          />
+        </label>
+        <label v-if="!source || scope === 'all'" class="switch">
+          <span>全天日程</span>
+          <input v-model="eventForm.allDay" type="checkbox" />
+        </label>
+        <div v-if="eventForm.allDay" class="two-cols event-dates-grid">
+          <label>
+            开始日期
+            <input
               :value="eventForm.start.slice(0, 10)"
               type="date"
               required
-              @input="
-                eventForm.start = ($event.target as HTMLInputElement).value + 'T00:00'
-              " /></label
-          ><label
-            >最后一天<input
+              @input="eventForm.start = ($event.target as HTMLInputElement).value + 'T00:00'"
+            />
+          </label>
+          <label>
+            最后一天
+            <input
               :value="eventForm.end.slice(0, 10)"
               type="date"
               required
               @input="eventForm.end = ($event.target as HTMLInputElement).value + 'T23:59'"
-          /></label>
+            />
+          </label>
         </div>
-        <template v-else
-          ><label>开始时间<input v-model="eventForm.start" type="datetime-local" required /></label
-          ><label
-            >结束时间<input
-              v-model="eventForm.end"
-              type="datetime-local"
-              required /></label></template
-        ><template v-if="!source || scope === 'all'"
-          ><label
-            >重复<select v-model="eventForm.repeat">
-              <option value="none">不重复</option>
-              <option value="weekly">每周重复</option>
-            </select></label
-          ><template v-if="eventForm.repeat === 'weekly'"
-            ><fieldset>
-              <legend>重复日期</legend>
-              <div class="weekday-checks">
-                <label v-for="(name, i) in weekdays" :key="name"
-                  ><input v-model="eventForm.weekdays" type="checkbox" :value="i + 1" /><span>{{
-                    name.slice(1)
-                  }}</span></label
-                >
-              </div>
-            </fieldset>
-            <label>截止日期（选填）<input v-model="eventForm.until" type="date" /></label></template
-          ><label
-            >关联待办（选填）<select v-model="eventForm.itemId">
-              <option :value="null">不关联</option>
-              <option v-for="item in app.items" :key="item.id" :value="item.id">
-                {{ app.themes.find((t) => t.id === item.themeId)?.name }} · {{ item.title }}
-              </option>
-            </select></label
-          ><label
-            >提醒<select v-model="eventForm.reminderMinutes">
-              <option :value="null">不提醒</option>
-              <option :value="0">开始时</option>
-              <option :value="10">提前 10 分钟</option>
-              <option :value="30">提前 30 分钟</option>
-            </select></label
-          ><label>备注（选填）<textarea v-model="eventForm.note" maxlength="1000" /></label
-        ></template>
+        <div v-else class="event-time-stack">
+          <label>
+            开始时间
+            <input v-model="eventForm.start" type="datetime-local" required />
+          </label>
+          <label>
+            结束时间
+            <input v-model="eventForm.end" type="datetime-local" required />
+          </label>
+        </div>
+        <template v-if="!source || scope === 'all'">
+          <div class="two-cols">
+            <label>
+              重复
+              <select v-model="eventForm.repeat">
+                <option value="none">不重复</option>
+                <option value="weekly">每周重复</option>
+              </select>
+            </label>
+            <label>
+              关联待办（选填）
+              <select v-model="eventForm.itemId">
+                <option :value="null">不关联</option>
+                <option v-for="item in app.items" :key="item.id" :value="item.id">
+                  {{ app.themes.find((t) => t.id === item.themeId)?.name }} · {{ item.title }}
+                </option>
+              </select>
+            </label>
+          </div>
+          <fieldset v-if="eventForm.repeat === 'weekly'">
+            <legend>重复日期</legend>
+            <div class="weekday-checks">
+              <label v-for="(name, i) in weekdays" :key="name">
+                <input v-model="eventForm.weekdays" type="checkbox" :value="i + 1" />
+                <span>{{ name.slice(1) }}</span>
+              </label>
+            </div>
+          </fieldset>
+          <details class="more-details">
+            <summary>更多选项（提醒 · 备注 · 截止）</summary>
+            <div class="details-body">
+              <label v-if="eventForm.repeat === 'weekly'">
+                截止日期（选填）
+                <input v-model="eventForm.until" type="date" />
+              </label>
+              <label>
+                提醒
+                <select v-model="eventForm.reminderMinutes">
+                  <option :value="null">不提醒</option>
+                  <option :value="0">开始时</option>
+                  <option :value="10">提前 10 分钟</option>
+                  <option :value="30">提前 30 分钟</option>
+                </select>
+              </label>
+              <label>
+                备注（选填）
+                <textarea v-model="eventForm.note" maxlength="1000" />
+              </label>
+            </div>
+          </details>
+        </template>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-        <button class="primary wide" :disabled="busy">保存日程</button>
-      </form></Sheet
-    >
-    <Sheet
-      v-if="sheet === 'detail' && selected"
-      :title="selected.kind === 'course' ? '课程详情' : '日程详情'"
-      :close-disabled="busy"
-      @close="!busy && (sheet = null)"
-      ><div class="stack">
+        <div v-if="eventConflict" class="conflict-banner" role="alert">
+          <p>与《{{ eventConflict }}》时间重叠</p>
+          <div class="conflict-actions">
+            <button type="button" class="secondary" :disabled="busy" @click="eventConflict = null">
+              调整时间
+            </button>
+            <button type="button" class="primary" :disabled="busy" @click="submitEvent(true)">
+              仍然保存
+            </button>
+          </div>
+        </div>
+        <button v-else class="primary wide" :disabled="busy">保存日程</button>
+      </form>
+
+      <div v-else-if="sheet === 'detail' && selected" class="stack">
         <h2>{{ selected.title }}</h2>
-        <p class="muted">
+        <p class="detail-meta">
           {{
             selected.allDay
               ? '全天'
               : selected.start.replace('T', ' ') + ' — ' + selected.end.replace('T', ' ')
-          }}
+          }}<template v-if="selectedLinkedItem"> · 关联待办：{{ selectedLinkedItem.title }}</template>
         </p>
         <p v-if="selected.note">{{ selected.note }}</p>
-        <button v-if="selected.itemId" type="button" class="primary wide" :disabled="busy" @click="startFromEvent">
-          <Icon name="play" :size="18" />开始关联待办的专注</button
-        ><template v-if="selected.kind === 'event'"
-          ><button type="button" class="secondary wide" :disabled="busy" @click="editEvent(selected)">编辑日程</button></template
-        ><template v-else
-          ><button type="button" class="secondary wide" :disabled="busy" @click="openAdjust">仅本次调课</button
-          ><button
+        <button
+          v-if="selected.itemId"
+          type="button"
+          class="primary wide"
+          :disabled="busy"
+          @click="startFromEvent"
+        >
+          <Icon name="play" :size="18" />开始关联待办的专注
+        </button>
+        <button
+          v-if="selected.kind === 'event'"
+          type="button"
+          class="secondary wide"
+          :disabled="busy"
+          @click="editEvent(selected, true)"
+        >
+          编辑日程
+        </button>
+        <template v-else>
+          <button type="button" class="secondary wide" :disabled="busy" @click="openAdjust">
+            仅本次调课
+          </button>
+          <button
             type="button"
             class="secondary wide"
             :disabled="busy"
-            @click="openCourse(app.data.courses.find((c) => c.id === selected?.sourceId))"
+            @click="openCourse(app.data.courses.find((c) => c.id === selected?.sourceId), true)"
           >
             编辑整门课程
-          </button></template
-        >
-        <div class="form-footer">
-          <button type="button" class="text-button danger" :disabled="busy" @click="deleteSelected('once')">
-            {{ selected.kind === 'course' ? '仅本次停课' : '删除本次' }}</button><button
+          </button>
+        </template>
+        <div class="detail-danger-zone">
+          <button
+            v-if="detailDeleteStep === 'idle'"
             type="button"
             class="text-button danger"
             :disabled="busy"
-            @click="deleteSelected('all')"
+            @click="detailDeleteStep = 'choose'"
           >
-            删除整组
+            {{ selected.kind === 'course' ? '停课 / 删除' : '删除日程' }}
           </button>
-        </div>
-        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-      </div></Sheet
-    >
-    <Sheet
-      v-if="sheet === 'semester'"
-      :title="
-        app.data.semesters.some((s) => s.id === semesterForm.id) ? '学期与上课时间' : '新建学期'
-      "
-      :close-disabled="busy"
-      @close="!busy && (sheet = null)"
-      ><form @submit.prevent="execute(saveSemester)">
-        <label>学期名称<input v-model="semesterForm.name" required maxlength="80" /></label
-        ><label
-          >第一教学周的周一<input v-model="semesterForm.startDate" type="date" required /></label
-        ><label
-          >教学周数<input
-            v-model.number="semesterForm.weeks"
-            type="number"
-            min="1"
-            max="104"
-            required
-        /></label>
-        <fieldset>
-          <legend>每日节次时间</legend>
-          <div class="period-editor">
-            <div
-              v-for="period in semesterForm.periods"
-              :key="period.index"
-              class="period-editor-row"
-            >
-              <span>{{ period.index }}</span><input
-                v-model="period.start"
-                type="time"
-                :aria-label="'第' + period.index + '节开始时间'"
-                required
-              /><span>—</span
-              ><input
-                v-model="period.end"
-                type="time"
-                :aria-label="'第' + period.index + '节结束时间'"
-                required
-              />
+          <div v-else class="inline-confirm-box">
+            <p class="inline-confirm-hint">
+              {{
+                selected.kind === 'course'
+                  ? '选择停课或删除范围：'
+                  : isSelectedWeeklyEvent
+                    ? '这是一组重复日程，请选择删除范围：'
+                    : '确认删除这条日程吗？'
+              }}
+            </p>
+            <div class="inline-confirm-actions">
+              <template v-if="selected.kind === 'course'">
+                <button
+                  type="button"
+                  class="text-button danger"
+                  :disabled="busy"
+                  @click="confirmDelete('once')"
+                >
+                  仅本次停课
+                </button>
+                <button
+                  type="button"
+                  class="text-button danger"
+                  :disabled="busy"
+                  @click="confirmDelete('all')"
+                >
+                  删除整组
+                </button>
+              </template>
+              <template v-else-if="isSelectedWeeklyEvent">
+                <button
+                  type="button"
+                  class="text-button danger"
+                  :disabled="busy"
+                  @click="confirmDelete('once')"
+                >
+                  删除本次
+                </button>
+                <button
+                  type="button"
+                  class="text-button danger"
+                  :disabled="busy"
+                  @click="confirmDelete('all')"
+                >
+                  删除整组
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  type="button"
+                  class="text-button danger"
+                  :disabled="busy"
+                  @click="confirmDelete('all')"
+                >
+                  确认删除
+                </button>
+              </template>
+              <button
+                type="button"
+                class="text-button"
+                :disabled="busy"
+                @click="detailDeleteStep = 'idle'"
+              >
+                取消
+              </button>
             </div>
           </div>
-          <div class="row">
-            <button
-              type="button"
-              class="text-button"
-              @click="
-                semesterForm.periods.push({
-                  index: semesterForm.periods.length + 1,
-                  start: '20:50',
-                  end: '21:35',
-                })
-              "
-            >
-              ＋ 添加节次</button
-            ><button
-              type="button"
-              class="text-button"
-              :disabled="semesterForm.periods.length <= 1"
-              @click="semesterForm.periods.pop()"
-            >
-              移除末节
-            </button>
+        </div>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+      </div>
+
+      <form v-else-if="sheet === 'semester'" @submit.prevent="execute(saveSemester)">
+        <label>
+          学期名称
+          <input v-model="semesterForm.name" required maxlength="80" />
+        </label>
+        <label>
+          第一教学周的周一
+          <input v-model="semesterForm.startDate" type="date" required />
+        </label>
+        <label>
+          教学周数
+          <input v-model.number="semesterForm.weeks" type="number" min="1" max="104" required />
+        </label>
+        <details class="more-details">
+          <summary>每日节次时间（共 {{ semesterForm.periods.length }} 节，点此展开）</summary>
+          <div class="details-body">
+            <div class="period-editor">
+              <div
+                v-for="period in semesterForm.periods"
+                :key="period.index"
+                class="period-editor-row"
+              >
+                <span>{{ period.index }}</span>
+                <input
+                  v-model="period.start"
+                  type="time"
+                  :aria-label="'第' + period.index + '节开始时间'"
+                  required
+                />
+                <span>—</span>
+                <input
+                  v-model="period.end"
+                  type="time"
+                  :aria-label="'第' + period.index + '节结束时间'"
+                  required
+                />
+              </div>
+            </div>
+            <div class="row">
+              <button
+                type="button"
+                class="text-button"
+                @click="
+                  semesterForm.periods.push({
+                    index: semesterForm.periods.length + 1,
+                    start: '20:50',
+                    end: '21:35',
+                  })
+                "
+              >
+                ＋ 添加节次
+              </button>
+              <button
+                type="button"
+                class="text-button"
+                :disabled="semesterForm.periods.length <= 1"
+                @click="semesterForm.periods.pop()"
+              >
+                移除末节
+              </button>
+            </div>
           </div>
-        </fieldset>
+        </details>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary wide" :disabled="busy">保存并设为当前学期</button>
-      </form></Sheet
-    >
-    <Sheet
-      v-if="sheet === 'course'"
-      :title="app.data.courses.some((c) => c.id === courseForm.id) ? '编辑课程' : '添加课程'"
-      :close-disabled="busy"
-      @close="!busy && (sheet = null)"
-      ><form @submit.prevent="execute(() => app.saveCourse({ ...courseForm }))">
-        <label
-          >课程名称<input
+      </form>
+
+      <form
+        v-else-if="sheet === 'course'"
+        @submit.prevent="execute(() => app.saveCourse({ ...courseForm }))"
+      >
+        <label>
+          课程名称
+          <input
             v-model="courseForm.title"
             placeholder="例如：高等数学"
             maxlength="80"
             required
-            autofocus /></label
-        ><label
-          >星期<select v-model.number="courseForm.weekday">
+            autofocus
+          />
+        </label>
+        <label>
+          星期
+          <select v-model.number="courseForm.weekday">
             <option v-for="(name, i) in weekdays" :key="name" :value="i + 1">{{ name }}</option>
-          </select></label
-        >
+          </select>
+        </label>
         <div class="two-cols">
-          <label
-            >开始节次<select v-model.number="courseForm.firstPeriod">
+          <label>
+            开始节次
+            <select v-model.number="courseForm.firstPeriod">
               <option v-for="p in currentSemester?.periods" :key="p.index" :value="p.index">
                 第 {{ p.index }} 节
               </option>
-            </select></label
-          ><label
-            >结束节次<select v-model.number="courseForm.lastPeriod">
+            </select>
+          </label>
+          <label>
+            结束节次
+            <select v-model.number="courseForm.lastPeriod">
               <option v-for="p in currentSemester?.periods" :key="p.index" :value="p.index">
                 第 {{ p.index }} 节
               </option>
-            </select></label
-          >
+            </select>
+          </label>
         </div>
         <div class="two-cols">
-          <label
-            >开始周<input
-              v-model.number="courseForm.firstWeek"
-              type="number"
-              min="1"
-              required /></label
-          ><label
-            >结束周<input
+          <label>
+            开始周
+            <input v-model.number="courseForm.firstWeek" type="number" min="1" required />
+          </label>
+          <label>
+            结束周
+            <input
               v-model.number="courseForm.lastWeek"
               type="number"
               min="1"
               :max="currentSemester?.weeks"
               required
-          /></label>
+            />
+          </label>
         </div>
-        <label
-          >上课周次<select v-model="courseForm.parity">
-            <option value="all">每周</option>
-            <option value="odd">单周</option>
-            <option value="even">双周</option>
-          </select></label
-        >
-        <div class="two-cols">
-          <label>教室（选填）<input v-model="courseForm.room" maxlength="80" /></label
-          ><label>教师（选填）<input v-model="courseForm.teacher" maxlength="80" /></label>
-        </div>
-        <div class="row between">
-          <label>课程颜色<input v-model="courseForm.color" type="color" /></label
-          ><label
-            >提醒<select v-model="courseForm.reminderMinutes">
-              <option :value="null">不提醒</option>
-              <option :value="10">提前 10 分钟</option>
-              <option :value="0">上课时</option>
-            </select></label
-          >
-        </div>
+        <details class="more-details">
+          <summary>更多课程信息（单双周 · 教室 · 颜色 · 提醒）</summary>
+          <div class="details-body">
+            <label>
+              上课周次
+              <select v-model="courseForm.parity">
+                <option value="all">每周</option>
+                <option value="odd">单周</option>
+                <option value="even">双周</option>
+              </select>
+            </label>
+            <div class="two-cols">
+              <label>教室（选填）<input v-model="courseForm.room" maxlength="80" /></label>
+              <label>教师（选填）<input v-model="courseForm.teacher" maxlength="80" /></label>
+            </div>
+            <div class="row between">
+              <label class="color-label">
+                课程颜色
+                <input v-model="courseForm.color" type="color" class="course-color-input" />
+              </label>
+              <label>
+                提醒
+                <select v-model="courseForm.reminderMinutes">
+                  <option :value="null">不提醒</option>
+                  <option :value="10">提前 10 分钟</option>
+                  <option :value="0">上课时</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </details>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="primary wide" :disabled="busy">保存课程</button>
-      </form></Sheet
-    >
-    <Sheet v-if="sheet === 'adjust' && selected" title="仅本次调课" :close-disabled="busy" @close="!busy && (sheet = null)"
-      ><form @submit.prevent="execute(() => app.adjustCourse(selected!, adjust.start, adjust.end))">
+      </form>
+
+      <form
+        v-else-if="sheet === 'adjust' && selected"
+        @submit.prevent="execute(() => app.adjustCourse(selected!, adjust.start, adjust.end))"
+      >
         <p>{{ selected.title }} · 原安排 {{ selected.sourceDate }}</p>
-        <label>新的开始时间<input v-model="adjust.start" type="datetime-local" required /></label
-        ><label>新的结束时间<input v-model="adjust.end" type="datetime-local" required /></label>
+        <label>
+          新的开始时间
+          <input v-model="adjust.start" type="datetime-local" required />
+        </label>
+        <label>
+          新的结束时间
+          <input v-model="adjust.end" type="datetime-local" required />
+        </label>
         <p class="field-help">只修改这一次课程，其他周保持不变。</p>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-        <button class="primary wide" :disabled="busy">保存本次调课</button>
-      </form></Sheet
-    >
+        <button class="primary wide" :disabled="busy">确认本次调课</button>
+      </form>
+
+      <div v-else-if="sheet === 'startError' && startError" class="stack">
+        <p class="notice" role="alert">{{ startError.message }}</p>
+        <template v-if="startError.kind === 'recovery'">
+          <button
+            type="button"
+            class="primary wide"
+            :disabled="busy"
+            @click="goRecoveryFromStartError"
+          >
+            前往故障恢复
+          </button>
+          <button type="button" class="secondary wide" :disabled="busy" @click="closeSheet()">
+            取消
+          </button>
+        </template>
+        <template v-else-if="startError.kind === 'protection'">
+          <button
+            type="button"
+            class="primary wide"
+            :disabled="busy"
+            @click="openStudyFromStartError"
+          >
+            前往学霸模式处理
+          </button>
+          <button
+            type="button"
+            class="secondary wide"
+            :disabled="busy"
+            @click="clearUnreadyAndRetry"
+          >
+            关闭未就绪保护并开始
+          </button>
+          <button type="button" class="text-button" :disabled="busy" @click="closeSheet()">
+            取消
+          </button>
+        </template>
+        <template v-else>
+          <button type="button" class="primary wide" :disabled="busy" @click="closeSheet()">
+            知道了
+          </button>
+        </template>
+      </div>
+    </Sheet>
+
+    <StudyModeSheet
+      :open="studyOpen"
+      initial-view="permissions"
+      @close="studyOpen = false"
+    />
   </div>
 </template>
 <style scoped>
-.calendar-tabs {
-  margin-bottom: 12px;
+.calendar-page :deep(.icon-button),
+.calendar-page .icon-button,
+.calendar-page .text-button {
+  min-width: 48px;
+  min-height: 48px;
+}
+.calendar-page .icon-button.primary {
+  background: var(--accent);
+  color: white;
+}
+.today-jump {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 100px;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.today-jump.highlight {
+  color: var(--ink);
+}
+.event-time-stack {
+  display: grid;
+  gap: 14px;
+}
+.timetable-header {
+  gap: 2px;
+}
+.timetable-header .actions {
+  gap: 2px;
+  flex-shrink: 0;
+}
+.timetable-back {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 4px 0 0;
+  gap: 2px;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.timetable-empty-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+.week-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+}
+.week-stepper-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  min-width: 0;
+}
+.timetable-range {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 12px;
+  text-align: center;
 }
 .calendar-month {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   font-size: 14px;
-  margin-bottom: 12px;
+  margin: 12px 0 8px;
 }
-.calendar-month > .row {
-  min-height: 44px;
-  gap: 7px;
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.month-title {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 84px;
+  text-align: center;
+}
+.month-collapse {
+  font-size: 13px;
+  padding: 0 12px;
 }
 .week-strip {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 5px;
+  grid-template-columns: repeat(7, minmax(48px, 1fr));
+  gap: 0;
+  margin-inline: calc(var(--page-inline) * -1);
+  padding-inline: 10px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
 .week-strip button {
-  padding: 11px 0 5px;
+  padding: 8px 0 4px;
+  min-width: 48px;
   min-height: 68px;
-  border-radius: 17px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
 }
 .week-strip span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
 }
 .week-strip strong {
-  font-size: 23px;
+  font-size: 22px;
   line-height: 1;
 }
 .week-strip i {
@@ -864,7 +1526,7 @@ function coursePosition(o: Occurrence) {
   background: var(--muted);
 }
 .week-strip button.selected {
-  background: var(--accent);
+  background: var(--ink);
   color: white;
 }
 .week-strip button.selected span {
@@ -873,24 +1535,49 @@ function coursePosition(o: Occurrence) {
 .week-strip button.selected i.present {
   background: white;
 }
+.week-strip button.selected.today i.present {
+  background: var(--accent);
+}
 .week-strip button.today:not(.selected) {
   background: var(--surface);
 }
+.week-strip button.today:not(.selected) span,
+.week-strip button.today:not(.selected) strong {
+  color: #c13a25;
+}
+@media (max-width: 350px) {
+  .week-strip,
+  .month-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    padding-inline: 4px;
+  }
+  .week-strip button,
+  .month-grid button {
+    min-width: 0;
+  }
+  .event-dates-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .month-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  margin: 15px 0;
+  grid-template-columns: repeat(7, minmax(48px, 1fr));
+  gap: 0;
+  margin: 8px calc(var(--page-inline) * -1) 16px;
+  padding-inline: 10px;
 }
 .month-grid > span {
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   padding: 8px 0;
 }
 .month-grid button {
-  min-height: 42px;
-  border-radius: 12px;
+  min-width: 48px;
+  min-height: 48px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 14px;
   font-size: 13px;
 }
 .month-grid .active {
@@ -898,12 +1585,14 @@ function coursePosition(o: Occurrence) {
   color: white;
 }
 .month-grid .outside {
-  color: #737378;
+  color: var(--muted);
 }
 .timeline-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 12px 0;
 }
 .timeline-header h2 {
@@ -913,7 +1602,12 @@ function coursePosition(o: Occurrence) {
   font-size: 12px;
   font-weight: 400;
   color: var(--muted);
-  margin-left: 6px;
+  margin-left: 4px;
+}
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .mini-switch {
   display: flex;
@@ -923,12 +1617,12 @@ function coursePosition(o: Occurrence) {
   padding: 3px;
 }
 .mini-switch button {
-  padding: 6px 14px;
-  min-height: 44px;
-  min-width: 44px;
+  padding: 6px 12px;
+  min-height: 48px;
+  min-width: 48px;
   border-radius: 100px;
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--muted-surface);
 }
 .mini-switch .active {
   background: white;
@@ -951,7 +1645,7 @@ function coursePosition(o: Occurrence) {
   top: 4px;
   width: 11px;
   height: 11px;
-  border: 2px solid #737378;
+  border: 2px solid var(--muted);
   background: white;
   border-radius: 50%;
 }
@@ -965,13 +1659,14 @@ function coursePosition(o: Occurrence) {
 .timeline-time small {
   float: right;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 .timeline-card {
   padding: 14px;
+  min-height: 48px;
   background: var(--surface);
-  border-radius: 17px;
+  border-radius: var(--radius);
   width: 100%;
   text-align: left;
 }
@@ -981,15 +1676,15 @@ function coursePosition(o: Occurrence) {
 }
 .timeline-card p {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-surface);
   margin-top: 8px;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
 .linked-label {
   display: block;
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--muted-surface);
   margin-top: 10px;
 }
 .all-day-list {
@@ -999,14 +1694,15 @@ function coursePosition(o: Occurrence) {
 }
 .all-day-list button {
   padding: 12px 15px;
-  border-radius: 12px;
+  min-height: 48px;
+  border-radius: var(--radius);
   background: var(--surface);
   font-size: 13px;
   text-align: left;
 }
 .all-day-list span {
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--muted-surface);
   margin-right: 14px;
 }
 .calendar-empty {
@@ -1021,112 +1717,206 @@ function coursePosition(o: Occurrence) {
 .calendar-empty h2 {
   font-size: 18px;
 }
-.semester-toolbar {
-  display: flex;
-  align-items: center;
-  margin: 5px 0;
-}
-.semester-toolbar select {
-  min-height: 44px;
-  font-size: 13px;
-}
-.course-week-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 10px 0 17px;
-  text-align: center;
-  font-size: 14px;
-  font-weight: 600;
-}
-.course-week-nav small {
-  display: block;
-  font-size: 10px;
-  font-weight: 400;
-  margin-top: 6px;
+.course-grid-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .course-grid {
   display: grid;
-  grid-template-columns: 30px repeat(7, minmax(0, 1fr));
+  grid-template-columns: 44px repeat(7, minmax(64px, 1fr));
   gap: 4px;
-  font-size: 11px;
-  margin-left: -10px;
-  margin-right: -10px;
+  min-width: 520px;
+  font-size: 12px;
 }
 .course-grid-corner {
   display: grid;
   place-items: center;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 .course-day {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  font-size: 9px;
+  gap: 4px;
+  font-size: 12px;
 }
 .course-day strong {
-  font-size: 13px;
+  font-size: 14px;
 }
 .course-day.today {
-  color: var(--accent);
+  color: #c13a25;
 }
 .period-label {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   color: var(--muted);
 }
 .period-label strong {
   font-family: Nunito, sans-serif;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink);
 }
 .period-label small {
-  font-size: 7px;
+  font-size: 12px;
+  line-height: 1.2;
 }
 .course-cell {
-  background: #f8f8f8;
-  border-radius: 7px;
+  background: var(--surface);
+  border-radius: 12px;
 }
 .course-block {
-  border-radius: 7px;
-  padding: 8px 4px;
+  border-radius: 12px;
+  padding: 8px 6px;
   overflow: hidden;
   text-align: left;
   z-index: 1;
   align-self: stretch;
-  min-width: 0;
+  min-width: 48px;
+  min-height: 48px;
 }
 .course-block strong {
-  font-size: 10px;
+  font-size: 12px;
   display: block;
-  line-height: 1.6;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .course-block small {
   display: block;
-  font-size: 8px;
-  margin-top: 5px;
-  line-height: 1.5;
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.35;
   color: inherit;
   overflow-wrap: anywhere;
 }
 .add-course {
   margin-top: 24px;
 }
-.weekday-checks {
+.menu-list {
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.menu-row {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  font-size: 15px;
+  color: var(--ink);
+}
+.menu-row + .menu-row {
+  border-top: 1px solid var(--line);
+}
+.menu-chevron {
+  color: var(--muted-surface);
+  flex-shrink: 0;
+}
+.menu-section {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 3px;
+  gap: 8px;
+}
+.menu-section-title {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 0 4px;
+}
+.menu-active-tag {
+  font-size: 12px;
+  color: var(--muted-surface);
+}
+.detail-meta {
+  font-size: 14px;
+  color: var(--muted);
+}
+.detail-danger-zone {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  justify-items: start;
+}
+.inline-confirm-box {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 8px;
+}
+.inline-confirm-hint {
+  font-size: 13px;
+  color: var(--muted-surface);
+}
+.inline-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.conflict-banner {
+  padding: 12px 14px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 10px;
+}
+.conflict-banner p {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.conflict-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.conflict-actions button {
+  min-height: 48px;
+}
+.more-details {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 0 14px;
+}
+.more-details summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-surface);
+  cursor: pointer;
+}
+.details-body {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 14px;
+}
+.color-label {
+  gap: 8px;
+}
+.course-color-input {
+  width: 48px;
+  height: 48px;
+  padding: 4px;
+}
+.weekday-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .weekday-checks label {
   position: relative;
-  min-height: 44px;
+  display: inline-flex;
+  min-width: 48px;
+  min-height: 48px;
   cursor: pointer;
   user-select: none;
 }
@@ -1143,9 +1933,14 @@ function coursePosition(o: Occurrence) {
 .weekday-checks span {
   display: grid;
   place-items: center;
+  width: 100%;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 10px;
   background: var(--surface);
-  border-radius: 10px;
-  min-height: 44px;
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--muted-surface);
 }
 .weekday-checks input:checked + span {
   background: var(--ink);
@@ -1160,16 +1955,18 @@ function coursePosition(o: Occurrence) {
 }
 .period-editor-row {
   display: grid;
-  grid-template-columns: 18px 1fr 12px 1fr;
+  grid-template-columns: 22px 1fr 14px 1fr;
   align-items: center;
   gap: 7px;
 }
 .period-editor-row > span {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--muted-surface);
+  text-align: center;
 }
 .period-editor-row input {
   padding: 8px;
+  min-height: 48px;
   font-size: 13px;
 }
 </style>

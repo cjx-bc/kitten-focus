@@ -2,20 +2,26 @@ import { createSSRApp, defineComponent, h, reactive } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultPeriods, defaultProtection } from '../src/domain/model'
+import { toggleMasterStudy, toggleProtectionModule } from '../src/domain/protectionModules'
 
 const mocks = vi.hoisted(() => ({
   app: null as any,
   router: { push: vi.fn(), replace: vi.fn() },
   protection: vi.fn(),
+  diagnostics: vi.fn(),
 }))
 
 vi.mock('../src/stores/app', () => ({ useApp: () => mocks.app }))
 vi.mock('vue-router', () => ({ useRouter: () => mocks.router }))
 vi.mock('../src/platform/bridge', () => ({
+  native: true,
   protectionDriver: {
     status: mocks.protection,
     apps: vi.fn(async () => []),
   },
+}))
+vi.mock('../src/platform/protectionDiagnostics', () => ({
+  readProtectionDiagnostics: (...args: unknown[]) => mocks.diagnostics(...args),
 }))
 
 import TasksView from '../src/views/TasksView.vue'
@@ -55,6 +61,7 @@ beforeEach(() => {
     reason: '',
     effectiveWhitelist: [],
   })
+  mocks.diagnostics.mockResolvedValue({ capabilities: [] })
   mocks.app = reactive({
     data: {
       themes: [{ id: 't1', name: '英语', color: '#ef4e36', order: 0, collapsed: false }],
@@ -81,6 +88,8 @@ beforeEach(() => {
     lock: { session: null, remainingMs: 0, records: [] },
     start: vi.fn(async () => {}),
     notify: vi.fn(),
+    mutate: vi.fn(async (change: any) => change(mocks.app.data)),
+    clearUnreadyProtections: vi.fn(async () => {}),
     saveTheme: vi.fn(async () => {}),
     toggleThemeCollapsed: vi.fn(async () => {}),
     saveItem: vi.fn(async () => {}),
@@ -107,10 +116,16 @@ describe('TasksView UX improvements', () => {
     expect(mocks.app.start).toHaveBeenCalledWith(null, 'countdown', 30)
     expect(mocks.router.push).toHaveBeenCalledWith('/focus')
 
-    state.openItem('')
-    state.newThemeName = '英语'
-    state.itemForm.title = '背单词'
-    await state.submitItem()
+    const emptyItemSheet = await mountTasksSSR((s) => {
+      s.openItem('')
+    })
+    expect(emptyItemSheet.state.newThemeName).toBe('日常学习')
+    expect(emptyItemSheet.html).toContain('日常学习')
+    expect(emptyItemSheet.html).toContain('保存并开始')
+
+    emptyItemSheet.state.newThemeName = '英语'
+    emptyItemSheet.state.itemForm.title = '背单词'
+    await emptyItemSheet.state.submitItem()
     expect(mocks.app.saveItemWithNewTheme).toHaveBeenCalledWith(
       expect.objectContaining({ name: '英语' }),
       expect.objectContaining({ title: '背单词', minutes: 30 }),
@@ -134,20 +149,30 @@ describe('TasksView UX improvements', () => {
     await vi.waitFor(() => expect(mocks.app.start).toHaveBeenCalledWith(mocks.app.items[0]))
   })
 
-  it('orders duration before collapsed application whitelist in item sheet and cleans global choice', async () => {
+  it('orders duration before collapsed application whitelist in item sheet, switches to single-sheet whitelist view, and cleans global choice', async () => {
     const { state, html } = await mountTasksSSR((s) => {
       s.openItem('t1')
     })
 
     const durationIdx = html.indexOf('专注时长（分钟）')
-    const whitelistIdx = html.indexOf('aria-controls="item-whitelist-panel"')
+    const moreIdx = html.indexOf('class="more-settings"')
+    const whitelistIdx = html.indexOf('id="item-whitelist-panel"')
+    expect(state.itemMoreExpanded).toBe(false)
+    expect(html).not.toMatch(/<details[^>]*class="more-settings"[^>]*\bopen\b/)
     expect(durationIdx).toBeGreaterThan(-1)
-    expect(whitelistIdx).toBeGreaterThan(durationIdx)
+    expect(moreIdx).toBeGreaterThan(durationIdx)
+    expect(whitelistIdx).toBeGreaterThan(moreIdx)
     expect(html).not.toContain('规则说明')
-    expect(html).not.toContain('<textarea')
+    expect(html.slice(0, moreIdx)).not.toContain('<textarea')
 
     state.setItemWhitelist('custom')
     expect(state.itemForm.whitelist?.source).toBe('custom')
+    state.openItemWhitelist()
+    expect(state.sheet).toBe('itemWhitelist')
+    state.onConfirmItemWhitelist(['com.reader'])
+    expect(state.sheet).toBe('item')
+    expect(state.itemForm.whitelist).toEqual({ source: 'custom', packages: ['com.reader'] })
+
     state.setItemWhitelist('global')
     expect(state.itemForm.whitelist).toBeUndefined()
 
@@ -183,9 +208,11 @@ describe('TasksView UX improvements', () => {
     }
     const focusRender = await mountTasksSSR()
     expect(focusRender.html).toContain('返回背单词')
-    expect(focusRender.html).toContain('正在专注「背单词」，结束后可开始其他事项')
+    expect(focusRender.html).toContain('正在专注')
     expect(focusRender.html).toContain('进行中 · 返回专注')
     expect(focusRender.html).toContain('aria-label="开始练听力" aria-disabled="true"')
+    expect(focusRender.html).not.toContain('blocker-hint')
+    expect(focusRender.html).not.toContain('正在专注「背单词」，结束后可开始其他事项')
 
     focusRender.state.onTaskCardClick(mocks.app.items[0])
     expect(mocks.router.push).toHaveBeenCalledWith('/focus')
@@ -213,7 +240,7 @@ describe('TasksView UX improvements', () => {
     mocks.app.rest.remainingMs = 180000
     const restRender = await mountTasksSSR()
     expect(restRender.html).toContain('休息中 · 返回休息')
-    expect(restRender.html).toContain('休息中，结束后可开始')
+    expect(restRender.html).not.toContain('休息中，结束后可开始')
     restRender.state.openFree()
     expect(mocks.app.notify).toHaveBeenCalledWith('休息中，结束后可开始')
 
@@ -229,7 +256,7 @@ describe('TasksView UX improvements', () => {
     }
     const lockRender = await mountTasksSSR()
     expect(lockRender.html).toContain('锁机进行中 · 返回处理')
-    expect(lockRender.html).toContain('锁机进行中，结束后可开始')
+    expect(lockRender.html).not.toContain('锁机进行中，结束后可开始')
     expect(lockRender.html).toContain('aria-label="开始背单词" aria-disabled="true"')
     lockRender.state.openFree()
     expect(mocks.app.notify).toHaveBeenCalledWith('锁机进行中，结束后可开始')
@@ -288,5 +315,191 @@ describe('TasksView UX improvements', () => {
     expect(emptyThemeDelete.html).toContain('>删除主题</button>')
     await emptyThemeDelete.state.submitRemoveTheme()
     expect(mocks.app.removeTheme).toHaveBeenCalledWith('t1', null)
+  })
+
+  it('renders single-zone anti-misclick study capsule across off, enabled, and warning states and opens StudyModeSheet', async () => {
+    const offRender = await mountTasksSSR()
+    expect(offRender.html).toContain('data-tone="off"')
+    expect(offRender.html).toContain('aria-haspopup="dialog"')
+    expect(offRender.html).toContain('aria-label="学霸模式未开启，点击开启或配置"')
+    expect(offRender.html).toContain('>学霸模式 · 关<')
+    expect(offRender.html).not.toContain('study-split')
+
+    offRender.state.openStudyFromCapsule()
+    expect(offRender.state.studyOpen).toBe(true)
+    expect(offRender.state.studyInitialView).toBe('home')
+    expect(mocks.app.mutate).not.toHaveBeenCalled()
+
+    // Enabled state render opens home view
+    mocks.app.data.preferences.protection = toggleMasterStudy(defaultProtection(), true)
+    const onRender = await mountTasksSSR((s) => {
+      s.protectionState = { supported: true, authorized: true, connected: true, active: false, state: 'off', reason: '', effectiveWhitelist: [] }
+    })
+    expect(onRender.html).toContain('data-tone="enabled"')
+    expect(onRender.html).toContain('aria-label="学霸模式已开启，点击配置或关闭"')
+    expect(onRender.html).toContain('学霸模式 · 开')
+
+    onRender.state.openStudyFromCapsule()
+    expect(onRender.state.studyOpen).toBe(true)
+    expect(onRender.state.studyInitialView).toBe('home')
+
+    // Warning state render opens permissions view
+    const warnRender = await mountTasksSSR((s) => {
+      s.protectionState = { supported: true, authorized: false, connected: false, active: false, state: 'off', reason: '', effectiveWhitelist: [] }
+    })
+    expect(warnRender.html).toContain('data-tone="warning"')
+    expect(warnRender.html).toContain('aria-label="学霸模式待授权，点击处理权限"')
+    expect(warnRender.html).toContain('学霸模式 · 待授权')
+
+    warnRender.state.openStudyFromCapsule()
+    expect(warnRender.state.studyOpen).toBe(true)
+    expect(warnRender.state.studyInitialView).toBe('permissions')
+  })
+
+  it('uses saveAndStart as primary CTA for new items vs 仅保存, and falls back to 保存待办 when blocked or editing', async () => {
+    const newItemRender = await mountTasksSSR((s) => {
+      s.openItem('t1')
+    })
+    expect(newItemRender.html).toMatch(/<input[^>]*placeholder="例如：背单词"[^>]*autofocus/)
+    expect(newItemRender.html).toMatch(/<button class="primary wide"[^>]*>保存并开始<\/button>/)
+    expect(newItemRender.html).toMatch(/<button type="button" class="text-button"[^>]*>\s*仅保存\s*<\/button>/)
+
+    newItemRender.state.itemForm.title = '精读'
+    await newItemRender.state.submitItem(false)
+    expect(mocks.app.saveItem).toHaveBeenCalledWith(expect.objectContaining({ title: '精读' }))
+    expect(newItemRender.state.sheet).toBeNull()
+    expect(mocks.app.start).not.toHaveBeenCalled()
+
+    newItemRender.state.openItem('t1')
+    newItemRender.state.itemForm.title = '默写'
+    const saved = { id: newItemRender.state.itemForm.id, themeId: 't1', title: '默写', note: '', mode: 'countdown' as const, minutes: 25, order: 2 }
+    mocks.app.saveItem.mockImplementationOnce(async () => {
+      mocks.app.items.push(saved)
+    })
+    newItemRender.state.onItemFormSubmit()
+    await vi.waitFor(() => expect(mocks.app.start).toHaveBeenCalledWith(saved))
+    expect(mocks.router.push).toHaveBeenCalledWith('/focus')
+    expect(newItemRender.state.sheet).toBeNull()
+
+    const editRender = await mountTasksSSR((s) => {
+      s.openItem('t1', mocks.app.items[0])
+    })
+    expect(editRender.html).toMatch(/<button class="primary wide"[^>]*>保存待办<\/button>/)
+    expect(editRender.html).not.toContain('保存并开始')
+
+    mocks.app.rest.session = {
+      record: {
+        id: 'r1', itemId: 'i1', themeId: 't1', title: '背单词', themeName: '英语', color: '#ef4e36',
+        mode: 'countdown', targetMs: 1500000, startedAt: 1, endedAt: 2, timeZone: 'UTC',
+        durationMs: 1500000, pausedMs: 0, segments: [], status: 'completed',
+      },
+      startedAt: 2,
+      endsAt: 302000,
+      state: 'running',
+    }
+    const blockedNewRender = await mountTasksSSR((s) => {
+      s.openItem('t1')
+    })
+    expect(blockedNewRender.html).toContain('休息中，结束后可开始')
+    expect(blockedNewRender.html).toMatch(/<button class="primary wide"[^>]*>保存待办<\/button>/)
+    expect(blockedNewRender.html).not.toContain('保存并开始')
+    expect(blockedNewRender.html).not.toContain('仅保存')
+    blockedNewRender.state.itemForm.title = '复盘'
+    blockedNewRender.state.onItemFormSubmit()
+    await vi.waitFor(() => expect(mocks.app.saveItem).toHaveBeenCalledWith(expect.objectContaining({ title: '复盘' })))
+    expect(mocks.app.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders inline item delete confirmation without nested dialogs and removes item on confirm', async () => {
+    const initialEdit = await mountTasksSSR((s) => {
+      s.openItem('t1', mocks.app.items[0])
+    })
+    expect(initialEdit.html).toContain('删除待办')
+    expect(initialEdit.html).not.toContain('确认删除？历史专注记录仍保留。')
+    expect((initialEdit.html.match(/<dialog\b/g) ?? []).length).toBeLessThanOrEqual(1)
+
+    const confirmEdit = await mountTasksSSR((s) => {
+      s.openItem('t1', mocks.app.items[0])
+      s.itemDeleteConfirm = true
+    })
+    expect(confirmEdit.html).toContain('aria-label="确认删除待办"')
+    expect(confirmEdit.html).toContain('确认删除？历史专注记录仍保留。')
+    expect(confirmEdit.html).toContain('确认删除')
+    expect((confirmEdit.html.match(/<dialog\b/g) ?? []).length).toBeLessThanOrEqual(1)
+
+    await confirmEdit.state.confirmDeleteItem()
+    expect(mocks.app.removeItem).toHaveBeenCalledWith('i1')
+    expect(confirmEdit.state.itemDeleteConfirm).toBe(false)
+    expect(confirmEdit.state.sheet).toBeNull()
+  })
+
+  it('handles startError recovery for protection, recovery route, startFree sheet-first close, and cancelled strict start', async () => {
+    const { state } = await mountTasksSSR()
+
+    // Cancelled strict start stays silent without opening startError
+    mocks.app.start.mockRejectedValueOnce(new Error('已取消开始专注'))
+    await state.begin(mocks.app.items[0])
+    expect(state.sheet).toBeNull()
+    expect(state.startError).toBeNull()
+
+    // Recovery error routes to /recovery
+    mocks.app.start.mockRejectedValueOnce(new Error('存在待恢复项目，请先完成故障恢复'))
+    await state.begin(mocks.app.items[0])
+    expect(state.sheet).toBe('startError')
+    expect(state.startError?.kind).toBe('recovery')
+    const recoveryModal = await mountTasksSSR((s) => {
+      s.startError = { message: '存在待恢复项目，请先完成故障恢复', kind: 'recovery', item: mocks.app.items[0] }
+      s.sheet = 'startError'
+    })
+    expect(recoveryModal.html).toContain('前往故障恢复')
+    await state.goRecoveryFromStartError()
+    expect(state.sheet).toBeNull()
+    expect(state.startError).toBeNull()
+    expect(mocks.router.push).toHaveBeenCalledWith('/recovery')
+
+    // Protection error supports opening StudyModeSheet or clearing unready protections and retrying
+    mocks.app.data.preferences.protection = toggleMasterStudy(
+      toggleProtectionModule(defaultProtection(), 'apps', true),
+      true,
+    )
+    mocks.app.start.mockRejectedValueOnce(new Error('无障碍权限未授权，请开启后重试'))
+    await state.begin(mocks.app.items[0])
+    expect(state.sheet).toBe('startError')
+    expect(state.startError?.kind).toBe('protection')
+
+    const protectionModal = await mountTasksSSR((s) => {
+      s.startError = { message: '无障碍权限未授权，请开启后重试', kind: 'protection', item: mocks.app.items[0] }
+      s.sheet = 'startError'
+    })
+    expect(protectionModal.html).toContain('前往学霸模式处理')
+    expect(protectionModal.html).toContain('关闭未就绪保护并开始')
+
+    mocks.diagnostics.mockResolvedValueOnce({
+      capabilities: [{ id: 'applications', selected: true, supported: true, authorized: false, connected: false }],
+    })
+    mocks.app.start.mockResolvedValueOnce(undefined)
+    await state.clearUnreadyAndRetry()
+    expect(mocks.app.clearUnreadyProtections).toHaveBeenCalledWith(['applications'], true)
+    expect(mocks.app.start).toHaveBeenLastCalledWith(mocks.app.items[0])
+    expect(state.sheet).toBeNull()
+    expect(mocks.router.push).toHaveBeenCalledWith('/focus')
+
+    // startFree closes sheet before invoking app.start and shows startError on failure
+    state.openFree()
+    expect(state.sheet).toBe('free')
+    let sheetDuringStart: unknown = 'not-run'
+    mocks.app.start.mockImplementationOnce(async () => {
+      sheetDuringStart = state.sheet
+      throw new Error('无障碍服务未连接')
+    })
+    await state.startFree()
+    expect(sheetDuringStart).toBeNull()
+    expect(state.sheet).toBe('startError')
+    expect(state.startError?.kind).toBe('protection')
+
+    await state.openStudyFromStartError()
+    expect(state.sheet).toBeNull()
+    expect(state.studyOpen).toBe(true)
+    expect(state.studyInitialView).toBe('permissions')
   })
 })

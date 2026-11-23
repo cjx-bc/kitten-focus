@@ -84,7 +84,6 @@ import FocusView from '../src/views/FocusView.vue'
 import LockView from '../src/views/LockView.vue'
 import SettingsView from '../src/views/SettingsView.vue'
 import StudyModeSheet from '../src/components/StudyModeSheet.vue'
-import StrictModeSetting from '../src/components/StrictModeSetting.vue'
 
 async function mountSSR(component: Component, props = {}) {
   const vnode = h(component, props)
@@ -134,10 +133,18 @@ beforeEach(() => {
       lockConfigurations: [{ id: 'l1', name: '锁机', minutes: 25, strict: false, whitelist: { source: 'global' } }],
       preferences: { defaultMinutes: 25, sound: true, vibration: true, activeSemesterId: null, protection: defaultProtection() },
     },
+    items: [],
     focus: { session: null, elapsedMs: 0 },
     rest: { session: null, remainingMs: 0 },
     lock: { session: null, remainingMs: 0, records: [] },
     lastResult: undefined,
+    strictAcknowledged: false,
+    acknowledgeStrict: vi.fn(() => {
+      mocks.app.strictAcknowledged = true
+    }),
+    clearStrictAcknowledged: vi.fn(() => {
+      mocks.app.strictAcknowledged = false
+    }),
     notify: vi.fn(),
     action: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
@@ -195,16 +202,36 @@ describe('P0: study focus page locking', () => {
     }
     const locked = await mountSSR(FocusView)
     expect(locked.html).toContain('学霸模式进行中，专注页已锁定')
-    expect(locked.html).toContain('/help')
-    expect(locked.html).toContain('/emergency')
-    expect(locked.html).toContain('/recovery')
+    expect(locked.html).toContain('专注辅助与安全出口')
+    expect(locked.html).not.toContain('temporary-summary')
+    expect(locked.html).not.toContain('/help')
+    expect(locked.html).not.toContain('/emergency')
+    expect(locked.html).not.toContain('/recovery')
     locked.state.onBackClick()
     expect(mocks.app.notify).toHaveBeenCalledWith('学霸模式进行中，结束后可返回')
     expect(mocks.router.replace).not.toHaveBeenCalled()
 
+    locked.state.focusSheet = 'safety'
+    expect(locked.state.focusSheetTitle).toBe('专注辅助与安全出口')
+    expect(locked.state.safetyRoutes.map((entry: any) => entry.path)).toEqual([
+      '/emergency',
+      '/recovery',
+      '/permissions',
+      '/help',
+    ])
+    for (const safetyPath of ['/help', '/emergency', '/recovery']) {
+      mocks.router.push.mockClear()
+      locked.state.focusSheet = 'safety'
+      await locked.state.goSafety(safetyPath)
+      expect(locked.state.focusSheet).toBeNull()
+      expect(mocks.router.push).toHaveBeenCalledWith(safetyPath)
+    }
+
     mocks.app.focus.session.protection.temporaryAccessAllowed = false
     const noTemp = await mountSSR(FocusView)
-    expect(noTemp.html).toContain('本轮已关闭临时放行')
+    expect(noTemp.html).not.toContain('temporary-summary')
+    expect(noTemp.html).not.toContain('本轮已关闭临时放行')
+    expect(noTemp.html).toContain('专注辅助与安全出口')
 
     mocks.app.focus.session.protection.study = false
     mocks.app.focus.session.protection.studyLocked = true
@@ -359,19 +386,29 @@ describe('P1 & P3: redesigned StudyModeSheet, LockView move, and permission cent
     const { html, state } = await mountSSR(StudyModeSheet, { open: true })
     await state.refresh()
 
-    // Master + 3 modules + permissions row on home view
+    // Master + 3 modules + permissions/help row on home view
     expect(html).toContain('学霸模式')
     expect(html).toContain('应用限制')
     expect(html).toContain('严格模式')
     expect(html).toContain('免打扰')
-    expect(html).toContain('授权与权限')
+    expect(html).toContain('权限与使用帮助')
     expect(html).toContain('modules-dimmed')
     expect(html).not.toContain('锁机时限制主界面入口')
+    expect(html).not.toContain('锁机时限制返回主页')
+    expect(html).not.toContain('lockMainInterfaceRestricted')
     expect(state.masterSubtitle).toBe('仅 Android 可用')
     expect(html.match(/仅 Android 可用/g)?.length ?? 0).toBe(0)
 
+    const strictView = await mountSSR(StudyModeSheet, { open: true, initialView: 'strict' })
+    expect(strictView.html).not.toContain('锁机时限制主界面入口')
+    expect(strictView.html).not.toContain('锁机时限制返回主页')
+    expect(strictView.html).not.toContain('lockMainInterfaceRestricted')
+
     const lockRender = await mountSSR(LockView)
-    expect(lockRender.html).toContain('锁机时限制主界面入口')
+    const lockAdvancedMatch = lockRender.html.match(/<details[^>]*class="[^"]*\block-advanced\b[^"]*"[^>]*>[\s\S]*?<\/details>/)
+    expect(lockAdvancedMatch?.[0]).toContain('lock-main-entry-setting')
+    expect(lockAdvancedMatch?.[0]).toContain('锁机时限制返回主页')
+    expect(lockRender.state.enhancementOptions.some((o: any) => o.key === 'lockMainInterfaceRestricted')).toBe(true)
   })
 
   it('lists only permissions required by enabled sub-items and highlights missing grants honestly', async () => {
@@ -429,19 +466,63 @@ describe('P1 & P3: redesigned StudyModeSheet, LockView move, and permission cent
 })
 
 describe('QA blocker regressions (Blockers #1, #2, #3, P1, P2, P3)', () => {
-  it('Blocker #1: legacy StrictModeSetting stays synced with modules and SettingsView routes strict/sound/notifications through StudyModeSheet', async () => {
+  it('Blocker #1: StudyModeSheet strict sub-view syncs modules/strictAcknowledged with 3 core items + folded enhancements, and SettingsView root removes legacy/engineering controls', async () => {
     let p = toggleMasterStudy(defaultProtection(), true, { quietDefault: false })
     p = toggleProtectionModule(p, 'strict', false)
     mocks.app.data.preferences.protection = p
 
-    // Toggling legacy StrictModeSetting keeps modules.strict and flat strict in lockstep
-    const strictComp = await mountSSR(StrictModeSetting)
-    await strictComp.state.change({ target: { checked: true } })
+    // StudyModeSheet strict sub-view: 3 core items outside disclosure + 3 enhancements inside advanced-disclosure
+    const strictSheet = await mountSSR(StudyModeSheet, { open: true, initialView: 'strict' })
+    await strictSheet.state.refresh()
+    expect(strictSheet.state.view).toBe('strict')
+    expect(strictSheet.state.strictSub).toEqual({
+      noPauseEnd: true,
+      navigation: true,
+      antiClose: true,
+      hideRecents: false,
+      hideLauncher: false,
+      wallpaper: false,
+    })
+
+    const disclosureMatch = strictSheet.html.match(/<details[^>]*class="[^"]*\badvanced-disclosure\b[^"]*"[^>]*>[\s\S]*?<\/details>/)
+    const disclosureIdx = disclosureMatch?.index ?? -1
+    expect(disclosureIdx).toBeGreaterThan(-1)
+    const coreSection = strictSheet.html.slice(0, disclosureIdx)
+    const foldedSection = disclosureMatch?.[0] ?? ''
+    expect(coreSection).toContain('倒计时不可暂停、不可提前结束')
+    expect(coreSection).toContain('限制桌面与最近任务')
+    expect(coreSection).toContain('精确防关闭')
+    expect(coreSection).not.toContain('隐藏最近任务卡片')
+    expect(coreSection).not.toContain('隐藏桌面图标')
+    expect(coreSection).not.toContain('壁纸辅助保护')
+    expect(foldedSection).toContain('进阶防绕过（可能影响日常使用）')
+    expect(foldedSection).toContain('隐藏最近任务卡片')
+    expect(foldedSection).toContain('隐藏桌面图标')
+    expect(foldedSection).toContain('壁纸辅助保护')
+    expect(strictSheet.html).not.toContain('锁机时限制主界面入口')
+    expect(strictSheet.html).not.toContain('锁机时限制返回主页')
+    expect(strictSheet.html).not.toContain('lockMainInterfaceRestricted')
+
+    // Toggling strict module & noPauseEnd keeps modules.strict, flat strict, and strictAcknowledged aligned
+    await strictSheet.state.toggleModule('strict', { target: { checked: true } } as unknown as Event)
     expect(mocks.app.data.preferences.protection.strict).toBe(true)
     expect(resolveEffectiveProtection(mocks.app.data.preferences.protection).strict).toBe(true)
-    await strictComp.state.change({ target: { checked: false } })
+    expect(mocks.app.acknowledgeStrict).toHaveBeenCalledTimes(1)
+    expect(mocks.app.strictAcknowledged).toBe(true)
+
+    await strictSheet.state.toggleSubItem('strict', 'noPauseEnd', { target: { checked: false } } as unknown as Event)
+    expect(strictSheet.state.strictSub.noPauseEnd).toBe(false)
+    expect(mocks.app.clearStrictAcknowledged).toHaveBeenCalled()
+    expect(mocks.app.strictAcknowledged).toBe(false)
+
+    await strictSheet.state.toggleSubItem('strict', 'noPauseEnd', { target: { checked: true } } as unknown as Event)
+    expect(strictSheet.state.strictSub.noPauseEnd).toBe(true)
+    expect(mocks.app.strictAcknowledged).toBe(true)
+
+    await strictSheet.state.toggleModule('strict', { target: { checked: false } } as unknown as Event)
     expect(mocks.app.data.preferences.protection.strict).toBe(false)
     expect(resolveEffectiveProtection(mocks.app.data.preferences.protection).strict).toBe(false)
+    expect(mocks.app.strictAcknowledged).toBe(false)
 
     // Direct syncLegacyFlatMutation helper preserves alignment
     const synced = syncLegacyFlatMutation(p, (flat) => {
@@ -450,10 +531,20 @@ describe('QA blocker regressions (Blockers #1, #2, #3, P1, P2, P3)', () => {
     expect(synced.strict).toBe(true)
     expect(resolveEffectiveProtection(synced).strict).toBe(true)
 
-    // SettingsView no longer mounts standalone legacy strict/dnd/notification toggles
+    // SettingsView no longer mounts standalone legacy controls or raw engineering rows on root
     const settingsRender = await mountSSR(SettingsView)
     expect(settingsRender.html).toContain('学霸模式')
+    expect(settingsRender.html).toContain('独立锁机')
+    expect(settingsRender.html).toContain('提醒与声音')
+    expect(settingsRender.html).toContain('高级保护与诊断')
     expect(settingsRender.html).not.toContain('默认倒计时严格模式')
+    expect(settingsRender.html).not.toContain('壁纸辅助保护')
+    expect(settingsRender.html).not.toContain('无障碍服务')
+    expect(settingsRender.html).not.toContain('通知使用权')
+    expect(settingsRender.html).not.toContain('锁机时限制主界面入口')
+    expect(settingsRender.html).not.toContain('锁机时限制返回主页')
+    expect(settingsRender.html).not.toContain('隐藏最近任务卡片')
+    expect(settingsRender.html).not.toContain('精确防关闭')
   })
 
   it('Blocker #2: legacy DND-only user keeps focusLock=false across migration, whitelist save, and backup round-trip', async () => {
@@ -493,14 +584,17 @@ describe('QA blocker regressions (Blockers #1, #2, #3, P1, P2, P3)', () => {
     expect(isMasterFocusLockActive(enabled)).toBe(true)
   })
 
-  it('Blocker #3 & P3: first master enable skips ungranted/unsupported optional capabilities so "稍后处理" never blocks start, and shows unified checklist when accessibility is missing', async () => {
-    // Case A: Accessibility missing -> unified P3 checklist (NOT single-purpose old popup)
+  it('Blocker #3 & P3: first master enable skips ungranted/unsupported optional capabilities so "稍后处理" never blocks start, and shows inline single-sheet permission guide', async () => {
+    // Case A: Accessibility missing -> non-blocking enable + inline missingPermissions banner / unified P3 checklist
     setDevicePermissions({ supported: true, accessibility: false, dnd: false, notif: false })
     const unauthSheet = await mountSSR(StudyModeSheet, { open: true })
     await unauthSheet.state.refresh()
-    await unauthSheet.state.toggleStudy({ target: { checked: true } })
-    expect(mocks.app.data.preferences.protection.study).toBe(false)
-    expect(unauthSheet.state.permissionHelp).toBe(true)
+    await unauthSheet.state.toggleStudy({ target: { checked: true } } as unknown as Event)
+    expect(mocks.app.data.preferences.protection.study).toBe(true)
+    expect(mocks.app.data.preferences.protection.modules?.master).toBe(true)
+    expect(mocks.app.data.preferences.protection.modules?.quiet.enabled).toBe(false)
+    expect(unauthSheet.state.view).toBe('home')
+    expect(unauthSheet.state.missingPermissions.map((i: any) => i.id)).toEqual(['accessibility'])
     expect(unauthSheet.state.onboardingPermissions.map((i: any) => i.id)).toEqual([
       'accessibility',
       'dnd',
@@ -508,18 +602,20 @@ describe('QA blocker regressions (Blockers #1, #2, #3, P1, P2, P3)', () => {
     ])
 
     // Case B: Accessibility ready, DND + Notifications missing -> enable succeeds without ungranted DND/Notifications
+    mocks.app.data.preferences.protection = defaultProtection()
     setDevicePermissions({ supported: true, accessibility: true, dnd: false, notif: false })
     const sheet = await mountSSR(StudyModeSheet, { open: true })
     await sheet.state.refresh()
-    await sheet.state.toggleStudy({ target: { checked: true } })
+    await sheet.state.toggleStudy({ target: { checked: true } } as unknown as Event)
     const afterEnable = mocks.app.data.preferences.protection
     expect(afterEnable.study).toBe(true)
     expect(afterEnable.modules?.master).toBe(true)
     expect(afterEnable.dnd).toBe(false)
     expect(afterEnable.interceptNotifications).toBe(false)
     expect(afterEnable.modules?.quiet.enabled).toBe(false)
-    expect(sheet.state.guideOpen).toBe(true)
+    expect(sheet.state.missingPermissions.length).toBe(0)
     expect(sheet.state.optionalMissingForGuide.length).toBe(2)
+    expect(sheet.state.guidePermissions.map((i: any) => i.id)).toEqual(['dnd', 'notificationListener'])
 
     // Case C: Android 7-9 (DND unsupported, Notifications authorized) -> sound=false, intercept=true
     mocks.app.data.preferences.protection = defaultProtection()
@@ -527,14 +623,15 @@ describe('QA blocker regressions (Blockers #1, #2, #3, P1, P2, P3)', () => {
     mocks.dnd.mockResolvedValue({ supported: false, permissionGranted: false, requested: false, phase: 'unsupported' })
     const api28Sheet = await mountSSR(StudyModeSheet, { open: true })
     await api28Sheet.state.refresh()
-    await api28Sheet.state.toggleStudy({ target: { checked: true } })
+    await api28Sheet.state.toggleStudy({ target: { checked: true } } as unknown as Event)
     const api28Prefs = mocks.app.data.preferences.protection
     expect(api28Prefs.study).toBe(true)
     expect(api28Prefs.dnd).toBe(false)
     expect(api28Prefs.interceptNotifications).toBe(true)
     expect(api28Prefs.modules?.quiet.enabled).toBe(true)
     expect(api28Prefs.modules?.quiet.custom?.sound).toBe(false)
-    expect(api28Sheet.state.guideOpen).toBe(false)
+    expect(api28Sheet.state.optionalMissingForGuide.length).toBe(0)
+    expect(api28Sheet.state.guidePermissions.length).toBe(0)
   })
 
   it('P1: toggling a module while master is OFF does not auto-enable master or skip first-enable recommended defaults', () => {

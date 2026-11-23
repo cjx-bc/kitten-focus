@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .notification-setting { gap: 10px; text-align: left; }
 .notification-setting.compact { gap: 0; }
-.compact-status { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 4px; }
+.compact-status { display: block; color: var(--muted-surface); font-size: 12px; font-weight: 400; margin-top: 4px; }
 .notification-actions:empty { display: none; }
 .notification-setting strong { font-size: 13px; font-weight: 500; }
 .notification-actions { display: flex; flex-wrap: wrap; gap: 8px; }
