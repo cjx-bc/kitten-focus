@@ -1,4 +1,5 @@
-import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Capacitor } from '@capacitor/core'
+import { getCatFocusPlugin } from './catFocusPlugin'
 
 export interface DndStatus {
   supported: boolean
@@ -18,7 +19,7 @@ interface DndBridge {
   openDndSettings(): Promise<void>
   restoreDnd(): Promise<DndStatus>
 }
-const plugin = registerPlugin<DndBridge>('CatFocus')
+const plugin = getCatFocusPlugin<DndBridge>()
 const unsupported: DndStatus = {
   supported: false, permissionGranted: false, requested: false, phase: 'unsupported',
   sessionId: '', ruleEnabled: false, ruleActive: null, verified: false,

@@ -1,5 +1,6 @@
-import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Capacitor } from '@capacitor/core'
 import { openDB } from 'idb'
+import { getCatFocusPlugin } from './catFocusPlugin'
 import type {
   ActiveFocus,
   AppData,
@@ -71,7 +72,7 @@ interface NativeBridge {
   syncReminders(): Promise<void>
 }
 export const native = Capacitor.isNativePlatform()
-const plugin = registerPlugin<NativeBridge>('CatFocus')
+const plugin = getCatFocusPlugin<NativeBridge>()
 export const resolveMainEntry = async (path: string): Promise<string> => native ? (await plugin.resolveMainEntry({ path })).path : path
 export const lockDriver = {
   async start(configurationId: string, strictLockConfirmed = false): Promise<LockSnapshot> {

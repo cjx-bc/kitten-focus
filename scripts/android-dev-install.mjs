@@ -7,7 +7,12 @@ import {
   NOTIFICATION_LISTENER_CLASS,
   buildGrantPlan,
   classifyInstallError,
+  hasAuthorizingDevice,
+  isAppOpAllowed,
+  isBatteryWhitelistPresent,
+  isDndAccessGranted,
   isOppoPermissionMonitoringError,
+  isRuntimePermissionGranted,
   mergeColonList,
   parseAdbDevices,
   parseCliArgs,
@@ -85,6 +90,7 @@ function runAdbRaw(adb, args, timeout = 30000) {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     timeout,
+    maxBuffer: 32 * 1024 * 1024,
   })
   if (res.error) {
     throw new Error(`无法执行 adb (${adb}): ${res.error.message}`)
@@ -123,8 +129,83 @@ OPPO / ColorOS 一次性前置设置提示:
   3. 确认后重新运行：npm.cmd run android:grant`)
 }
 
-async function executeGrantStep(adb, serial, step, opts) {
+function readPackageDump(adb, serial, appId, cache) {
+  if (!cache.packageDump) {
+    cache.packageDump = runAdbRaw(adb, ['-s', serial, 'shell', 'dumpsys', 'package', appId], 20000)
+  }
+  return cache.packageDump
+}
+
+function readNotificationDump(adb, serial, cache) {
+  if (!cache.notificationDump) {
+    let res = runAdbRaw(adb, ['-s', serial, 'shell', 'dumpsys', 'notification', '--noredact'], 20000)
+    if (res.status !== 0 || /Unknown option/i.test(res.output)) {
+      res = runAdbRaw(adb, ['-s', serial, 'shell', 'dumpsys', 'notification'], 20000)
+    }
+    cache.notificationDump = res
+  }
+  return cache.notificationDump
+}
+
+function isStepAlreadyGranted(adb, serial, step, opts, cache) {
+  const appOpByStep = {
+    restrictedSettings: 'ACCESS_RESTRICTED_SETTINGS',
+    exactAlarm: 'SCHEDULE_EXACT_ALARM',
+    installUnknownApps: 'REQUEST_INSTALL_PACKAGES',
+  }
+  if (appOpByStep[step.id]) {
+    const opName = appOpByStep[step.id]
+    const res = runAdbRaw(adb, ['-s', serial, 'shell', 'cmd', 'appops', 'get', opts.appId, opName], 10000)
+    return res.status === 0 && isAppOpAllowed(res.output, opName)
+  }
+  if (step.id === 'postNotifications') {
+    const res = readPackageDump(adb, serial, opts.appId, cache)
+    return res.status === 0 && isRuntimePermissionGranted(res.stdout, 'android.permission.POST_NOTIFICATIONS')
+  }
+  if (step.id === 'batteryOptimization') {
+    const res = runAdbRaw(adb, ['-s', serial, 'shell', 'dumpsys', 'deviceidle', 'whitelist'], 15000)
+    return res.status === 0 && isBatteryWhitelistPresent(res.stdout, opts.appId)
+  }
+  if (step.id === 'dndAccess') {
+    const res = readNotificationDump(adb, serial, cache)
+    return res.status === 0 && isDndAccessGranted(res.stdout, opts.appId)
+  }
+  return false
+}
+
+async function waitAndSelectDevice(adb, explicitSerial, timeoutMs = 8000) {
+  runAdbRaw(adb, ['start-server'], 15000)
+  const deadline = Date.now() + timeoutMs
+  while (true) {
+    const devicesRes = runAdbRaw(adb, ['devices', '-l'], 15000)
+    if (devicesRes.status !== 0) {
+      throw new Error(`adb devices 执行失败: ${devicesRes.output}`)
+    }
+    const devices = parseAdbDevices(devicesRes.stdout)
+    if (!hasAuthorizingDevice(devices, explicitSerial) || Date.now() >= deadline) {
+      return selectDevice(devices, explicitSerial)
+    }
+    await sleep(250)
+  }
+}
+
+async function executeGrantStep(adb, serial, step, opts, cache = {}) {
   if (step.kind === 'adb') {
+    let alreadyGranted = false
+    try {
+      alreadyGranted = isStepAlreadyGranted(adb, serial, step, opts, cache)
+    } catch {
+      alreadyGranted = false
+    }
+    if (alreadyGranted) {
+      return {
+        id: step.id,
+        label: step.label,
+        ok: true,
+        detail: '已具备（跳过写入）',
+        permissionMonitoringBlocked: false,
+      }
+    }
     const res = runShellChecked(adb, serial, step.args)
     return {
       id: step.id,
@@ -136,6 +217,17 @@ async function executeGrantStep(adb, serial, step, opts) {
   }
 
   if (step.kind === 'notificationListener') {
+    const readRes = runShellChecked(adb, serial, ['shell', 'settings', 'get', 'secure', 'enabled_notification_listeners'])
+    if (readRes.ok && mergeColonList(readRes.stdout, opts.appId, NOTIFICATION_LISTENER_CLASS).alreadyPresent) {
+      return {
+        id: step.id,
+        label: step.label,
+        ok: true,
+        detail: '已具备（跳过写入）',
+        permissionMonitoringBlocked: false,
+      }
+    }
+
     const primary = runShellChecked(adb, serial, step.args)
     if (primary.ok) {
       return {
@@ -147,7 +239,6 @@ async function executeGrantStep(adb, serial, step, opts) {
       }
     }
 
-    const readRes = runShellChecked(adb, serial, ['shell', 'settings', 'get', 'secure', 'enabled_notification_listeners'])
     if (readRes.ok) {
       const merged = mergeColonList(readRes.stdout, opts.appId, NOTIFICATION_LISTENER_CLASS)
       const putRes = runShellChecked(adb, serial, [
@@ -202,6 +293,18 @@ async function executeGrantStep(adb, serial, step, opts) {
     }
 
     const merged = mergeColonList(readRes.stdout, opts.appId, ACCESSIBILITY_CLASS)
+    if (merged.alreadyPresent && opts.noToggleAccessibility) {
+      const enabledRes = runShellChecked(adb, serial, ['shell', 'settings', 'get', 'secure', 'accessibility_enabled'])
+      if (enabledRes.ok && enabledRes.stdout.trim() === '1') {
+        return {
+          id: step.id,
+          label: step.label,
+          ok: true,
+          detail: '已具备（跳过写入，保留其他无障碍服务）',
+          permissionMonitoringBlocked: false,
+        }
+      }
+    }
     const putList = runShellChecked(adb, serial, [
       'shell',
       'settings',
@@ -311,12 +414,7 @@ async function main() {
     )
   }
 
-  const devicesRes = runAdbRaw(adb, ['devices', '-l'], 15000)
-  if (devicesRes.status !== 0) {
-    throw new Error(`adb devices 执行失败: ${devicesRes.output}`)
-  }
-  const devices = parseAdbDevices(devicesRes.stdout)
-  const target = selectDevice(devices, opts.serial || process.env.ANDROID_SERIAL)
+  const target = await waitAndSelectDevice(adb, opts.serial || process.env.ANDROID_SERIAL)
 
   const manufacturer = readProp(adb, target.serial, 'ro.product.manufacturer') || 'Unknown'
   const model = readProp(adb, target.serial, 'ro.product.model') || target.model || target.serial
@@ -355,9 +453,10 @@ async function main() {
   console.log('\n==> 自动授予调试权限与无障碍/通知服务...')
   const plan = buildGrantPlan(sdkInt, opts.appId)
   const results = []
+  const precheckCache = {}
   for (const step of plan) {
     try {
-      const outcome = await executeGrantStep(adb, target.serial, step, opts)
+      const outcome = await executeGrantStep(adb, target.serial, step, opts, precheckCache)
       results.push(outcome)
     } catch (err) {
       const msg = formatError(err)

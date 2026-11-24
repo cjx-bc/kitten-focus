@@ -30,6 +30,7 @@ import {
   protectionDriver,
   permissionStatus,
 } from '../platform/bridge'
+import { notificationDriver } from '../platform/notifications'
 import { makeBackup, readBackup } from '../domain/backup'
 import { validateEvent } from '../domain/calendar'
 import { dateKey, weekday } from '../domain/dates'
@@ -241,6 +242,21 @@ export const useApp = defineStore('app', () => {
       error.value = '本地数据读取失败：' + String(e)
     }
   }
+  async function ensureNotificationListenerConnected() {
+    try {
+      const status = await notificationDriver.read()
+      if (!status.supported || !status.authorized || status.connected) return
+      await notificationDriver.rebind()
+      const deadline = Date.now() + 2000
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        const next = await notificationDriver.read()
+        if (next.connected) return
+      }
+    } catch {
+      // Let authoritative native checkStart report any remaining error.
+    }
+  }
   async function start(
     item: FocusItem | null,
     requestedMode?: ActiveFocus['mode'],
@@ -301,6 +317,9 @@ export const useApp = defineStore('app', () => {
         bootId: 0,
         segments: [],
       }
+      if (protection?.interceptNotifications) {
+        await ensureNotificationListenerConnected()
+      }
       const snapshot = await dataOperation(async () => {
         if (data.value !== startingData) throw new Error('专注配置已变化，请重新开始')
         if (protection?.strict && mode === 'countdown') acknowledgeStrict()
@@ -333,6 +352,9 @@ export const useApp = defineStore('app', () => {
   async function startLock(configurationId: string, strictLockConfirmed = false, confirmedData?: AppData) {
     return sessionOperation(async () => {
       if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
+      if (resolveEffectiveProtection(data.value.preferences.protection).interceptNotifications) {
+        await ensureNotificationListenerConnected()
+      }
       lock.value = await dataOperation(async () => {
         if (confirmedData && confirmedData !== data.value) throw new Error('锁机配置已变化，请重新确认')
         return lockDriver.start(configurationId, strictLockConfirmed)

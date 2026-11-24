@@ -6,13 +6,16 @@ import android.content.Context;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import java.util.*;
 
 /** Ordinary public NLS identity. Never cancels, copies, or re-posts another app's message. */
 public final class FocusNotificationListener extends NotificationListenerService {
+    static final long REBIND_COOLDOWN_MS = 10_000L;
     private static volatile FocusNotificationListener listener;
+    private static volatile long lastRebindRequestMs = 0L;
     private final Handler maintenance = new Handler(Looper.getMainLooper());
     private final Runnable renewLeases = new Runnable() {
         @Override public void run() {
@@ -31,11 +34,18 @@ public final class FocusNotificationListener extends NotificationListenerService
     static boolean shouldRequestRebind(int sdkInt, boolean authorized, boolean connected) {
         return sdkInt >= Build.VERSION_CODES.N && authorized && !connected;
     }
+    static boolean shouldRequestRebind(int sdkInt, boolean authorized, boolean connected, long nowMs, long lastRequestMs) {
+        if (!shouldRequestRebind(sdkInt, authorized, connected)) return false;
+        return lastRequestMs <= 0L || nowMs - lastRequestMs >= REBIND_COOLDOWN_MS;
+    }
     static void rebindIfAuthorized(Context context) {
-        if (!shouldRequestRebind(Build.VERSION.SDK_INT, new AndroidNotificationSystem(context).authorized(), connected())) return;
+        long now = SystemClock.elapsedRealtime();
+        if (!shouldRequestRebind(Build.VERSION.SDK_INT, new AndroidNotificationSystem(context).authorized(), connected(), now, lastRebindRequestMs)) return;
+        lastRebindRequestMs = now;
         try { rebind(context); } catch (RuntimeException ignored) { }
     }
     @Override public void onListenerConnected() {
+        lastRebindRequestMs = 0L;
         listener = this; update(null, null, false);
         maintenance.removeCallbacks(renewLeases); maintenance.postDelayed(renewLeases, 15000);
     }

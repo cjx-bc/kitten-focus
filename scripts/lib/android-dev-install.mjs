@@ -253,6 +253,105 @@ export function buildGrantPlan(sdkInt, appId = DEFAULT_APP_ID) {
   return steps.filter((step) => effectiveSdk >= step.minSdk)
 }
 
+function escapeRegex(value) {
+  return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function hasAuthorizingDevice(devices, explicitSerial = '') {
+  const target = typeof explicitSerial === 'string' ? explicitSerial.trim() : ''
+  if (target) {
+    const match = devices.find((d) => d.serial === target)
+    return Boolean(match && (match.state === 'authorizing' || match.state === 'offline'))
+  }
+  const hasOnline = devices.some((d) => d.state === 'device')
+  if (hasOnline) return false
+  return devices.some((d) => d.state === 'authorizing' || d.state === 'offline')
+}
+
+export function isRuntimePermissionGranted(dumpsysPackageOutput, permission, userId = 0) {
+  const raw = String(dumpsysPackageOutput ?? '')
+  if (!raw || !permission) return false
+  let scope = raw
+  const userHeaderRegex = new RegExp(`(^|\\n)\\s*User\\s+${userId}:`)
+  const userMatch = userHeaderRegex.exec(raw)
+  if (userMatch) {
+    const startIdx = userMatch.index + userMatch[0].length
+    const tail = raw.slice(startIdx)
+    const nextUser = tail.search(/\n\s*User\s+\d+:/)
+    scope = nextUser >= 0 ? tail.slice(0, nextUser) : tail
+  }
+  const permPattern = new RegExp(`${escapeRegex(permission)}\\s*:\\s*granted=true\\b`)
+  return permPattern.test(scope)
+}
+
+export function isAppOpAllowed(appopsGetOutput, opName) {
+  const raw = String(appopsGetOutput ?? '')
+  if (!raw || !opName) return false
+  const opPattern = new RegExp(`\\b${escapeRegex(opName)}\\s*:\\s*allow(?=$|[\\s;])`)
+  return opPattern.test(raw)
+}
+
+export function isBatteryWhitelistPresent(deviceidleWhitelistOutput, appId) {
+  const raw = String(deviceidleWhitelistOutput ?? '')
+  if (!raw || !appId) return false
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const tokens = trimmed.split(',').map((part) => part.trim())
+    if (tokens.includes(appId)) return true
+  }
+  return false
+}
+
+export function isDndAccessGranted(dumpsysNotificationOutput, appId, userId = 0) {
+  const raw = String(dumpsysNotificationOutput ?? '')
+  if (!raw || !appId) return false
+  let inAllowedCondition = false
+  let inPolicyPackages = false
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      inAllowedCondition = false
+      inPolicyPackages = false
+      continue
+    }
+    if (/^Allowed condition providers:/i.test(trimmed)) {
+      inAllowedCondition = true
+      inPolicyPackages = false
+      continue
+    }
+    if (/^Approved notification policy packages:/i.test(trimmed)) {
+      inPolicyPackages = true
+      inAllowedCondition = false
+      continue
+    }
+    if (
+      inAllowedCondition &&
+      /^(?:Approved uids|Has user set:|All condition providers|Live condition providers|Snoozed condition providers|Condition providers:|Notification listeners:)/i.test(
+        trimmed,
+      )
+    ) {
+      inAllowedCondition = false
+      continue
+    }
+    if (
+      inPolicyPackages &&
+      /^(?:Condition providers:|Notification listeners:|ZenMode|mZenMode)/i.test(trimmed)
+    ) {
+      inPolicyPackages = false
+      continue
+    }
+    if (!inAllowedCondition && !inPolicyPackages) continue
+
+    const userTag = trimmed.match(/\(user:\s*(-?\d+)/i)
+    if (userTag && Number.parseInt(userTag[1], 10) !== userId) continue
+    const pkgPart = trimmed.replace(/\(user:[^)]*\)/gi, '').trim()
+    const packages = pkgPart.split(/[:,\s]+/).filter(Boolean)
+    if (packages.includes(appId)) return true
+  }
+  return false
+}
+
 export function isOppoPermissionMonitoringError(output) {
   return typeof output === 'string' &&
     /WRITE_SECURE_SETTINGS|SecurityException|Permission denial|Operation not allowed/i.test(output)

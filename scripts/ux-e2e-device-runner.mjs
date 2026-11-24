@@ -321,6 +321,25 @@ async function main() {
   }
 
   const auditCheckpoint = async (label, options = {}) => {
+    const hasOpenDialog = await cdp
+      .evaluate('document.querySelectorAll("dialog[open]").length > 0')
+      .catch(() => false)
+    if (hasOpenDialog) {
+      await cdp
+        .waitUntil(
+          async () =>
+            cdp.evaluate(`(() => {
+              const dialogs = [...document.querySelectorAll('dialog[open]')];
+              if (!dialogs.length) return true;
+              return dialogs.every((d) => parseFloat(getComputedStyle(d).opacity) >= 0.99);
+            })()`),
+          `dialog settle opacity (${label})`,
+          450,
+          40,
+        )
+        .catch(() => {})
+      await delay(60)
+    }
     const result = await runScreenUxAudit(cdp, {
       label,
       strictCss: opts.strictCss,

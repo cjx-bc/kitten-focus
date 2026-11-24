@@ -1549,7 +1549,7 @@ function coursePosition(o: Occurrence) {
   .week-strip,
   .month-grid {
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    padding-inline: 4px;
+    padding-inline: 0;
   }
   .week-strip button,
   .month-grid button {

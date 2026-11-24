@@ -142,13 +142,75 @@ export function listOrcaDevices(orcaPath) {
   }
 }
 
+const SLEEP_BUFFER = new Int32Array(new SharedArrayBuffer(4))
+
+function sleepSync(ms) {
+  Atomics.wait(SLEEP_BUFFER, 0, 0, ms)
+}
+
+function startAdbServerBestEffort(adbPath) {
+  try {
+    execFileSync(adbPath, ['start-server'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 12000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch {
+    // Subsequent adb calls will surface actionable diagnostics if adb cannot start.
+  }
+}
+
+export function waitForAdbReady(adbPath, explicitSerial = '', timeoutMs = 8000) {
+  startAdbServerBestEffort(adbPath)
+  const deadline = Date.now() + timeoutMs
+  let lastDevices = []
+  while (true) {
+    lastDevices = listAdbDevices(adbPath)
+    if (explicitSerial) {
+      const match = lastDevices.find((d) => d.serial === explicitSerial)
+      if (match) {
+        if (match.state === 'device') {
+          return { ready: true, device: match, devices: lastDevices }
+        }
+        if (match.state === 'unauthorized') {
+          throw new Error(
+            `Device "${explicitSerial}" is unauthorized. Allow USB debugging on the device screen.`,
+          )
+        }
+        if (match.state !== 'authorizing' && match.state !== 'offline') {
+          return { ready: false, device: match, devices: lastDevices }
+        }
+      }
+    } else {
+      const online = lastDevices.filter((d) => d.state === 'device')
+      if (online.length > 0) {
+        return { ready: true, device: online[0], devices: lastDevices }
+      }
+      const transitional = lastDevices.filter((d) => d.state === 'authorizing' || d.state === 'offline')
+      if (transitional.length === 0) {
+        return { ready: false, device: null, devices: lastDevices }
+      }
+    }
+    if (Date.now() >= deadline) {
+      return {
+        ready: false,
+        device: explicitSerial ? lastDevices.find((d) => d.serial === explicitSerial) || null : null,
+        devices: lastDevices,
+      }
+    }
+    sleepSync(250)
+  }
+}
+
 export function resolveDeviceSerial({ root, adbPath, orcaPath, explicitDevice }) {
   const configured = readDeviceCache(root)
   if (explicitDevice) return explicitDevice
   if (process.env.ANDROID_SERIAL) return process.env.ANDROID_SERIAL
   if (configured.serial) return configured.serial
 
-  const adbOnline = listAdbDevices(adbPath).filter((d) => d.state === 'device')
+  const waited = waitForAdbReady(adbPath, '', 8000)
+  const adbOnline = waited.devices.filter((d) => d.state === 'device')
   const orcaOnline = listOrcaDevices(orcaPath).filter(
     (d) => d.backend === 'android' && (d.state === 'booted' || d.isAvailable),
   )
@@ -161,6 +223,10 @@ export function resolveDeviceSerial({ root, adbPath, orcaPath, explicitDevice })
     throw new Error(
       `Multiple online Android devices detected (${choices.join(', ')}). Pass --device <serial> or set ANDROID_SERIAL.`,
     )
+  }
+  const authorizing = waited.devices.filter((d) => d.state === 'authorizing').map((d) => d.serial)
+  if (authorizing.length > 0) {
+    throw new Error(`Android device stayed in authorizing state (${authorizing.join(', ')}). Replug USB or re-check RSA prompt.`)
   }
   throw new Error('No online Android device found via adb devices or orca emulator devices.')
 }
@@ -237,12 +303,26 @@ export function createDeviceBridge({ root, adbPath: explicitAdb, orcaPath: expli
     return adb(['shell', command], opts)
   }
 
-  function verifyOnline() {
+  function verifyOnline(timeoutMs = 8000) {
     let state = ''
     try {
       state = adb(['get-state'], { timeout: 10000 }).trim()
+    } catch {
+      state = ''
+    }
+    if (state === 'device') return state
+    if (state === 'unauthorized') {
+      throw new Error(`Device "${serial}" adb state is "unauthorized" (expected "device")`)
+    }
+    const waited = waitForAdbReady(adbPath, serial, timeoutMs)
+    if (waited.ready) return 'device'
+    try {
+      state = adb(['get-state'], { timeout: 10000 }).trim()
     } catch (err) {
-      throw new Error(`Device "${serial}" is not reachable via adb (${err.message})`)
+      const seenState = waited.device?.state
+      throw new Error(
+        `Device "${serial}" is not reachable via adb (${seenState ? `state=${seenState}` : err.message})`,
+      )
     }
     if (state !== 'device') {
       throw new Error(`Device "${serial}" adb state is "${state}" (expected "device")`)

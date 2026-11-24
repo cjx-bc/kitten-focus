@@ -1,4 +1,5 @@
-import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Capacitor } from '@capacitor/core'
+import { getCatFocusPlugin } from './catFocusPlugin'
 
 export interface NotificationStatus {
   supported: boolean
@@ -26,7 +27,7 @@ interface NotificationBridge {
   openNotificationAccessSettings(): Promise<void>
   rebindNotificationListener(): Promise<void>
 }
-const plugin = registerPlugin<NotificationBridge>('CatFocus')
+const plugin = getCatFocusPlugin<NotificationBridge>()
 const unsupported: NotificationStatus = {
   supported: false, authorized: false, connected: false, requested: false, active: false,
   phase: 'unsupported', sessionId: '', deadlineEpoch: 0, pendingCount: 0, restoredCount: 0,

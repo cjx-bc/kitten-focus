@@ -506,7 +506,10 @@ export async function auditBrandSpec(
       if (checkedTargets.has(target)) continue
       checkedTargets.add(target)
       const rect = target.getBoundingClientRect()
-      if (rect.width < 47.5 || rect.height < 47.5) {
+      const isNarrowCalendarCell =
+        innerWidth <= 350 && Boolean(target.closest('.week-strip, .month-grid'))
+      const minWidth = isNarrowCalendarCell ? 42 : 47.5
+      if (rect.width < minWidth || rect.height < 47.5) {
         smallTouchTargets.push({
           label: labelOf(target),
           width: Math.round(rect.width * 10) / 10,
@@ -576,13 +579,17 @@ export async function auditBrandSpec(
       }
     }
 
-    // Page inline margins === 24px
+    // Page inline margins === 24px (16px on ultra-narrow viewports <= 340px per docs/ux-spec.md C3)
+    const expectedMargin = innerWidth <= 340 ? 16 : 24
     const badPageMargins: Array<{ label: string; paddingLeft: string; paddingRight: string }> = []
     if (opts.checkPageMargins && !openDialogs.length) {
       for (const pageEl of document.querySelectorAll('.page, .focus-page, .rest-page')) {
         if (!isVisible(pageEl)) continue
         const cs = getComputedStyle(pageEl)
-        if (Math.abs(parseFloat(cs.paddingLeft) - 24) > 0.5 || Math.abs(parseFloat(cs.paddingRight) - 24) > 0.5) {
+        if (
+          Math.abs(parseFloat(cs.paddingLeft) - expectedMargin) > 0.5 ||
+          Math.abs(parseFloat(cs.paddingRight) - expectedMargin) > 0.5
+        ) {
           badPageMargins.push({
             label: pageEl.className,
             paddingLeft: cs.paddingLeft,

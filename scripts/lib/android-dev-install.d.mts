@@ -50,5 +50,10 @@ export function mergeColonList(
   serviceClassName: string,
 ): ColonListMergeResult
 export function buildGrantPlan(sdkInt: number, appId?: string): GrantStep[]
+export function hasAuthorizingDevice(devices: Pick<AdbDevice, 'serial' | 'state'>[], explicitSerial?: string): boolean
+export function isRuntimePermissionGranted(dumpsysPackageOutput: string, permission: string, userId?: number): boolean
+export function isAppOpAllowed(appopsGetOutput: string, opName: string): boolean
+export function isBatteryWhitelistPresent(deviceidleWhitelistOutput: string, appId: string): boolean
+export function isDndAccessGranted(dumpsysNotificationOutput: string, appId: string, userId?: number): boolean
 export function isOppoPermissionMonitoringError(output: string): boolean
 export function classifyInstallError(output: string): string

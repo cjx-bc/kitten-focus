@@ -43,6 +43,13 @@ public class MainActivity extends BridgeActivity {
             getBridge().getWebView().setHorizontalScrollBarEnabled(false);
             getBridge().getWebView().addJavascriptInterface(new SplashBridge(), "KittenSplash");
         }
+        FocusNotificationListener.rebindIfAuthorized(this);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        FocusNotificationListener.rebindIfAuthorized(this);
     }
 
     private void animateSplashExit(SplashScreenViewProvider splashScreenView) {

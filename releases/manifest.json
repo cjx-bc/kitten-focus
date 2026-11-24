@@ -1,25 +1,28 @@
 {
-  "version": "0.2.14",
-  "versionCode": 20,
+  "version": "0.2.15",
+  "versionCode": 21,
   "type": "debug internal testing build",
   "applicationId": "com.xiaomao.focus",
   "files": [
     {
-      "name": "xiaomao-focus-0.2.14-debug.apk",
-      "size": 4871902,
-      "sha256": "e8c64dc7881a3daa86952289a0c293feea649d65d24e1032d9608a1769370366"
+      "name": "xiaomao-focus-0.2.15-debug.apk",
+      "size": 4872612,
+      "sha256": "6a33a0a7ed3923fc4b4a88eaa57b4152eef44265a07aa41aaddd52cc745604aa"
     }
   ],
-  "sourceArchive": "xiaomao-focus-0.2.14-source.zip",
-  "sourceTag": "v0.2.14",
+  "sourceArchive": "xiaomao-focus-0.2.15-source.zip",
+  "sourceTag": "v0.2.15",
   "verified": {
-    "hostTestsPassed": 174,
+    "hostTestsPassed": 177,
+    "hostTestFilesPassed": 24,
     "frontendBuild": true,
     "androidApkBuild": true,
-    "androidJvmTestsPassed": 15,
+    "androidJvmTestsPassed": 17,
     "androidTestCompile": true,
     "sameSigningIdentity": true,
-    "emulatorTestsRun": false
+    "emulatorTestsRun": false,
+    "realDeviceVerified": true,
+    "realDeviceSummary": "OPPO PHY110 (Android 17 / API 37): ux-e2e 10/10 scenarios & 28/28 UX audits passed, 0 JS errors, 0 fatal logcat entries, targeted regression passed"
   },
   "repository": "cjx-bc/kitten-focus",
   "repositoryVisibility": "public"

@@ -5,7 +5,12 @@ import {
   NOTIFICATION_LISTENER_CLASS,
   buildGrantPlan,
   classifyInstallError,
+  hasAuthorizingDevice,
+  isAppOpAllowed,
+  isBatteryWhitelistPresent,
+  isDndAccessGranted,
   isOppoPermissionMonitoringError,
+  isRuntimePermissionGranted,
   mergeColonList,
   parseAdbDevices,
   parseCliArgs,
@@ -158,5 +163,53 @@ describe('android-dev-install helpers', () => {
     expect(classifyInstallError('Failure [INSTALL_FAILED_USER_RESTRICTED]')).toContain('USB 安装')
     expect(classifyInstallError('Failure [INSTALL_FAILED_VERSION_DOWNGRADE]')).toContain('versionCode')
     expect(classifyInstallError('Operation not allowed')).toContain('禁止权限监控')
+  })
+
+  it('detects authorizing devices and parses read-only Android permission outputs safely', () => {
+    expect(hasAuthorizingDevice([{ serial: 'a5775ecd', state: 'authorizing' }], 'a5775ecd')).toBe(true)
+    expect(hasAuthorizingDevice([{ serial: 'a5775ecd', state: 'device' }], 'a5775ecd')).toBe(false)
+    expect(hasAuthorizingDevice([{ serial: 'a5775ecd', state: 'authorizing' }], '')).toBe(true)
+    expect(
+      hasAuthorizingDevice(
+        [
+          { serial: 'a5775ecd', state: 'device' },
+          { serial: 'other', state: 'authorizing' },
+        ],
+        '',
+      ),
+    ).toBe(false)
+
+    const dumpsysPkg = `
+      User 0: ceDataInode=453160 installed=true
+        runtime permissions:
+          android.permission.POST_NOTIFICATIONS: granted=true, flags=[ USER_SET ]
+      User 999: ceDataInode=0 installed=false
+        runtime permissions:
+          android.permission.POST_NOTIFICATIONS: granted=false, flags=[]
+    `
+    expect(isRuntimePermissionGranted(dumpsysPkg, 'android.permission.POST_NOTIFICATIONS', 0)).toBe(true)
+    expect(isRuntimePermissionGranted(dumpsysPkg, 'android.permission.POST_NOTIFICATIONS', 999)).toBe(false)
+
+    expect(
+      isAppOpAllowed('ACCESS_RESTRICTED_SETTINGS: allow; time=+43m ago; rejectTime=+2d ago', 'ACCESS_RESTRICTED_SETTINGS'),
+    ).toBe(true)
+    expect(isAppOpAllowed('Uid mode: SCHEDULE_EXACT_ALARM: allow', 'SCHEDULE_EXACT_ALARM')).toBe(true)
+    expect(isAppOpAllowed('Uid mode: SCHEDULE_EXACT_ALARM: default', 'SCHEDULE_EXACT_ALARM')).toBe(false)
+    expect(isAppOpAllowed('No operations.', 'REQUEST_INSTALL_PACKAGES')).toBe(false)
+
+    const whitelist = `user,com.xiaomao.focus.qa,10740\nuser,com.xiaomao.focus,10739\n`
+    expect(isBatteryWhitelistPresent(whitelist, 'com.xiaomao.focus')).toBe(true)
+    expect(isBatteryWhitelistPresent('user,com.xiaomao.focus.qa,10740\n', 'com.xiaomao.focus')).toBe(false)
+
+    const dumpsysNotif = `
+      Condition providers:
+        Allowed condition providers:
+          com.xiaomao.focus:com.google.android.gms (user: 0 isPrimary: true)
+          com.google.android.gms (user: 10 isPrimary: true)
+        Approved uids for user 0: [10739]
+    `
+    expect(isDndAccessGranted(dumpsysNotif, 'com.xiaomao.focus', 0)).toBe(true)
+    expect(isDndAccessGranted(dumpsysNotif, 'com.other.app', 0)).toBe(false)
+    expect(isDndAccessGranted(dumpsysNotif, 'com.xiaomao.focus', 10)).toBe(false)
   })
 })

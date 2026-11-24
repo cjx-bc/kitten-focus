@@ -44,10 +44,11 @@ export const protectionHelpSections: ProtectionHelpSection[] = [
   ] },
   { id: 'keepalive', title: '后台保活与各品牌设置', paragraphs: [
     '专注或独立锁机进行中，小猫会自动启动 Android 前台保活服务并复用同一条专注状态通知（不额外弹窗）；结束后立即停止，平时不在后台驻留耗电。在「我的 → 提醒与声音」或学霸模式帮助中开启「后台运行不限制」，可以减少锁屏后专注保护与准时提醒被系统暂停的概率。',
+    '在 OPPO / ColorOS 等系统中，若在系统设置里手动点击「强行停止」或执行一键强清，系统会自动撤回已授的无障碍授权并断开通知使用权监听。日常专注请勿手动强停应用；如不慎触发，重新打开小猫即可自动请求重连通知监听，并可前往「权限与保护状态」重新开启无障碍。',
   ], steps: [
     { brand: '小米 / Redmi（澎湃 / MIUI）', path: '应用信息 → 省电策略 → 选择“无限制”' },
     { brand: '华为 / 荣耀（HarmonyOS / MagicOS）', path: '设置 → 应用 → 应用启动管理 → 关闭自动管理，允许后台活动' },
-    { brand: 'OPPO / 一加 / realme（ColorOS）', path: '应用信息 → 耗电管理 → 开启“允许完全后台行为”' },
+    { brand: 'OPPO / 一加 / realme（ColorOS）', path: '应用信息 → 耗电管理 → 开启“允许完全后台行为”（避免手动强行停止，否则系统会自动撤回无障碍授权）' },
     { brand: 'vivo / iQOO（OriginOS）', path: '应用信息 → 耗电 → 后台耗电管理 → 选择“允许后台高耗电”' },
     { brand: '三星 / 原生 Android', path: '应用信息 → 电池 → 选择“不受限制”' },
   ] },

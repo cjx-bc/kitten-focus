@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 21,
+    "versionName": "0.2.15",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.15/xiaomao-focus-0.2.15-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.15/xiaomao-focus-0.2.15-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.15-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.15/xiaomao-focus-0.2.15-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.15-debug.apk"
+    ],
+    "size": 4872612,
+    "sha256": "6a33a0a7ed3923fc4b4a88eaa57b4152eef44265a07aa41aaddd52cc745604aa",
+    "notes": "修复真机实测发现的问题：应用启动与切回前台时自动重连已授权的通知使用权监听；统一专注结束通知文案为“本次专注正常结束”；优化 320px 窄屏日历与高分屏统计图表显存；完善 ColorOS 强停与备份说明。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

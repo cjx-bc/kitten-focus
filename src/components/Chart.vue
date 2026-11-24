@@ -20,7 +20,11 @@ onMounted(() => {
   const el = element.value!
   let lastWidth = el.clientWidth
   let lastHeight = el.clientHeight
-  chart = init(el)
+  const devicePixelRatio =
+    typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio)
+      ? Math.min(Math.max(window.devicePixelRatio, 1), 2)
+      : 1
+  chart = init(el, undefined, { devicePixelRatio })
   chart.setOption(props.option)
   observer = new ResizeObserver(() => {
     if (el.clientWidth === lastWidth && el.clientHeight === lastHeight) return

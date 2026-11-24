@@ -497,7 +497,9 @@ async function openBatteryOptimization() {
               {{ backup.data.preferences.protection?.enhancements.length ?? 0 }} 项
             </p>
           </div>
-          <p class="notice">当前数据将被备份替换。建议先导出当前数据。</p>
+          <p class="notice">
+            当前待办、专注记录、日程与偏好将被备份替换（独立锁机历史将保留在当前设备）。建议先导出当前数据。
+          </p>
           <button type="button" class="secondary wide" :disabled="busy" @click="exportBackup">
             先导出当前数据
           </button>
@@ -508,7 +510,9 @@ async function openBatteryOptimization() {
         </template>
         <template v-else>
           <p class="field-help">数据保存在这台设备上。定期导出一份备份，换设备时也能带走。</p>
-          <p class="field-help">恢复备份会替换当前数据，请先结束专注或锁机。</p>
+          <p class="field-help">
+            恢复备份会替换当前待办、专注记录、日程与偏好（独立锁机历史不受影响），请先结束专注或锁机。
+          </p>
           <p v-if="error" class="form-error" role="alert">{{ error }}</p>
           <button type="button" class="primary wide" :disabled="busy" @click="exportBackup">
             导出备份

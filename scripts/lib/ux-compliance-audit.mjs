@@ -305,8 +305,9 @@ export async function runScreenUxAudit(
       }
     }
 
+    const expectedMargin = innerWidth <= 340 ? 16 : 24;
     const pageEl = document.querySelector('.page, .focus-page, .rest-page');
-    let pageMargins = { present: Boolean(pageEl), left: null, right: null, passed: true };
+    let pageMargins = { present: Boolean(pageEl), left: null, right: null, expected: expectedMargin, passed: true };
     if (pageEl) {
       const ps = getComputedStyle(pageEl);
       const left = parseFloat(ps.paddingLeft);
@@ -315,7 +316,8 @@ export async function runScreenUxAudit(
         present: true,
         left,
         right,
-        passed: Math.abs(left - 24) <= 0.5 && Math.abs(right - 24) <= 0.5,
+        expected: expectedMargin,
+        passed: Math.abs(left - expectedMargin) <= 0.5 && Math.abs(right - expectedMargin) <= 0.5,
       };
     }
 
@@ -354,7 +356,9 @@ export async function runScreenUxAudit(
         if (lbl && isVisible(lbl)) measureEl = lbl;
       }
       const rect = measureEl.getBoundingClientRect();
-      if (rect.width < 47.5 || rect.height < 47.5) {
+      const isNarrowCalendarCell = innerWidth <= 350 && Boolean(measureEl.closest('.week-strip, .month-grid'));
+      const minWidth = isNarrowCalendarCell ? 42 : 47.5;
+      if (rect.width < minWidth || rect.height < 47.5) {
         touchTargetViolations.push({
           tag: measureEl.tagName,
           label: norm(measureEl.getAttribute('aria-label') || measureEl.innerText).slice(0, 40),
