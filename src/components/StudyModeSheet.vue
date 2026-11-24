@@ -37,6 +37,7 @@ import {
 } from '../domain/protectionModules'
 import {
   collectRequiredPermissions,
+  isAccessibilityReady,
   type RequiredPermissionItem,
   type StudyPermissionId,
 } from '../domain/studyPermissions'
@@ -135,7 +136,7 @@ function goBack() {
   }
 }
 
-const permissionReady = () => !!(status.value?.supported && status.value.authorized && status.value.connected)
+const accessibilityReady = computed(() => isAccessibilityReady(status.value))
 
 const requiredPermissions = computed(() =>
   collectRequiredPermissions(prefs.value, {
@@ -150,6 +151,12 @@ const requiredPermissions = computed(() =>
 
 const missingPermissions = computed(() =>
   requiredPermissions.value.filter((item) => item.supported && !item.ready),
+)
+
+const appsMissingPermissions = computed(() =>
+  missingPermissions.value.filter((item) =>
+    item.usedBy.some((reason) => reason.startsWith('应用限制')),
+  ),
 )
 
 const strictMissingPermissions = computed(() =>
@@ -211,26 +218,43 @@ const optionalMissingForGuide = computed<RequiredPermissionItem[]>(() => {
   return items
 })
 
-const onboardingPermissions = computed<RequiredPermissionItem[]>(() => [
-  {
-    id: 'accessibility',
-    title: '无障碍服务',
-    level: 'required',
-    usedBy: ['应用限制 · 限制白名单外应用'],
-    purpose: '在系统无障碍设置中开启“小猫专注”，用于识别并限制名单外应用，不读取应用正文。',
-    supported: Boolean(status.value?.supported),
-    authorized: Boolean(status.value?.authorized),
-    connected: Boolean(status.value?.connected),
-    ready: permissionReady(),
-    statusText: permissionReady()
-      ? '已就绪'
-      : !status.value?.authorized
-        ? '未授权 · 必需'
-        : '已授权 · 等待服务连接',
-    actionLabel: '前往系统设置',
-  },
-  ...optionalMissingForGuide.value,
-])
+const onboardingPermissions = computed<RequiredPermissionItem[]>(() => {
+  const p = status.value
+  const items: RequiredPermissionItem[] = []
+  if (!isAccessibilityReady(p)) {
+    const usageReady = Boolean(p?.supported && p.usageStatsGranted)
+    const overlayReady = Boolean(p?.supported && p.overlayGranted)
+    items.push(
+      {
+        id: 'usageStats',
+        title: '使用情况访问权限',
+        level: 'required',
+        usedBy: ['应用限制 · 限制白名单外应用'],
+        purpose: '识别当前前台应用以拦截白名单外应用；退出应用或重启不会掉权，不读取应用正文。',
+        supported: Boolean(p?.supported),
+        authorized: usageReady,
+        connected: usageReady,
+        ready: usageReady,
+        statusText: usageReady ? '已就绪' : '未授权 · 必需',
+        actionLabel: '前往使用情况访问',
+      },
+      {
+        id: 'overlay',
+        title: '悬浮窗权限',
+        level: 'required',
+        usedBy: ['应用限制 · 限制白名单外应用'],
+        purpose: '切到受限应用时弹出专注阻挡页；退出应用或重启不会掉权。',
+        supported: Boolean(p?.supported),
+        authorized: overlayReady,
+        connected: overlayReady,
+        ready: overlayReady,
+        statusText: overlayReady ? '已就绪' : '未授权 · 必需',
+        actionLabel: '前往悬浮窗设置',
+      },
+    )
+  }
+  return [...items, ...optionalMissingForGuide.value]
+})
 
 const guidePermissions = computed(() =>
   missingPermissions.value.length > 0
@@ -596,8 +620,12 @@ async function authorizePermission(id: StudyPermissionId, fromGuide = false) {
   busy.value = true
   error.value = ''
   try {
-    if (id === 'accessibility') {
-      await protectionDriver.openSettings()
+    if (id === 'usageStats') {
+      await protectionDriver.openSettings('usageStats')
+    } else if (id === 'overlay') {
+      await protectionDriver.openSettings('overlay')
+    } else if (id === 'accessibility') {
+      await protectionDriver.openSettings('accessibility')
     } else if (id === 'dnd') {
       if (fromGuide) pendingOptionalGrant.value = 'dnd'
       await dndDriver.openSettings()
@@ -671,12 +699,6 @@ async function importWallpaperOriginal(lockSource: boolean) {
   } finally {
     busy.value = false
   }
-}
-
-function subItemMissingPerm(id: StudyPermissionId): RequiredPermissionItem | undefined {
-  const item = permissionMap.value.get(id)
-  if (!item || !item.supported || item.ready) return undefined
-  return item
 }
 </script>
 
@@ -806,14 +828,20 @@ function subItemMissingPerm(id: StudyPermissionId): RequiredPermissionItem | und
       </div>
 
       <button
-        v-if="subItemMissingPerm('accessibility')"
+        v-if="appsMissingPermissions.length > 0"
         type="button"
         class="top-perm-banner"
         :disabled="busy"
-        @click="authorizePermission('accessibility')"
+        @click="handleMissingPermissions(appsMissingPermissions)"
       >
         <Icon name="warning" :size="16" />
-        <span>还差无障碍权限 · 去授权</span>
+        <span>
+          {{
+            appsMissingPermissions.length === 1
+              ? `还差${appsMissingPermissions[0]!.title} · 去授权`
+              : `还差 ${appsMissingPermissions.length} 项权限 · 去处理`
+          }}
+        </span>
         <Icon name="right" :size="16" />
       </button>
 
@@ -938,7 +966,7 @@ function subItemMissingPerm(id: StudyPermissionId): RequiredPermissionItem | und
         <label class="switch">
           <span>
             限制桌面与最近任务
-            <small>需无障碍 · 切出桌面或任务切换时返回专注</small>
+            <small>需开启无障碍（如仅需“不可暂停/结束”，可关闭此项）</small>
           </span>
           <input
             type="checkbox"
@@ -953,7 +981,7 @@ function subItemMissingPerm(id: StudyPermissionId): RequiredPermissionItem | und
         <label class="switch">
           <span>
             精确防关闭
-            <small>需无障碍 · 仅拦截小猫自身的强退、撤权与卸载入口</small>
+            <small>需开启无障碍 · 仅拦截小猫强退/卸载入口（侧载包在部分系统划卡会撤回无障碍）</small>
           </span>
           <input
             type="checkbox"
@@ -1245,6 +1273,31 @@ function subItemMissingPerm(id: StudyPermissionId): RequiredPermissionItem | und
             @click="openRoute('/help#help-keepalive')"
           >
             查看各品牌防清理设置 <Icon name="right" :size="14" />
+          </button>
+        </article>
+        <article
+          v-if="status?.supported && !permissionMap.has('accessibility')"
+          class="perm-card perm-card-optional"
+        >
+          <div class="perm-head">
+            <span class="row">
+              <strong>无障碍服务</strong>
+              <span class="perm-badge">可选</span>
+            </span>
+            <span class="perm-state" :class="accessibilityReady ? 'ok' : 'calm'">
+              {{ accessibilityReady ? '已就绪' : '未开启 · 可选' }}
+            </span>
+          </div>
+          <p class="field-help">
+            仅「限制桌面与最近任务 / 精确防关闭」及瞬时拦截需要。日常应用限制已由「使用情况访问 + 悬浮窗」持久化执行，退出或重启不掉权。
+          </p>
+          <button
+            type="button"
+            class="secondary wide"
+            :disabled="busy"
+            @click="authorizePermission('accessibility')"
+          >
+            {{ accessibilityReady ? '查看无障碍设置' : '前往开启（进阶）' }}
           </button>
         </article>
       </div>

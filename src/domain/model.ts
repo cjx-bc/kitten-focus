@@ -115,6 +115,7 @@ export interface NavigationProtectionStatus {
   lastReturnedAt: number | null
   lastTarget: 'home' | 'recents' | 'launcher' | null
 }
+export type AppRestrictionEngine = 'accessibility' | 'usage_overlay' | 'none'
 export interface ProtectionStatus {
   antiClose?: AntiCloseStatus
   navigation?: NavigationProtectionStatus
@@ -126,6 +127,11 @@ export interface ProtectionStatus {
   state: 'off' | 'authorization' | 'ready' | 'protecting' | 'failed' | 'unsupported' | 'recovered'
   reason: string
   effectiveWhitelist: string[]
+  engine?: AppRestrictionEngine
+  usageStatsGranted?: boolean
+  overlayGranted?: boolean
+  accessibilityAuthorized?: boolean
+  accessibilityConnected?: boolean
 }
 export interface AntiCloseStatus extends Omit<NavigationProtectionStatus, 'lastTarget'> {
   lastTarget: string | null

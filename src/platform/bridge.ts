@@ -24,6 +24,8 @@ import { isMasterFocusLockActive, resolveEffectiveProtection } from '../domain/p
 import { elapsed, settle } from '../domain/focus'
 import { makeRest, readRest, REST_DURATION_MS } from '../domain/rest'
 
+export type ProtectionSettingsTarget = 'usageStats' | 'overlay' | 'accessibility'
+
 export interface SystemPermissions {
   notifications: boolean
   exactAlarms: boolean
@@ -59,7 +61,7 @@ interface NativeBridge {
   consumeLockReturn(): Promise<{ requested: boolean }>
   protectionStatus(): Promise<ProtectionStatus>
   listProtectionApps(): Promise<{ apps: ProtectionApp[] }>
-  openProtectionSettings(): Promise<void>
+  openProtectionSettings(options?: { target?: ProtectionSettingsTarget }): Promise<void>
   previewRecovery(): Promise<RecoverySnapshot>
   confirmRecovery(options: { revision: string }): Promise<RecoverySnapshot>
   consumeRecoveryReturn(): Promise<{ requested: boolean }>
@@ -335,6 +337,7 @@ export const protectionDriver = {
     if (native) return plugin.protectionStatus()
     return { supported: false, authorized: false, connected: false, active: false,
       preferenceEnabled: false, state: 'unsupported', reason: '应用限制仅支持 Android 本机版本', effectiveWhitelist: [],
+      engine: 'none', usageStatsGranted: false, overlayGranted: false, accessibilityAuthorized: false, accessibilityConnected: false,
       antiClose: { supported: false, authorized: false, connected: false, active: false, preferenceEnabled: false,
         requested: false, state: 'unsupported', reason: '精确防关闭仅支持 Android 本机无障碍服务', lastReturnedAt: null,
         lastTarget: null, identity: {}, systemUninstallBlocked: false, policyReason: '浏览器不具备设备管理身份', supportScope: 'Android 本机' },
@@ -345,8 +348,8 @@ export const protectionDriver = {
   async apps(): Promise<ProtectionApp[]> {
     return native ? (await plugin.listProtectionApps()).apps : []
   },
-  async openSettings() {
-    if (native) await plugin.openProtectionSettings()
+  async openSettings(target?: ProtectionSettingsTarget) {
+    if (native) await plugin.openProtectionSettings(target ? { target } : undefined)
   },
 }
 

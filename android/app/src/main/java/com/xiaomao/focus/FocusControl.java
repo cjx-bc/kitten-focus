@@ -450,7 +450,8 @@ final class FocusControl {
             observation.getJSONObject("focus").getJSONObject("session").remove("temporaryAccess");
             if (!FocusProtection.shouldBlock(context, observation, target, ""))
                 return grantResult("denied", "此应用不受本轮限制，无需临时放行", false, session);
-            if (!(accessibility == null ? FocusProtection.authorized(context) && FocusAccessibilityService.connected()
+            if (!(accessibility == null
+                ? AppUsageGuard.isReady(context) || (FocusProtection.authorized(context) && FocusAccessibilityService.connected())
                 : accessibility.authorized() && accessibility.connected()))
                 return grantResult("failed", "应用限制授权或服务连接已失效，没有扣次", false, session);
             JSONObject before = new JSONObject(session.toString());

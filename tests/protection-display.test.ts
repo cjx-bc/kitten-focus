@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { capabilityToggleDisabled, studyDisplay } from '../src/domain/protectionDisplay'
-import type { ProtectionStatus } from '../src/domain/model'
+import { capabilityToggleDisabled, studyCapsuleDisplay, studyDisplay } from '../src/domain/protectionDisplay'
+import { defaultProtection, type ProtectionStatus } from '../src/domain/model'
+import { toggleMasterStudy, toggleProtectionModule } from '../src/domain/protectionModules'
 
 const ready: ProtectionStatus = {
   supported: true, authorized: true, connected: true, active: false,
   preferenceEnabled: true, state: 'ready', reason: '', effectiveWhitelist: [],
+  engine: 'usage_overlay', usageStatsGranted: true, overlayGranted: true,
+  accessibilityAuthorized: false, accessibilityConnected: false,
 }
 describe('protection UI states', () => {
   it.each([false, undefined])('blocks enabling unavailable capabilities (%s), but allows clearing them', (supported) => {
@@ -30,5 +33,33 @@ describe('protection UI states', () => {
     expect(studyDisplay(true, false, false, { ...ready, authorized: false }).text).toBe('待授权')
     expect(studyDisplay(true, false, false, { ...ready, connected: false }).text).toBe('待连接')
     expect(studyDisplay(true, true, false, { ...ready, connected: false }).text).toBe('已失效')
+  })
+  it('keeps study capsule enabled with usageStats+overlay when accessibility is off, and warns only for strict accessibility items', () => {
+    const basicStudy = toggleMasterStudy(defaultProtection(), true)
+    expect(studyCapsuleDisplay(basicStudy, ready)).toEqual({
+      text: '学霸模式 · 开',
+      tone: 'enabled',
+      masterOn: true,
+    })
+
+    const strictStudy = toggleProtectionModule(basicStudy, 'strict', true)
+    expect(studyCapsuleDisplay(strictStudy, ready)).toEqual({
+      text: '学霸模式 · 待授权',
+      tone: 'warning',
+      masterOn: true,
+    })
+
+    expect(
+      studyCapsuleDisplay(strictStudy, {
+        ...ready,
+        engine: 'accessibility',
+        accessibilityAuthorized: true,
+        accessibilityConnected: true,
+      }),
+    ).toEqual({
+      text: '学霸模式 · 开',
+      tone: 'enabled',
+      masterOn: true,
+    })
   })
 })

@@ -23,7 +23,7 @@ export interface CapabilityDiagnostic {
   phase: string
   reason: string
   effect: string
-  settings?: 'accessibility' | 'notifications' | 'dnd' | 'controlNotification'
+  settings?: 'usageStats' | 'overlay' | 'accessibility' | 'notifications' | 'dnd' | 'controlNotification'
 }
 export interface ProtectionDiagnostics {
   state: ProtectionEntryState
@@ -73,7 +73,14 @@ export async function readProtectionDiagnostics(saved: Partial<ProtectionPrefere
       reason: control.status === 'rejected'
         ? `${value.reason}（控制状态检查失败，无法确认本轮是否已请求应用限制）`
         : value.reason,
-      settings: 'accessibility', effect: value.active ? '原生应用限制执行器正在运行；具体应用与厂商行为仍以实际设备为准。' : '当前没有执行应用限制。',
+      settings: value.usageStatsGranted === false ? 'usageStats' : value.overlayGranted === false ? 'overlay' : 'accessibility',
+      effect: value.active
+        ? value.engine === 'usage_overlay'
+          ? '正在通过「使用情况访问 + 悬浮窗」限制名单外应用（不依赖无障碍）；具体应用与厂商行为仍以实际设备为准。'
+          : '原生应用限制执行器正在运行；具体应用与厂商行为仍以实际设备为准。'
+        : value.engine === 'usage_overlay'
+          ? '已使用持久化权限「使用情况访问 + 悬浮窗」就绪；退出或重启不掉权。'
+          : '当前没有执行应用限制。',
     })
     for (const [id, title, key, capability] of [
       ['navigation', '限制桌面与最近任务', 'navigationHomeRecents', value.navigation],

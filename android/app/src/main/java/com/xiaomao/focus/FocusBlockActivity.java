@@ -29,6 +29,9 @@ public class FocusBlockActivity extends ComponentActivity {
     private Button temporary;
     private String blockedPackage = "", sessionId = "";
     private boolean granting;
+    private static volatile boolean visible;
+
+    static boolean isVisible() { return visible; }
     private final BroadcastReceiver recovery = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) { render(); }
     };
@@ -81,8 +84,8 @@ public class FocusBlockActivity extends ComponentActivity {
         ContextCompat.registerReceiver(this, recovery, new IntentFilter(FocusRecovery.DISMISS_BLOCK), ContextCompat.RECEIVER_NOT_EXPORTED);
     }
     @Override protected void onStop() { unregisterReceiver(recovery); super.onStop(); }
-    @Override protected void onResume() { super.onResume(); handler.post(refresh); }
-    @Override protected void onPause() { handler.removeCallbacks(refresh); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); visible = true; FocusBlockOverlay.dismiss(); handler.post(refresh); }
+    @Override protected void onPause() { visible = false; handler.removeCallbacks(refresh); super.onPause(); }
     private void render() {
         try {
             JSONObject observation = new FocusControl(this).observeControl();

@@ -4,8 +4,9 @@ import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import { timer, duration } from '../domain/dates'
 import { uid, type AppData, type LockConfiguration, type ProtectionStatus } from '../domain/model'
+import { isAccessibilityReady, isAppRestrictionReady } from '../domain/studyPermissions'
 import { classifyStartError } from '../domain/startRecovery'
-import { protectionDriver } from '../platform/bridge'
+import { protectionDriver, type ProtectionSettingsTarget } from '../platform/bridge'
 import Sheet from '../components/Sheet.vue'
 import { waitForDialogClose } from '../components/sheetClose'
 import Icon from '../components/Icon.vue'
@@ -214,11 +215,26 @@ async function navigateFromStarting(path: '/recovery' | '/permissions') {
   await router.push(path)
 }
 
-async function settings() {
+const lockAppsReady = computed(() => isAppRestrictionReady(status.value))
+const lockNeedsAccessibility = computed(() => {
+  const target = starting.value
+  if (!target) return false
+  const list = target.enhancements ?? app.data.preferences.protection?.enhancements ?? []
+  return list.includes('navigationHomeRecents') || list.includes('preciseAntiClose')
+})
+const lockA11yReady = computed(() => isAccessibilityReady(status.value))
+const missingLockTarget = computed<ProtectionSettingsTarget | null>(() => {
+  if (!status.value?.supported) return null
+  if (!lockAppsReady.value) return !status.value.usageStatsGranted ? 'usageStats' : 'overlay'
+  if (lockNeedsAccessibility.value && !lockA11yReady.value) return 'accessibility'
+  return null
+})
+
+async function settings(target?: ProtectionSettingsTarget) {
   if (busy.value) return
   busy.value = true
   sheetError.value = ''
-  try { await protectionDriver.openSettings(); await refresh() }
+  try { await protectionDriver.openSettings(target); await refresh() }
   catch (e) { sheetError.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = false }
 }
@@ -378,14 +394,30 @@ onUnmounted(() => {
       </template>
 
       <div v-else-if="sheet === 'starting' && starting" class="stack">
-        <template v-if="status?.supported && (!status.authorized || !status.connected)">
+        <template v-if="missingLockTarget === 'usageStats'">
           <p>
             {{ starting.strict
-              ? `需先开启无障碍权限后才能开始严格锁机「${starting.name}」（${starting.minutes} 分钟），开启后无法提前解除。`
-              : `需先开启无障碍权限后才能开始锁机「${starting.name}」（${starting.minutes} 分钟）。` }}
+              ? `需先开启「使用情况访问权限」与「悬浮窗权限」后才能开始严格锁机「${starting.name}」（${starting.minutes} 分钟），开启后无法提前解除；这两项权限退出应用或重启都不会掉权。`
+              : `需先开启「使用情况访问权限」与「悬浮窗权限」后才能开始锁机「${starting.name}」（${starting.minutes} 分钟）；这两项权限退出应用或重启都不会掉权。` }}
           </p>
           <p v-if="sheetError" class="form-error" role="alert">{{ sheetError }}</p>
-          <button type="button" class="primary wide" :disabled="busy" @click="settings">前往无障碍授权</button>
+          <button type="button" class="primary wide" :disabled="busy" @click="settings('usageStats')">前往使用情况访问</button>
+          <button type="button" class="secondary wide" :disabled="busy" @click="closeStarting">暂不开始</button>
+        </template>
+        <template v-else-if="missingLockTarget === 'overlay'">
+          <p>
+            还差「悬浮窗权限」即可开始锁机「{{ starting.name }}」（{{ starting.minutes }} 分钟）；开启后退出应用或重启都不会掉权。
+          </p>
+          <p v-if="sheetError" class="form-error" role="alert">{{ sheetError }}</p>
+          <button type="button" class="primary wide" :disabled="busy" @click="settings('overlay')">前往悬浮窗设置</button>
+          <button type="button" class="secondary wide" :disabled="busy" @click="closeStarting">暂不开始</button>
+        </template>
+        <template v-else-if="missingLockTarget === 'accessibility'">
+          <p>
+            该锁机配置启用了「限制桌面与最近任务 / 精确防关闭」，需先开启无障碍权限后才能开始「{{ starting.name }}」（{{ starting.minutes }} 分钟）。
+          </p>
+          <p v-if="sheetError" class="form-error" role="alert">{{ sheetError }}</p>
+          <button type="button" class="primary wide" :disabled="busy" @click="settings('accessibility')">前往无障碍授权</button>
           <button type="button" class="secondary wide" :disabled="busy" @click="closeStarting">暂不开始</button>
         </template>
         <template v-else>

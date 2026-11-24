@@ -13,7 +13,7 @@ import org.json.JSONObject;
 
 /**
  * Foreground keep-alive service active strictly while a focus or independent lock session is open.
- * Reuses Reminders.FOCUS_ID (40) on channel "focus-status" so no duplicate notification is shown.
+ * Reuses Reminders.FOCUS_ID (40) on channel "focus-status" and hosts UsageAppMonitor during sessions.
  */
 public final class FocusKeepAliveService extends Service {
     private static volatile boolean running;
@@ -34,6 +34,8 @@ public final class FocusKeepAliveService extends Service {
 
     static void stop(Context context) {
         running = false;
+        UsageAppMonitor.stop();
+        FocusBlockOverlay.dismiss();
         if (context == null) return;
         Context app = context.getApplicationContext();
         try {
@@ -59,18 +61,22 @@ public final class FocusKeepAliveService extends Service {
             ServiceCompat.startForeground(this, Reminders.FOCUS_ID, notification, fgsType);
         } catch (RuntimeException failure) {
             running = false;
+            UsageAppMonitor.stop();
             stopSelf(startId);
             return START_NOT_STICKY;
         }
 
         if (active == null) {
             running = false;
+            UsageAppMonitor.stop();
+            FocusBlockOverlay.dismiss();
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
             stopSelf(startId);
             return START_NOT_STICKY;
         }
 
         running = true;
+        UsageAppMonitor.start(this);
         return START_STICKY;
     }
 
@@ -87,6 +93,8 @@ public final class FocusKeepAliveService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        UsageAppMonitor.stop();
+        FocusBlockOverlay.dismiss();
         super.onDestroy();
     }
 

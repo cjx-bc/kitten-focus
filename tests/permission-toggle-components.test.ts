@@ -282,7 +282,7 @@ describe('StudyModeSheet single-layer 8-view stack & permission gates', () => {
     for (const [v, title] of [
       ['quiet', '免打扰'],
       ['permissions', '权限与使用帮助'],
-      ['permissionGuide', '还差 3 项权限'],
+      ['permissionGuide', '还差 4 项权限'],
     ] as const) {
       state.view = v
       expect(state.sheetTitle).toBe(title)
@@ -343,7 +343,7 @@ describe('StudyModeSheet single-layer 8-view stack & permission gates', () => {
     const state = await setup(StudyModeSheet, { open: true })
     await state.toggleStudy({ target: { checked: true } })
     expect(state.masterEnabled).toBe(true)
-    expect(state.missingPermissions.some((p: any) => p.id === 'accessibility')).toBe(true)
+    expect(state.missingPermissions.map((p: any) => p.id)).toEqual(['usageStats', 'overlay'])
 
     setPermissions(false, false, false)
     await state.refresh()

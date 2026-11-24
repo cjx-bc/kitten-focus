@@ -131,6 +131,8 @@ describe('android-dev-install helpers', () => {
     expect(api28).toEqual([
       'batteryOptimization',
       'installUnknownApps',
+      'usageStats',
+      'overlay',
       'notificationListener',
       'accessibilityService',
     ])
@@ -138,6 +140,8 @@ describe('android-dev-install helpers', () => {
     const api31 = buildGrantPlan(31, 'com.xiaomao.focus').map((s) => s.id)
     expect(api31).toContain('exactAlarm')
     expect(api31).toContain('dndAccess')
+    expect(api31).toContain('usageStats')
+    expect(api31).toContain('overlay')
     expect(api31).not.toContain('restrictedSettings')
     expect(api31).not.toContain('postNotifications')
 
@@ -146,9 +150,13 @@ describe('android-dev-install helpers', () => {
     expect(api33).toContain('postNotifications')
 
     const api36Qa = buildGrantPlan(36, 'com.xiaomao.focus.qa')
-    expect(api36Qa).toHaveLength(8)
+    expect(api36Qa).toHaveLength(10)
     expect(api36Qa.find((s) => s.id === 'postNotifications')?.args).toContain('com.xiaomao.focus.qa')
-    expect(buildGrantPlan(Number.NaN, 'com.xiaomao.focus')).toHaveLength(8)
+    expect(api36Qa.find((s) => s.id === 'usageStats')).toMatchObject({ bestEffort: true })
+    expect(api36Qa.find((s) => s.id === 'overlay')).toMatchObject({ bestEffort: true })
+    expect(api36Qa.find((s) => s.id === 'usageStats')?.args).toContain('GET_USAGE_STATS')
+    expect(api36Qa.find((s) => s.id === 'overlay')?.args).toContain('SYSTEM_ALERT_WINDOW')
+    expect(buildGrantPlan(Number.NaN, 'com.xiaomao.focus')).toHaveLength(10)
   })
 
   it('detects OPPO permission monitoring errors and classifies install failures safely', () => {

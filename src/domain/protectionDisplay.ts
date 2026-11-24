@@ -1,5 +1,6 @@
 import type { ProtectionPreferences, ProtectionStatus } from './model'
 import { migrateProtectionPreferences, resolveEffectiveProtection } from './protectionModules'
+import { isAccessibilityReady, isAppRestrictionReady } from './studyPermissions'
 
 export interface StudyCapsuleDisplay {
   text: '学霸模式 · 关' | '学霸模式 · 开' | '学霸模式 · 待授权'
@@ -21,12 +22,16 @@ export function studyCapsuleDisplay(
   if (!masterOn) return { text: '学霸模式 · 关', tone: 'off', masterOn: false }
 
   const effective = resolveEffectiveProtection(migrated)
-  const needsAccessibility =
-    effective.study ||
+  const needsApps = effective.study
+  const needsStrictAccessibility =
     effective.enhancements.includes('navigationHomeRecents') ||
     effective.enhancements.includes('preciseAntiClose')
 
-  if (needsAccessibility && status?.supported === true && (!status.authorized || !status.connected)) {
+  if (
+    status?.supported === true &&
+    ((needsApps && !isAppRestrictionReady(status)) ||
+      (needsStrictAccessibility && !isAccessibilityReady(status)))
+  ) {
     return { text: '学霸模式 · 待授权', tone: 'warning', masterOn: true }
   }
   return { text: '学霸模式 · 开', tone: 'enabled', masterOn: true }

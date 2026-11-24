@@ -29,7 +29,10 @@ final class FocusRecovery {
     private final java.util.Map<String, DeviceEffects> capabilityEffects = new java.util.HashMap<>();
 
     FocusRecovery(Context context, LocalStore store) {
-        this(context, store, () -> context.sendBroadcast(new Intent(DISMISS_BLOCK).setPackage(context.getPackageName())));
+        this(context, store, () -> {
+            FocusBlockOverlay.dismiss();
+            context.sendBroadcast(new Intent(DISMISS_BLOCK).setPackage(context.getPackageName()));
+        });
     }
     FocusRecovery(Context context, LocalStore store, DeviceEffects effects) {
         journal = context.getSharedPreferences("catfocus-recovery-" + store.getDatabaseName(), Context.MODE_PRIVATE);

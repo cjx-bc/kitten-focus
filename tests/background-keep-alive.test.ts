@@ -123,10 +123,11 @@ describe('background keep-alive & battery optimization UI hygiene', () => {
     expect(required).toEqual([])
   })
 
-  it('renders calm optional battery card in StudyModeSheet permissions view without required red badge', async () => {
+  it('renders calm optional battery card in StudyModeSheet permissions view without red badge or standby toggle', async () => {
     const { html, state } = await mountSSR(StudyModeSheet, { open: true, initialView: 'permissions' })
     expect(html).toContain('后台运行不限制')
     expect(html).toContain('未放行 · 可选')
+    expect(html).not.toContain('后台常驻保活')
     expect(html).toContain('perm-state')
     expect(html).not.toContain('perm-badge required')
     await state.openBatteryKeepAlive()
@@ -139,14 +140,20 @@ describe('background keep-alive & battery optimization UI hygiene', () => {
     expect(html).toContain('后台运行与电池优化')
     expect(html).toContain('电池优化白名单')
     expect(html).toContain('专注保活服务')
+    expect(html).not.toContain('待机常驻保活')
   })
 
-  it('includes scannable OEM keep-alive steps for 5 phone families in offline help', () => {
+  it('includes scannable OEM keep-alive steps and dual-engine persistent permission guidance in offline help', () => {
     const section = protectionHelpSections.find((item) => item.id === 'keepalive')
     expect(section).toBeDefined()
     expect(section?.title).toBe('后台保活与各品牌设置')
+    expect(section?.paragraphs.join(' ')).toContain('使用情况访问')
+    expect(section?.paragraphs.join(' ')).toContain('悬浮窗')
     expect(section?.steps).toHaveLength(5)
     expect(section?.steps?.map((s) => s.brand).join(' ')).toContain('小米')
     expect(section?.steps?.map((s) => s.brand).join(' ')).toContain('OPPO')
+    const oppo = section?.steps?.find((s) => s.brand.includes('OPPO'))
+    expect(oppo?.path).toContain('允许完全后台行为')
+    expect(oppo?.path).toContain('最近任务锁定小猫卡片')
   })
 })

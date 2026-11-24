@@ -187,3 +187,37 @@ it('reports recentTasksHidden authorization requirement and normalizes idle term
     expect(idleSelected.capabilities.find(row => row.id === id)?.state).toBe('ready')
   }
 })
+
+it('reports applications ready via persistent usage+overlay while keeping accessibility-only enhancements separate', async () => {
+  const { readProtectionDiagnostics } = await import('../src/platform/protectionDiagnostics')
+  device.values.protectionStatus = {
+    supported: true,
+    authorized: true,
+    connected: true,
+    active: false,
+    state: 'ready',
+    engine: 'usage_overlay',
+    usageStatsGranted: true,
+    overlayGranted: true,
+    accessibilityAuthorized: false,
+    accessibilityConnected: false,
+    reason: '使用情况访问与悬浮窗已就绪，开始专注后执行应用限制',
+    navigation: { supported: true, authorized: false, connected: false, requested: false, active: false, state: 'authorization', lastReturnedAt: null, reason: '未开启无障碍' },
+    antiClose: { supported: true, authorized: false, connected: false, requested: false, active: false, state: 'authorization', lastReturnedAt: null, reason: '未开启无障碍' },
+  }
+  const appsOnly = await readProtectionDiagnostics({ ...defaultProtection(), study: true })
+  expect(appsOnly.capabilities.find(row => row.id === 'applications')).toMatchObject({
+    state: 'ready',
+    authorized: true,
+    connected: true,
+    effect: expect.stringContaining('使用情况访问 + 悬浮窗'),
+  })
+
+  const withStrictA11y = await readProtectionDiagnostics({
+    ...defaultProtection(),
+    study: true,
+    enhancements: ['navigationHomeRecents', 'preciseAntiClose'],
+  })
+  expect(withStrictA11y.capabilities.find(row => row.id === 'navigation')?.state).toBe('authorization')
+  expect(withStrictA11y.capabilities.find(row => row.id === 'antiClose')?.state).toBe('authorization')
+})

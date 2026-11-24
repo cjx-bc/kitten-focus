@@ -70,9 +70,10 @@
 9. **每次启动自动检查更新与不打扰单层提示（Option A）**：
    - 每次冷启动（及 60 秒进程内冷却窗口之外的前台恢复）在后台静默检查更新（`force = false`）；网络异常或离线保持静默，绝不打断学习或阻塞启动。
    - 发现新版本后，在 `App.vue` 仅当 `native === true`、`app.ready`、无进行中专注/休息/锁机会话、处于主标签页（`!full`）、DOM 中无任何打开的 `<dialog>` 且该 `versionCode` 未被用户点击过 `稍后再说` 时，弹出 1 次单层 `<Sheet>`（版本与包大小卡片 + 限高可滚更新说明 + 安心数据备份提示 + 1 个主 CTA `下载更新` / `安装更新` + 次按钮 `稍后再说`）。点击 `稍后再说` 或非下载中关闭弹窗后将该 `versionCode` 记入 `localStorage`，此后同一版本不再主动弹窗打扰（仍保留「我的」小红点与手动检查入口，直到更高 `versionCode` 发布）；下载中提供 `收起，后台继续下载` 出口而不永久忽略当前版本。绝不静默自动下载，且可被 `RecoverySheet` / `ux-close-sheets` 抢占关闭。
-10. **Android 前台保活服务与冷静、零焦虑后台授权（遵守 ADR 0004）**：
-   - **专注/锁机期间前台保活**：`FocusKeepAliveService`（`foregroundServiceType="specialUse"`）仅在专注或独立锁机进行中运行，并复用现有专注常驻通知（`Reminders.FOCUS_ID = 40`、`focus-status` 低打扰频道），不弹出第二条通知；会话结束、重启或故障恢复后立即停止，平时不在后台驻留耗电。
-   - **冷静、一步直达、零红标焦虑的「后台运行不限制」**：电池优化放行属于推荐增强项，**绝不**阻塞专注/锁机或学霸模式启动，**绝不**计入待办顶栏或 `StudyModeSheet` `missingPermissions` 缺失权限计数，**绝不**使用红色警示 badge/文字。仅在 Tier 2（`SettingsView` `提醒与声音 → 系统提醒与后台`、`StudyModeSheet` `权限与使用帮助` 可选卡片）与 Tier 3（`/permissions` 独立诊断卡片及 `/help#help-keepalive` 分品牌单行设置路径）提供入口；点击后直接调起系统 1-tap 授权或电池优化设置（经 `openAuthorizationSettings` 放行），切回应用时自动刷新并在首次放行成功时轻提示 `已允许后台运行`。严格如实披露能力边界：可显著降低锁屏或后台期间被系统清理的概率，但不承诺免疫用户主动强停或激进厂商策略。
+10. **Android 前台服务、双引擎免掉权应用限制与冷静授权引导（遵守 ADR 0004）**：
+   - **专注/锁机期间前台服务**：`FocusKeepAliveService`（`foregroundServiceType="specialUse"`）仅在专注或独立锁机进行中运行，复用现有专注常驻通知（`Reminders.FOCUS_ID = 40`、`focus-status` 低打扰频道），不弹出第二条通知；会话结束、重启或故障恢复后立即停止，平时不在后台驻留，也不挂任何待机保活通知。
+   - **双引擎免掉权应用限制模型**：日常「应用限制」与「独立锁机」默认由 **「使用情况访问（`PACKAGE_USAGE_STATS`）」+「悬浮窗（`SYSTEM_ALERT_WINDOW`）」** 持久化权限驱动——划卡退出、强制停止或重启手机后系统均不撤回，无需反复重新授权。活跃会话期间由 `FocusKeepAliveService` 托管轻量 `UsageAppMonitor` 检测前台应用，检测到非白名单应用时优先拉起 `FocusBlockActivity`，若系统限制后台弹窗则自动以全屏 `FocusBlockOverlay` 遮罩兜底并保留「返回当前会话」与「临时打开应用」出口；**「无障碍服务」**降级为可选高阶增强（仅开启「限制桌面与最近任务」或「精确防关闭」时计为必需；已连接时提供 `<100ms` 瞬时拦截，未开启或被系统撤回时由主引擎无缝接管）。
+   - **冷静、一步直达、零红标焦虑的后台授权**：电池优化放行与可选高阶无障碍（当未开启严格导航/防关闭增强时）均属于推荐增强项，**绝不**阻塞普通专注/锁机启动，**绝不**计入待办顶栏或 `StudyModeSheet` `missingPermissions` 缺失权限计数，**绝不**使用红色警示 badge/文字。仅在 Tier 2（`SettingsView`、`StudyModeSheet` `权限与使用帮助`）与 Tier 3（`/permissions` 独立诊断卡片及 `/help#help-keepalive`）提供冷静入口；严格如实披露能力边界：持久化使用情况与悬浮窗权限可解决退出重进掉权问题，但桌面/最近任务与精确防关闭仍受无障碍服务与厂商策略制约。
 
 ### 2.3 `GLOSSARY.md` 术语契约与禁用词表
 

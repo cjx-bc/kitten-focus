@@ -499,6 +499,8 @@ describe('UI audit fixes', () => {
     }
     mocks.protection.mockResolvedValue({
       supported: true, authorized: true, connected: true, active: false, state: 'ready',
+      engine: 'usage_overlay', usageStatsGranted: true, overlayGranted: true,
+      accessibilityAuthorized: false, accessibilityConnected: false,
       reason: '', effectiveWhitelist: [],
     })
     await tasks.state.refreshProtection()
@@ -511,15 +513,17 @@ describe('UI audit fixes', () => {
     expect(readySheet.state.missingPermissions).toEqual([])
 
     mocks.protection.mockResolvedValue({
-      supported: true, authorized: false, connected: false, active: false, state: 'unauthorized',
-      reason: '需要开启无障碍权限', effectiveWhitelist: [],
+      supported: true, authorized: false, connected: false, active: false, state: 'authorization',
+      engine: 'none', usageStatsGranted: false, overlayGranted: false,
+      accessibilityAuthorized: false, accessibilityConnected: false,
+      reason: '需要开启使用情况访问与悬浮窗权限', effectiveWhitelist: [],
     })
     await tasks.state.refreshProtection()
     expect(tasks.state.studyCapsule.text).toBe('学霸模式 · 待授权')
     expect(tasks.state.studyCapsule.tone).toBe('warning')
 
     await readySheet.state.refresh()
-    expect(readySheet.state.missingPermissions.map((p: any) => p.id)).toContain('accessibility')
+    expect(readySheet.state.missingPermissions.map((p: any) => p.id)).toEqual(['usageStats', 'overlay'])
 
     mocks.app.lock.session = {
       id: 'lock-1',

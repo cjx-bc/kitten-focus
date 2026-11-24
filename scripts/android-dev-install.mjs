@@ -152,6 +152,8 @@ function isStepAlreadyGranted(adb, serial, step, opts, cache) {
     restrictedSettings: 'ACCESS_RESTRICTED_SETTINGS',
     exactAlarm: 'SCHEDULE_EXACT_ALARM',
     installUnknownApps: 'REQUEST_INSTALL_PACKAGES',
+    usageStats: 'GET_USAGE_STATS',
+    overlay: 'SYSTEM_ALERT_WINDOW',
   }
   if (appOpByStep[step.id]) {
     const opName = appOpByStep[step.id]
@@ -207,6 +209,16 @@ async function executeGrantStep(adb, serial, step, opts, cache = {}) {
       }
     }
     const res = runShellChecked(adb, serial, step.args)
+    if (!res.ok && step.bestEffort) {
+      return {
+        id: step.id,
+        label: step.label,
+        ok: true,
+        skippedManual: true,
+        detail: '系统限制 ADB 写入，请在应用内点击去授权一次性开启（退出不掉权）',
+        permissionMonitoringBlocked: false,
+      }
+    }
     return {
       id: step.id,
       label: step.label,
@@ -490,7 +502,7 @@ async function main() {
 
   console.log('\n执行结果汇总:')
   for (const item of results) {
-    const badge = item.ok ? '[OK]' : '[WARN]'
+    const badge = item.skippedManual ? '[INFO]' : item.ok ? '[OK]' : '[WARN]'
     console.log(`  ${badge.padEnd(6)} ${item.label} -> ${item.detail}`)
   }
 

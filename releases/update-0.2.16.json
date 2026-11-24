@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 22,
+    "versionName": "0.2.16",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.16/xiaomao-focus-0.2.16-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.16/xiaomao-focus-0.2.16-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.2.16-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.2.16/xiaomao-focus-0.2.16-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.2.16-debug.apk"
+    ],
+    "size": 5097580,
+    "sha256": "f6216dff62c0401a51c3e9848b4c24292decb228ea6d44d49695bbf2c78e0a26",
+    "notes": "双引擎免掉权应用限制上线：日常「应用限制」与「独立锁机」改用「使用情况访问 + 悬浮窗」持久化权限执行，划卡退出、强停或重启均不掉权，拦截页新增全屏悬浮窗兜底；「无障碍服务」降级为仅「限制桌面与最近任务 / 精确防关闭」高阶增强所需。沿用原包名和内测签名，可直接覆盖安装保留数据。"
+  }
+}

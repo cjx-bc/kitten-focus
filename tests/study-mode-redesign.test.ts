@@ -585,7 +585,7 @@ describe('QA blocker regressions (Blockers #1, #2, #3, P1, P2, P3)', () => {
   })
 
   it('Blocker #3 & P3: first master enable skips ungranted/unsupported optional capabilities so "稍后处理" never blocks start, and shows inline single-sheet permission guide', async () => {
-    // Case A: Accessibility missing -> non-blocking enable + inline missingPermissions banner / unified P3 checklist
+    // Case A: Dual-engine permissions missing -> non-blocking enable + inline missingPermissions banner / unified checklist
     setDevicePermissions({ supported: true, accessibility: false, dnd: false, notif: false })
     const unauthSheet = await mountSSR(StudyModeSheet, { open: true })
     await unauthSheet.state.refresh()
@@ -594,12 +594,35 @@ describe('QA blocker regressions (Blockers #1, #2, #3, P1, P2, P3)', () => {
     expect(mocks.app.data.preferences.protection.modules?.master).toBe(true)
     expect(mocks.app.data.preferences.protection.modules?.quiet.enabled).toBe(false)
     expect(unauthSheet.state.view).toBe('home')
-    expect(unauthSheet.state.missingPermissions.map((i: any) => i.id)).toEqual(['accessibility'])
+    expect(unauthSheet.state.missingPermissions.map((i: any) => i.id)).toEqual(['usageStats', 'overlay'])
     expect(unauthSheet.state.onboardingPermissions.map((i: any) => i.id)).toEqual([
-      'accessibility',
+      'usageStats',
+      'overlay',
       'dnd',
       'notificationListener',
     ])
+
+    // Case A2: UsageStats + Overlay ready while Accessibility OFF -> default StudyMode has 0 missingPermissions
+    mocks.app.data.preferences.protection = defaultProtection()
+    const capReady = {
+      supported: true,
+      authorized: true,
+      connected: true,
+      active: false,
+      state: 'ready',
+      engine: 'usage_overlay',
+      usageStatsGranted: true,
+      overlayGranted: true,
+      accessibilityAuthorized: false,
+      accessibilityConnected: false,
+      reason: '',
+      identity: {},
+    }
+    mocks.protection.mockResolvedValue({ ...capReady, effectiveWhitelist: [], navigation: { ...capReady, authorized: false, connected: false }, antiClose: { ...capReady, authorized: false, connected: false } })
+    const dualSheet = await mountSSR(StudyModeSheet, { open: true })
+    await dualSheet.state.refresh()
+    await dualSheet.state.toggleStudy({ target: { checked: true } } as unknown as Event)
+    expect(dualSheet.state.missingPermissions).toEqual([])
 
     // Case B: Accessibility ready, DND + Notifications missing -> enable succeeds without ungranted DND/Notifications
     mocks.app.data.preferences.protection = defaultProtection()

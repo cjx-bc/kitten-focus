@@ -10,6 +10,8 @@ import type { DndStatus } from '../platform/dnd'
 import type { NotificationStatus } from '../platform/notifications'
 
 export type StudyPermissionId =
+  | 'usageStats'
+  | 'overlay'
   | 'accessibility'
   | 'dnd'
   | 'notificationListener'
@@ -39,6 +41,22 @@ export interface RequiredPermissionItem {
   actionLabel: string
 }
 
+export function isAccessibilityReady(p?: ProtectionStatus | null): boolean {
+  if (!p?.supported) return false
+  if (p.accessibilityAuthorized !== undefined) {
+    return Boolean(p.accessibilityAuthorized && p.accessibilityConnected)
+  }
+  return Boolean(p.authorized && p.connected)
+}
+
+export function isAppRestrictionReady(p?: ProtectionStatus | null): boolean {
+  if (!p?.supported) return false
+  if (p.usageStatsGranted !== undefined || p.overlayGranted !== undefined) {
+    return Boolean((p.usageStatsGranted && p.overlayGranted) || isAccessibilityReady(p))
+  }
+  return Boolean(p.authorized && p.connected)
+}
+
 export function collectRequiredPermissions(
   prefs: Partial<ProtectionPreferences> | undefined,
   live: LivePermissionStates,
@@ -56,25 +74,80 @@ export function collectRequiredPermissions(
   const quietSub = getModuleSubItems('quiet', modules.quiet)
 
   const list: RequiredPermissionItem[] = []
+  const p = live.protection
+  const a11yReady = isAccessibilityReady(p)
+  const a11yAuth =
+    p?.accessibilityAuthorized !== undefined
+      ? Boolean(p.accessibilityAuthorized)
+      : Boolean(p?.authorized)
+  const a11yConn =
+    p?.accessibilityConnected !== undefined
+      ? Boolean(p.accessibilityConnected)
+      : Boolean(p?.connected)
 
-  // 1. Accessibility
+  // 1. Everyday app restriction: persistent UsageStats + Overlay primary engine (falls back cleanly when A11y is active)
+  if (appsOn && appsSub.restrict) {
+    const usageReady = Boolean(p?.supported && p.usageStatsGranted)
+    const overlayReady = Boolean(p?.supported && p.overlayGranted)
+    if (!a11yReady || (usageReady && overlayReady)) {
+      list.push({
+        id: 'usageStats',
+        title: '使用情况访问权限',
+        level: 'required',
+        usedBy: ['应用限制 · 限制白名单外应用'],
+        purpose: '识别当前前台应用以拦截白名单外应用；退出应用或重启不会掉权，不读取应用正文。',
+        supported: Boolean(p?.supported),
+        authorized: usageReady,
+        connected: usageReady,
+        ready: usageReady,
+        statusText: !p
+          ? '检查中'
+          : !p.supported
+            ? '本机不支持'
+            : usageReady
+              ? '已就绪'
+              : '未授权 · 未生效',
+        actionLabel: '前往使用情况访问',
+      })
+      list.push({
+        id: 'overlay',
+        title: '悬浮窗权限',
+        level: 'required',
+        usedBy: ['应用限制 · 限制白名单外应用'],
+        purpose: '切到受限应用时弹出专注阻挡页；退出应用或重启不会掉权。',
+        supported: Boolean(p?.supported),
+        authorized: overlayReady,
+        connected: overlayReady,
+        ready: overlayReady,
+        statusText: !p
+          ? '检查中'
+          : !p.supported
+            ? '本机不支持'
+            : overlayReady
+              ? '已就绪'
+              : '未授权 · 未生效',
+        actionLabel: '前往悬浮窗设置',
+      })
+    }
+  }
+
+  // 2. Accessibility (required for Strict navigation/anti-close, or active fallback for apps if usage+overlay unset)
   const accessUsers: string[] = []
-  if (appsOn && appsSub.restrict) accessUsers.push('应用限制 · 限制白名单外应用')
+  if (appsOn && appsSub.restrict && a11yReady && !(p?.usageStatsGranted && p?.overlayGranted)) {
+    accessUsers.push('应用限制 · 限制白名单外应用')
+  }
   if (strictOn && strictSub.navigation) accessUsers.push('严格模式 · 限制桌面与最近任务')
   if (strictOn && strictSub.antiClose) accessUsers.push('严格模式 · 精确防关闭')
   if (accessUsers.length > 0) {
-    const p = live.protection
     const supported = Boolean(p?.supported)
-    const authorized = Boolean(p?.authorized)
-    const connected = Boolean(p?.connected)
-    const ready = supported && authorized && connected
+    const ready = supported && a11yReady
     const statusText = !p
       ? '检查中'
       : !supported
         ? '本机不支持'
-        : !authorized
+        : !a11yAuth
           ? '未授权 · 未生效'
-          : !connected
+          : !a11yConn
             ? '已授权 · 等待服务连接'
             : '已就绪'
     list.push({
@@ -82,13 +155,13 @@ export function collectRequiredPermissions(
       title: '无障碍服务',
       level: 'required',
       usedBy: accessUsers,
-      purpose: '识别当前前台应用与桌面/最近任务窗口，不读取其他应用正文。',
+      purpose: '用于限制桌面/最近任务与精确防关闭；日常应用限制不需要无障碍，不读取其他应用正文。',
       supported,
-      authorized,
-      connected,
+      authorized: a11yAuth,
+      connected: a11yConn,
       ready,
       statusText,
-      actionLabel: authorized && !connected ? '检查服务连接' : '前往系统设置',
+      actionLabel: a11yAuth && !a11yConn ? '检查服务连接' : '前往系统设置',
     })
   }
 

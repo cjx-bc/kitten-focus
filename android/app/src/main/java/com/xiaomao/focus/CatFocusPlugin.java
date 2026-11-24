@@ -84,7 +84,7 @@ public class CatFocusPlugin extends Plugin {
     });}
     @PluginMethod public void protectionStatus(PluginCall call){resolve(call,()->FocusProtection.status(getContext(),store,control.observeControl()));}
     @PluginMethod public void listProtectionApps(PluginCall call){resolve(call,()->new JSONObject().put("apps",FocusProtection.apps(getContext(),store)));}
-    @PluginMethod public void openProtectionSettings(PluginCall call){resolve(call,()->{FocusProtection.openSettings(getContext());return null;});}
+    @PluginMethod public void openProtectionSettings(PluginCall call){resolve(call,()->{FocusProtection.openSettings(getContext(),call.getString("target","accessibility"));return null;});}
     @PluginMethod public void previewRecovery(PluginCall call){resolve(call,()->control.previewRecovery());}
     @PluginMethod public void confirmRecovery(PluginCall call){resolve(call,()->control.confirmRecovery(call.getString("revision","")));}
     @PluginMethod public void consumeRecoveryReturn(PluginCall call){resolve(call,()->{

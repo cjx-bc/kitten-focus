@@ -73,7 +73,9 @@ function visible() { if (!document.hidden) void refresh() }
 async function authorize() {
   const target = permission.value; permission.value = undefined
   try {
-    if (target === 'accessibility') await protectionDriver.openSettings()
+    if (target === 'usageStats') await protectionDriver.openSettings('usageStats')
+    else if (target === 'overlay') await protectionDriver.openSettings('overlay')
+    else if (target === 'accessibility') await protectionDriver.openSettings('accessibility')
     else if (target === 'notifications') await notificationDriver.openSettings()
     else if (target === 'dnd') await dndDriver.openSettings()
     else if (target === 'controlNotification') await requestNotifications()
@@ -168,7 +170,9 @@ onBeforeUnmount(() => {
     <p v-if="error" class="form-error" role="alert">{{ error }}。当前结果可能已过期，请重新检查。</p>
     <Sheet :open="!!permission" title="权限用途与选择" @close="permission = undefined">
       <div class="permission-copy">
-        <template v-if="permission === 'accessibility'"><p>用于识别并限制名单外应用，不读取其他应用正文。</p><p>精确防关闭仅识别系统页面中小猫自己的入口，不保存或上传内容。</p></template>
+        <template v-if="permission === 'usageStats'"><p>用于识别当前打开了哪个应用，仅对比本轮白名单，不读取应用正文。</p><p>该授权为系统持久化权限，退出应用或重启手机不会撤回。</p></template>
+        <template v-else-if="permission === 'overlay'"><p>用于在打开名单外应用时立即覆盖显示专注阻挡页，提供返回会话和临时放行入口。</p><p>该授权为系统持久化权限，退出应用或重启手机不会撤回。</p></template>
+        <template v-else-if="permission === 'accessibility'"><p>用于高阶增强「限制桌面与最近任务」和「精确防关闭」，以及协同加速应用限制，不保存或上传任何内容。</p><p>日常应用限制由「使用情况访问 + 悬浮窗」完成，不依赖无障碍。</p></template>
         <template v-else-if="permission === 'notifications'"><p>专注期间暂缓名单外通知，结束后请求恢复。不保存通知正文。</p><p>电话、闹钟与紧急通知保留。</p></template>
         <template v-else-if="permission === 'dnd'"><p>减少通知声音和振动，保留来电、闹钟与媒体。</p><p>其他勿扰设置不变。</p></template>
         <template v-else><p>隐藏桌面图标或最近任务卡后，需要从小猫控制通知重新进入应用和故障恢复。</p><p>结束后恢复原状态；系统显示刷新可能有延迟。</p></template>

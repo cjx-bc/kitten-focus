@@ -73,21 +73,25 @@ final class FocusProtection {
         return false;
     }
 
+    private static AccessibilityState appRestrictionState(Context context) {
+        boolean usageReady = AppUsageGuard.isReady(context);
+        boolean a11yAuth = authorized(context);
+        boolean a11yConn = FocusAccessibilityService.connected();
+        return new AccessibilityState() {
+            public boolean authorized() { return usageReady || a11yAuth; }
+            public boolean connected() { return usageReady || a11yConn; }
+        };
+    }
+
     static JSONObject capture(Context context, LocalStore store, JSONObject session) throws JSONException {
-        return capture(context, store, session, new AccessibilityState() {
-            public boolean authorized() { return FocusProtection.authorized(context); }
-            public boolean connected() { return FocusAccessibilityService.connected(); }
-        });
+        return capture(context, store, session, appRestrictionState(context));
     }
     static JSONObject captureLock(Context context, LocalStore store, JSONObject configuration) throws JSONException {
-        return captureLock(context, store, configuration, new AccessibilityState() {
-            public boolean authorized() { return FocusProtection.authorized(context); }
-            public boolean connected() { return FocusAccessibilityService.connected(); }
-        });
+        return captureLock(context, store, configuration, appRestrictionState(context));
     }
     static JSONObject captureLock(Context context, LocalStore store, JSONObject configuration, AccessibilityState accessibility) throws JSONException {
         if (!accessibility.authorized() || !accessibility.connected())
-            throw new IllegalStateException("锁机待授权：请启用小猫专注无障碍服务，并返回确认服务已连接");
+            throw new IllegalStateException("锁机待授权：请开启「使用情况访问」与「悬浮窗」权限（或启用无障碍服务）");
         JSONObject whitelist = configuration.optJSONObject("whitelist");
         boolean custom = whitelist != null && "custom".equals(whitelist.optString("source"));
         LinkedHashSet<String> selected = new LinkedHashSet<>();
@@ -105,7 +109,7 @@ final class FocusProtection {
         JSONObject prefs = resolveEffective(preferences(store));
         boolean study = prefs.optBoolean("study", false);
         if (study && (!accessibility.authorized() || !accessibility.connected()))
-            throw new IllegalStateException("学霸模式待授权：请启用小猫专注无障碍服务，并返回确认服务已连接");
+            throw new IllegalStateException("学霸模式待授权：请开启「使用情况访问」与「悬浮窗」权限（或启用无障碍服务）");
         LinkedHashSet<String> packages = new LinkedHashSet<>();
         JSONArray selected = prefs.optJSONArray("globalWhitelist");
         String source = "global";
@@ -202,23 +206,41 @@ final class FocusProtection {
     }
 
     static JSONObject status(Context context, LocalStore store, JSONObject observation) throws JSONException {
-        boolean granted = authorized(context), connected = FocusAccessibilityService.connected();
-        boolean preferred = preferences(store).optBoolean("study", false);
+        boolean usageStatsGranted = AppUsageGuard.hasUsageStatsPermission(context);
+        boolean overlayGranted = AppUsageGuard.hasOverlayPermission(context);
+        boolean a11yAuth = authorized(context);
+        boolean a11yConn = FocusAccessibilityService.connected();
+        String engine = AppUsageGuard.resolveEngine(usageStatsGranted, overlayGranted, a11yAuth, a11yConn);
+        boolean usageOverlayReady = usageStatsGranted && overlayGranted;
+        boolean granted = usageOverlayReady || a11yAuth;
+        boolean connected = usageOverlayReady || (a11yAuth && a11yConn);
+        boolean preferred = resolveEffective(preferences(store)).optBoolean("study", false);
         JSONObject session = ControlSession.from(observation);
         JSONObject protection = session == null ? null : session.optJSONObject("protection");
         boolean requested = protection != null && protection.optBoolean("study");
         boolean withdrawn = protection != null && protection.optBoolean("applicationsWithdrawn");
         boolean current = requested && !withdrawn && !observation.optBoolean("needsReconcile");
-        boolean effective = granted && connected && executionFailure.isEmpty();
+        boolean effective = !AppUsageGuard.ENGINE_NONE.equals(engine) && executionFailure.isEmpty();
         String state = requested && withdrawn ? "recovered" : current ? effective ? "protecting" : "failed"
-            : !preferred ? "off" : granted && connected ? "ready" : "authorization";
-        String reason = requested && withdrawn ? "本轮应用限制已主动撤销；服务重连不会重新开启，计时仍继续" : current && !executionFailure.isEmpty() ? executionFailure : current && (!granted || !connected) ? "本轮应用限制已失效，请检查无障碍授权与服务连接"
-            : !granted ? "尚未启用无障碍服务" : !connected ? "已授权，等待无障碍服务连接"
+            : !preferred ? "off" : effective ? "ready" : "authorization";
+        String reason = requested && withdrawn ? "本轮应用限制已主动撤销；计时仍继续"
+            : current && !executionFailure.isEmpty() ? executionFailure
+            : current && !effective ? "本轮应用限制已失效，请检查使用情况访问、悬浮窗或无障碍权限"
+            : !granted ? "尚未授予使用情况访问或悬浮窗权限"
+            : !connected ? "已开启部分权限，请确认使用情况访问与悬浮窗权限已就绪"
             : current ? "lock".equals(observation.optString("owner")) ? "本轮锁机保护中；有效白名单已固定" : "本轮有效白名单已固定；暂停计时仍限制应用"
-            : preferred ? "开始专注后执行应用限制" : "应用限制未开启";
+            : preferred ? (AppUsageGuard.ENGINE_ACCESSIBILITY.equals(engine)
+                ? "无障碍服务已就绪，开始专注后执行应用限制"
+                : "使用情况访问与悬浮窗已就绪，开始专注后执行应用限制")
+            : "应用限制未开启";
         return new JSONObject().put("supported", true).put("authorized", granted).put("connected", connected)
             .put("active", current && effective).put("preferenceEnabled", preferred)
             .put("state", state).put("reason", reason)
+            .put("engine", engine)
+            .put("usageStatsGranted", usageStatsGranted)
+            .put("overlayGranted", overlayGranted)
+            .put("accessibilityAuthorized", a11yAuth)
+            .put("accessibilityConnected", a11yConn)
             .put("effectiveWhitelist", protection == null ? new JSONArray() : protection.optJSONArray("whitelist"))
             .put("navigation", observation.optJSONObject("navigation")).put("antiClose", observation.optJSONObject("antiClose"));
     }
@@ -234,6 +256,17 @@ final class FocusProtection {
     }
 
     static void openSettings(Context context) {
+        openSettings(context, "accessibility");
+    }
+    static void openSettings(Context context, String target) {
+        if ("usageStats".equals(target)) {
+            AppUsageGuard.openUsageStatsSettings(context);
+            return;
+        }
+        if ("overlay".equals(target)) {
+            AppUsageGuard.openOverlaySettings(context);
+            return;
+        }
         openAuthorizationSettings(context, new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
     }
     static void openAuthorizationSettings(Context context, Intent intent) {

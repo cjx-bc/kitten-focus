@@ -228,6 +228,22 @@ export function buildGrantPlan(sdkInt, appId = DEFAULT_APP_ID) {
       args: ['shell', 'cmd', 'notification', 'allow_dnd', appId],
     },
     {
+      id: 'usageStats',
+      label: '使用情况访问权限 (GET_USAGE_STATS)',
+      minSdk: 23,
+      kind: 'adb',
+      bestEffort: true,
+      args: ['shell', 'appops', 'set', appId, 'GET_USAGE_STATS', 'allow'],
+    },
+    {
+      id: 'overlay',
+      label: '悬浮窗权限 (SYSTEM_ALERT_WINDOW)',
+      minSdk: 23,
+      kind: 'adb',
+      bestEffort: true,
+      args: ['shell', 'appops', 'set', appId, 'SYSTEM_ALERT_WINDOW', 'allow'],
+    },
+    {
       id: 'notificationListener',
       label: '通知使用权 (NotificationListener)',
       minSdk: 26,
