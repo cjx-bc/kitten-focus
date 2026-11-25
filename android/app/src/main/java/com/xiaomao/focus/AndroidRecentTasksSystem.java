@@ -14,6 +14,13 @@ import java.util.List;
 final class AndroidRecentTasksSystem implements RecentTasksSystem {
     private final Context context;
     AndroidRecentTasksSystem(Context context) { this.context = context.getApplicationContext(); }
+    @Override
+    public boolean conflictsWithAccessibilitySecurity() {
+        return AndroidLauncherSystem.shouldSkipLauncherHidingOnOem(
+            OemKeepAliveRouter.detectBrand(android.os.Build.MANUFACTURER, android.os.Build.BRAND),
+            FocusProtection.authorized(context) || FocusAccessibilityService.connected()
+        );
+    }
     public boolean recoveryAvailable() {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (!Reminders.notificationsAllowed(context) || !manager.areNotificationsEnabled()) return false;

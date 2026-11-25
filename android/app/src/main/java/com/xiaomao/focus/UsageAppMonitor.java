@@ -125,9 +125,8 @@ final class UsageAppMonitor {
         Context app = appContext;
         if (app == null) return;
 
-        // Accessibility already handles <100ms instant blocking + navigation/anti-close when connected.
+        // Accessibility handles instant blocking + navigation/anti-close + key filtering when connected.
         if (FocusAccessibilityService.connected()) {
-            FocusBlockOverlay.dismiss();
             reschedule(IDLE_POLL_MS);
             return;
         }
@@ -159,8 +158,20 @@ final class UsageAppMonitor {
             pollForegroundPackage(app);
             String targetPkg = TRACKER.currentPackage();
             String targetCls = TRACKER.currentClass();
+            if (app.getPackageName().equals(targetPkg)) {
+                lastBlockedPkg = "";
+                FocusBlockOverlay.showForSession(app, observation);
+                reschedule(ACTIVE_POLL_MS);
+                return;
+            }
             if (targetPkg.isEmpty() || !FocusProtection.shouldBlock(app, observation, targetPkg, targetCls)) {
-                FocusBlockOverlay.dismiss();
+                if (!targetPkg.isEmpty() && !FocusProtection.isTransientOverlayPackage(app, targetPkg)) {
+                    if (FocusProtection.isWhitelistedExternalApp(app, observation, targetPkg) || FocusProtection.isInActiveCall(app)) {
+                        FocusBlockOverlay.onAllowedExternalForeground(targetPkg);
+                    } else {
+                        FocusBlockOverlay.dismiss();
+                    }
+                }
                 if (!targetPkg.equals(lastBlockedPkg)) {
                     lastBlockedPkg = "";
                 }
@@ -174,10 +185,16 @@ final class UsageAppMonitor {
                 return;
             }
 
+            lastBlockedPkg = targetPkg;
+            if (FocusBlockOverlay.canAttachOverlay(app)) {
+                FocusBlockOverlay.show(app, observation, targetPkg);
+                FocusProtection.executionSucceeded();
+                reschedule(ACTIVE_POLL_MS);
+                return;
+            }
+
             long nowMono = SystemClock.elapsedRealtime();
-            boolean shouldAttemptLaunch = !targetPkg.equals(lastBlockedPkg) || (nowMono - lastBlockedMono >= LAUNCH_DEBOUNCE_MS);
-            if (shouldAttemptLaunch) {
-                lastBlockedPkg = targetPkg;
+            if (nowMono - lastBlockedMono >= LAUNCH_DEBOUNCE_MS) {
                 lastBlockedMono = nowMono;
                 try {
                     app.startActivity(
@@ -190,12 +207,6 @@ final class UsageAppMonitor {
                 } catch (RuntimeException error) {
                     FocusProtection.executionFailed(error);
                 }
-            }
-
-            if (targetPkg.equals(lastBlockedPkg)
-                && (nowMono - lastBlockedMono >= OVERLAY_FALLBACK_DELAY_MS)
-                && !FocusBlockActivity.isVisible()) {
-                FocusBlockOverlay.show(app, observation, targetPkg);
             }
             reschedule(ACTIVE_POLL_MS);
         } catch (Exception error) {

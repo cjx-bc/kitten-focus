@@ -46,10 +46,41 @@ public class MainActivity extends BridgeActivity {
         FocusNotificationListener.rebindIfAuthorized(this);
     }
 
+    private static volatile MainActivity activeInstance;
+    private static volatile String currentRoutePath = "/";
+    private volatile boolean resumed = false;
+
+    static void updateRouteState(android.content.Context context, String routePath) {
+        currentRoutePath = routePath == null ? "/" : routePath;
+        FocusBlockOverlay.updateRouteState(context, currentRoutePath);
+        MainActivity activity = activeInstance;
+        if (activity != null) {
+            activity.runOnUiThread(activity::applyImmersiveFocusIfNeeded);
+        }
+    }
+
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        FocusBlockOverlay.onMainActivityLeftForeground(this);
+    }
+
+    @Override
+    public void onPause() {
+        resumed = false;
+        FocusBlockOverlay.onMainActivityLeftForeground(this);
+        super.onPause();
+    }
+
     @Override
     public void onResume() {
         super.onResume();
+        resumed = true;
+        activeInstance = this;
+        FocusAccessibilityService.cancelPullbackPulse();
+        FocusBlockOverlay.onMainActivityFocused(this);
         FocusNotificationListener.rebindIfAuthorized(this);
+        applyImmersiveFocusIfNeeded();
     }
 
     private void animateSplashExit(SplashScreenViewProvider splashScreenView) {
@@ -174,9 +205,32 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (!hasFocus) return;
+        if (!hasFocus || !resumed) return;
+        activeInstance = this;
+        FocusAccessibilityService.cancelPullbackPulse();
+        FocusBlockOverlay.onMainActivityWindowFocused(this);
         FocusProtection.clearSettingsAuthorization();
         observeNavigationFocus();
+        applyImmersiveFocusIfNeeded();
+    }
+
+    private void applyImmersiveFocusIfNeeded() {
+        try {
+            androidx.core.view.WindowInsetsControllerCompat controller =
+                androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+            if (controller == null) return;
+            boolean focusRoute = currentRoutePath.startsWith("/focus") || currentRoutePath.startsWith("/lock");
+            boolean activeSession = LocalStore.get(this).read("active") != null;
+            if (focusRoute && activeSession && !FocusBlockOverlay.canAttachOverlay(this)) {
+                controller.setSystemBarsBehavior(
+                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                );
+                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+            } else {
+                controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void observeNavigationFocus() {
@@ -192,6 +246,9 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        if (activeInstance == this) {
+            activeInstance = null;
+        }
         if (splashCoordinator != null) {
             splashCoordinator.markWebReady();
         }

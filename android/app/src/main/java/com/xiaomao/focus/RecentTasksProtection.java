@@ -65,6 +65,12 @@ final class RecentTasksProtection {
                 }
                 throw new IllegalStateException("控制通知及帮助恢复入口不可达，未隐藏任务卡；请开启通知后重试");
             }
+            if (system.conflictsWithAccessibilitySecurity()) {
+                save(journal.put("withdrawn", true).put("phase", "withdrawn")
+                    .put("error", "ColorOS 安全中心检测到隐藏最近任务卡片会自动关闭无障碍服务，为保证锁机有效与多任务锁卡保活已自动跳过"));
+                if (pending(journal)) release(journal);
+                return;
+            }
             List<RecentTasksSystem.Task> currentTasks = system.ownTasks();
             JSONArray originals = journal.getJSONArray("tasks");
             for (int i = 0; i < originals.length(); i++) {

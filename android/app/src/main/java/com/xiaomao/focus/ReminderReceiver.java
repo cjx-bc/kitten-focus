@@ -11,8 +11,18 @@ public class ReminderReceiver extends BroadcastReceiver {
             String action=intent.getAction();if(Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)){control.restoreLauncher();control.reconcile();Reminders.sync(context);FocusNotificationListener.rebindIfAuthorized(context);}
             else if(Reminders.FOCUS_ACTION.equals(action))control.focusAction("read");
             else if(Reminders.REST_ACTION.equals(action))control.restAction("read");
+            else if(Reminders.KEEP_ALIVE_REVIVE_ACTION.equals(action)||Reminders.KEEP_ALIVE_HEARTBEAT_ACTION.equals(action)){
+                control.reconcile();
+                FocusNotificationListener.rebindIfAuthorized(context);
+                if(LocalStore.get(context).read("active")!=null){
+                    FocusKeepAliveService.ensureStarted(context);
+                    Reminders.scheduleKeepAliveHeartbeat(context);
+                }else{
+                    Reminders.cancelKeepAlive(context);
+                }
+            }
             else if("com.xiaomao.focus.SCHEDULE".equals(action)){Reminders.showSchedule(context,intent.getIntExtra("id",1000),intent.getStringExtra("title"),intent.getStringExtra("text"));Reminders.sync(context);}
-            else{control.reconcile();Reminders.sync(context);}
+            else{control.reconcile();Reminders.sync(context);FocusNotificationListener.rebindIfAuthorized(context);}
         }catch(Exception error){Log.e("CatFocus","Reminder handling failed",error);}finally{result.finish();}},"cat-focus-reminder").start();
     }
 }

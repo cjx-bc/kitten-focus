@@ -8,6 +8,7 @@ import org.json.JSONException;
 /** One original bounded executor. No installed admin, owner provisioning or uninstall policy. */
 final class FocusAntiClose {
     static final String OPTION = "preciseAntiClose";
+    static final String STRICT_SETTINGS_OPTION = "strictSettingsGuard";
     private final Context context;
     private final LocalStore store;
     private final SessionClock clock;
@@ -18,13 +19,15 @@ final class FocusAntiClose {
         runtime = context.getSharedPreferences("catfocus-anti-close-" + store.getDatabaseName(), Context.MODE_PRIVATE);
     }
     static boolean requested(JSONObject policy) { return FocusProtection.enhancementRequested(policy, OPTION); }
+    static boolean strictSettingsRequested(JSONObject policy) { return FocusProtection.enhancementRequested(policy, STRICT_SETTINGS_OPTION); }
     void checkStart(JSONObject session) {
-        if (requested(session.optJSONObject("protection")) && (!system.authorized() || !system.connected()))
+        JSONObject policy = session.optJSONObject("protection");
+        if ((requested(policy) || strictSettingsRequested(policy)) && (!system.authorized() || !system.connected()))
             throw new IllegalStateException("精确防关闭待授权：请启用无障碍并等待连接；普通授权不能保证无法强停或卸载");
     }
     private boolean eligible(JSONObject observation, JSONObject session) {
         JSONObject policy = session == null ? null : session.optJSONObject("protection");
-        return requested(policy) && !policy.optBoolean("antiCloseWithdrawn") && !observation.optBoolean("needsReconcile")
+        return (requested(policy) || strictSettingsRequested(policy)) && !policy.optBoolean("antiCloseWithdrawn") && !observation.optBoolean("needsReconcile")
             && system.authorized() && system.connected();
     }
     boolean window(JSONObject observation, String pkg, String cls) throws JSONException {
@@ -39,12 +42,24 @@ final class FocusAntiClose {
             write(edit);
             return false;
         }
-        if (!system.systemSurface(pkg) || !AntiCloseWindow.candidateClass(cls) || FocusProtection.settingsAuthorizationAllowed(pkg)) return false;
+        if (!system.systemSurface(pkg) || FocusProtection.settingsAuthorizationAllowed(pkg)) return false;
+        JSONObject policy = session.optJSONObject("protection");
+        boolean strictSession = session.optBoolean("strictMode") && ("countdown".equals(session.optString("mode")) || LockEngine.owns(session));
+        boolean allowStrictGuard = strictSettingsRequested(policy) && strictSession;
+        if (!AntiCloseWindow.candidateClass(cls) && !allowStrictGuard) return false;
         // Dedupe before touching a node tree. No handler retry/event loop and no global Settings block.
         if (same && now - runtime.getLong("attemptMono", 0) < 1500) return true;
-        String target;
-        try { target = AntiCloseWindow.target(pkg, cls, system.root(pkg), context.getPackageName(), system.appLabel()); }
-        catch (RuntimeException failure) { target = ""; }
+        String target = "";
+        AntiCloseWindow.Node root = null;
+        try { root = system.root(pkg); } catch (RuntimeException ignored) { }
+        if (requested(policy)) {
+            try { target = AntiCloseWindow.target(pkg, cls, root, context.getPackageName(), system.appLabel()); }
+            catch (RuntimeException failure) { target = ""; }
+        }
+        if (target.isEmpty() && allowStrictGuard) {
+            try { target = AntiCloseWindow.strictGuardTarget(pkg, cls, root); }
+            catch (RuntimeException failure) { target = ""; }
+        }
         if (target.isEmpty()) return false;
         SharedPreferences.Editor edit = runtime.edit(); if (!same) edit.clear();
         write(edit.putString("sessionId", id).putString("target", target).putLong("attemptMono", now)

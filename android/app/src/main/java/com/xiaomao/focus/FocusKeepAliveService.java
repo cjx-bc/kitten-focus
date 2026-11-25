@@ -6,17 +6,69 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
 import org.json.JSONObject;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Foreground keep-alive service active strictly while a focus or independent lock session is open.
  * Reuses Reminders.FOCUS_ID (40) on channel "focus-status" and hosts UsageAppMonitor during sessions.
  */
 public final class FocusKeepAliveService extends Service {
+    private static final long WATCHDOG_INTERVAL_MS = 2_000L;
     private static volatile boolean running;
+
+    private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService watchdogExecutor = Executors.newSingleThreadExecutor();
+    private volatile boolean watchdogActive;
+
+    private final Runnable watchdogTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!running || !watchdogActive) return;
+            final Context app = getApplicationContext();
+            try {
+                watchdogExecutor.execute(() -> {
+                    boolean shouldContinue = running && watchdogActive;
+                    try {
+                        if (!running) return;
+                        FocusControl control = new FocusControl(app);
+                        JSONObject obs = control.observeControl();
+                        if (obs.isNull("owner") || LocalStore.get(app).read("active") == null) {
+                            shouldContinue = false;
+                            stop(app);
+                            return;
+                        }
+                        if (obs.optBoolean("needsReconcile")) {
+                            obs = control.reconcile();
+                            if (obs.isNull("owner") || LocalStore.get(app).read("active") == null) {
+                                CatFocusPlugin.emitJsEvent("sessionChanged", "");
+                                shouldContinue = false;
+                                stop(app);
+                                return;
+                            }
+                        }
+                        if (!FocusProtection.authorized(app) && !new AndroidLauncherSystem(app).launcherVisible()) {
+                            control.restoreLauncher();
+                        }
+                    } catch (Exception ignored) {
+                    } finally {
+                        if (shouldContinue && running && watchdogActive) {
+                            watchdogHandler.removeCallbacks(watchdogTick);
+                            watchdogHandler.postDelayed(watchdogTick, WATCHDOG_INTERVAL_MS);
+                        }
+                    }
+                });
+            } catch (RuntimeException ignored) {
+            }
+        }
+    };
 
     static boolean isRunning() {
         return running;
@@ -77,7 +129,22 @@ public final class FocusKeepAliveService extends Service {
 
         running = true;
         UsageAppMonitor.start(this);
+        Reminders.scheduleKeepAliveHeartbeat(this);
+        watchdogActive = true;
+        watchdogHandler.removeCallbacks(watchdogTick);
+        watchdogHandler.postDelayed(watchdogTick, WATCHDOG_INTERVAL_MS);
         return START_STICKY;
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        try {
+            if (LocalStore.get(this).read("active") != null) {
+                Reminders.scheduleKeepAliveRevive(this, 500L);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private long currentElapsed(JSONObject session) {
@@ -93,6 +160,9 @@ public final class FocusKeepAliveService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        watchdogActive = false;
+        watchdogHandler.removeCallbacksAndMessages(null);
+        watchdogExecutor.shutdownNow();
         UsageAppMonitor.stop();
         FocusBlockOverlay.dismiss();
         super.onDestroy();

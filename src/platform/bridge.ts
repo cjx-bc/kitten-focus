@@ -18,6 +18,8 @@ import type {
   RecentTasksStatus,
   LauncherStatus,
   WallpaperStatus,
+  KeepAliveGuide,
+  DeviceAdminStatus,
 } from '../domain/model'
 import { emptyData, effectiveWhitelist } from '../domain/model'
 import { isMasterFocusLockActive, resolveEffectiveProtection } from '../domain/protectionModules'
@@ -72,6 +74,16 @@ interface NativeBridge {
   openAlarmSettings(): Promise<void>
   openBatteryOptimizationSettings(): Promise<void>
   syncReminders(): Promise<void>
+  setFocusOverlayState(options: { route: string }): Promise<{ ok: boolean }>
+  getKeepAliveGuide(): Promise<KeepAliveGuide>
+  openKeepAliveSettings(options: { target: 'battery' | 'autostart' | 'appDetails' }): Promise<{ opened: boolean }>
+  getDeviceAdminStatus(): Promise<DeviceAdminStatus>
+  requestDeviceAdmin(): Promise<{ opened: boolean }>
+  deactivateDeviceAdmin(): Promise<DeviceAdminStatus>
+  addListener?(
+    eventName: string,
+    listenerFunc: (data: { path?: string }) => void,
+  ): Promise<{ remove: () => Promise<void> }>
 }
 export const native = Capacitor.isNativePlatform()
 const plugin = getCatFocusPlugin<NativeBridge>()
@@ -370,5 +382,88 @@ export const temporaryAccessDriver = {
   async grant(options: TemporaryAccessRequest): Promise<TemporaryAccessResult> {
     if (!native) throw new Error('临时放行仅支持 Android 本机版本')
     return plugin.grantTemporaryAccess(options)
+  },
+}
+
+export const syncFocusOverlayState = async (route: string): Promise<void> => {
+  if (!native || typeof plugin.setFocusOverlayState !== 'function') return
+  await plugin.setFocusOverlayState({ route }).catch(() => {})
+}
+
+export const onNativeOverlayEvent = async (handlers: {
+  onNavigate?: (path: string) => void
+  onSessionChanged?: () => void
+}): Promise<() => void> => {
+  if (!native || typeof plugin.addListener !== 'function') return () => {}
+  const handles: Array<{ remove: () => Promise<void> }> = []
+  if (handlers.onNavigate) {
+    handles.push(
+      await plugin.addListener('overlayNavigate', (data) => {
+        if (data?.path) handlers.onNavigate?.(data.path)
+      }),
+    )
+  }
+  if (handlers.onSessionChanged) {
+    handles.push(
+      await plugin.addListener('sessionChanged', () => {
+        handlers.onSessionChanged?.()
+      }),
+    )
+  }
+  return () => {
+    for (const h of handles) void h.remove().catch(() => {})
+  }
+}
+
+export const keepAliveDriver = {
+  async guide(): Promise<KeepAliveGuide> {
+    if (native && typeof plugin.getKeepAliveGuide === 'function') {
+      return plugin.getKeepAliveGuide()
+    }
+    return {
+      brand: 'generic',
+      brandLabel: '标准 Android',
+      foregroundServiceActive: false,
+      batteryOptimizationIgnored: false,
+      hasAutoStartSurface: false,
+      autoStartHint: '在系统应用详情中允许后台运行与电池不受限制（如设备提供自启动开关请一并打开）。',
+      recentLockHint: '打开最近任务 → 长按或点击小猫专注卡片菜单，选择「锁定 / 保持打开」（若系统支持）。',
+      hideRecentsConflict: false,
+    }
+  },
+  async openSettings(target: 'battery' | 'autostart' | 'appDetails'): Promise<boolean> {
+    if (!native || typeof plugin.openKeepAliveSettings !== 'function') return false
+    return (await plugin.openKeepAliveSettings({ target })).opened
+  },
+}
+
+export const deviceAdminDriver = {
+  async status(): Promise<DeviceAdminStatus> {
+    if (native && typeof plugin.getDeviceAdminStatus === 'function') {
+      return plugin.getDeviceAdminStatus()
+    }
+    return {
+      supported: false,
+      active: false,
+      preferenceEnabled: false,
+      state: 'unsupported',
+      reason: '防卸载保护仅支持 Android 本机版本',
+    }
+  },
+  async requestActivation(): Promise<boolean> {
+    if (!native || typeof plugin.requestDeviceAdmin !== 'function') return false
+    return (await plugin.requestDeviceAdmin()).opened
+  },
+  async deactivate(): Promise<DeviceAdminStatus> {
+    if (native && typeof plugin.deactivateDeviceAdmin === 'function') {
+      return plugin.deactivateDeviceAdmin()
+    }
+    return {
+      supported: false,
+      active: false,
+      preferenceEnabled: false,
+      state: 'unsupported',
+      reason: '防卸载保护仅支持 Android 本机版本',
+    }
   },
 }

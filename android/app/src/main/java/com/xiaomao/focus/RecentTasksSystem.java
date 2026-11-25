@@ -10,6 +10,7 @@ interface RecentTasksSystem {
     }
     boolean recoveryReachable();
     default boolean recoveryAvailable() { return recoveryReachable(); }
+    default boolean conflictsWithAccessibilitySecurity() { return false; }
     List<Task> ownTasks();
     void exclude(Task task, boolean excluded);
 }

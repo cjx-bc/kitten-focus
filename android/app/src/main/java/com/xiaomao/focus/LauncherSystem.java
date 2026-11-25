@@ -7,5 +7,6 @@ interface LauncherSystem {
     int componentState();
     void componentState(int state);
     boolean launcherVisible();
+    default boolean conflictsWithAccessibilitySecurity() { return false; }
     default long installedVersion() { return BuildConfig.VERSION_CODE; }
 }

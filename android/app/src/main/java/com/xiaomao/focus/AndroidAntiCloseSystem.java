@@ -16,9 +16,24 @@ final class AndroidAntiCloseSystem implements AntiCloseSystem {
     public boolean authorized() { return state == null ? FocusProtection.authorized(context) : state.authorized(); }
     public boolean connected() { return state == null ? FocusAccessibilityService.connected() : state.connected(); }
     public boolean systemSurface(String pkg) {
-        if (!("com.android.settings".equals(pkg) || "com.android.packageinstaller".equals(pkg)
-            || "com.google.android.packageinstaller".equals(pkg) || "com.android.permissioncontroller".equals(pkg)
-            || "com.google.android.permissioncontroller".equals(pkg))) return false;
+        if (!("com.android.settings".equals(pkg)
+            || "com.android.packageinstaller".equals(pkg)
+            || "com.google.android.packageinstaller".equals(pkg)
+            || "com.android.permissioncontroller".equals(pkg)
+            || "com.google.android.permissioncontroller".equals(pkg)
+            || "com.oplus.appdetail".equals(pkg)
+            || "com.coloros.safecenter".equals(pkg)
+            || "com.oplus.safecenter".equals(pkg)
+            || "com.oplus.securitypermission".equals(pkg)
+            || "com.miui.securitycenter".equals(pkg)
+            || "com.miui.packageinstaller".equals(pkg)
+            || "com.lbe.security.miui".equals(pkg)
+            || "com.iqoo.secure".equals(pkg)
+            || "com.vivo.permissionmanager".equals(pkg)
+            || "com.huawei.systemmanager".equals(pkg)
+            || "com.hihonor.systemmanager".equals(pkg)
+            || "com.samsung.android.lool".equals(pkg)
+            || "com.samsung.android.packageinstaller".equals(pkg))) return false;
         try { return (context.getPackageManager().getApplicationInfo(pkg, 0).flags & ApplicationInfo.FLAG_SYSTEM) != 0; }
         catch (Exception ignored) { return false; }
     }
@@ -48,9 +63,14 @@ final class AndroidAntiCloseSystem implements AntiCloseSystem {
             String viewId = node.getViewIdResourceName();
             CharSequence text = node.getText();
             // API36 exposes the accessibility page heading only as this exact system
-            // toolbar's title metadata. Never read arbitrary content descriptions.
-            if ((text == null || text.length() == 0) && "com.android.settings".equals(pkg)
-                && "com.android.settings:id/collapsing_toolbar".equals(viewId)) text = node.getContentDescription();
+            // toolbar's title metadata. Also allow known OEM toolbar title nodes while
+            // never reading arbitrary content descriptions.
+            if ((text == null || text.length() == 0) && viewId != null
+                && ("com.android.settings:id/collapsing_toolbar".equals(viewId)
+                    || viewId.endsWith("/action_bar_title")
+                    || viewId.endsWith("/toolbar_title"))) {
+                text = node.getContentDescription();
+            }
             // No arbitrary descriptions/extras, screenshots or persistent node payloads.
             CharSequence role = node.getClassName();
             return new AntiCloseWindow.Node(pkg, viewId, text == null || text.length() > 256 ? "" : text.toString(),

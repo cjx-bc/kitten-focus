@@ -51,4 +51,12 @@ public class AppUsageGuardTest {
         assertEquals("", tracker.currentPackage());
         assertEquals(0L, tracker.lastEventTimestampMs());
     }
+
+    @Test
+    public void accessibilityOrUsageOverlaySatisfiesAppRestrictionReadiness() {
+        assertEquals(AppUsageGuard.ENGINE_ACCESSIBILITY, AppUsageGuard.resolveEngine(true, false, true, true));
+        assertTrue(AppUsageGuard.canRestrictApps(false, false, true, true));
+        assertTrue(AppUsageGuard.canRestrictApps(true, true, false, false));
+        assertFalse(AppUsageGuard.canRestrictApps(false, true, false, false));
+    }
 }

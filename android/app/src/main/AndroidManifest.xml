@@ -26,6 +26,17 @@
         <package android:name="com.google.android.permissioncontroller" />
         <package android:name="com.android.packageinstaller" />
         <package android:name="com.google.android.packageinstaller" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oplus.battery" />
+        <package android:name="com.oplus.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.iqoo.secure" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.hihonor.systemmanager" />
+        <package android:name="com.samsung.android.lool" />
+        <package android:name="com.samsung.android.sm" />
         <intent><action android:name="android.service.wallpaper.WallpaperService" /></intent>
         <intent><action android:name="android.service.wallpaper.CHANGE_LIVE_WALLPAPER" /></intent>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /></intent>
@@ -80,7 +91,8 @@
             <meta-data android:name="android.service.wallpaper" android:resource="@xml/focus_wallpaper" />
         </service>
         <service android:name=".FocusAccessibilityService" android:exported="true"
-            android:label="${focusAppLabel}" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            android:label="${focusAppLabel}" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:stopWithTask="false">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/focus_accessibility" />
         </service>
@@ -103,6 +115,19 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+        <receiver
+            android:name=".FocusDeviceAdminReceiver"
+            android:label="${focusAppLabel}"
+            android:description="@string/device_admin_description"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/focus_device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
         <receiver android:name=".ReminderReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

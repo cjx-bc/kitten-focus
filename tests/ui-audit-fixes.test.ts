@@ -39,6 +39,38 @@ vi.mock('../src/platform/bridge', () => ({
   openAlarmSettings: mocks.openAlarmSettings,
   exportFile: vi.fn(),
   importNativeFile: vi.fn(),
+  syncFocusOverlayState: vi.fn(),
+  onNativeOverlayEvent: vi.fn(async () => () => {}),
+  keepAliveDriver: {
+    guide: vi.fn(async () => ({
+      brand: 'generic',
+      brandLabel: '标准 Android',
+      foregroundServiceActive: false,
+      batteryOptimizationIgnored: false,
+      hasAutoStartSurface: false,
+      autoStartHint: '测试自启动提示',
+      recentLockHint: '测试锁卡提示',
+      hideRecentsConflict: false,
+    })),
+    openSettings: vi.fn(async () => true),
+  },
+  deviceAdminDriver: {
+    status: vi.fn(async () => ({
+      supported: true,
+      active: false,
+      preferenceEnabled: false,
+      state: 'off',
+      reason: '',
+    })),
+    requestActivation: vi.fn(async () => true),
+    deactivate: vi.fn(async () => ({
+      supported: true,
+      active: false,
+      preferenceEnabled: false,
+      state: 'off',
+      reason: '',
+    })),
+  },
   controlDriver: { observe: mocks.controlObserve },
   protectionDriver: {
     status: mocks.protection,

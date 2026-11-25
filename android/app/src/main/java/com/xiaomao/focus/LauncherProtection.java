@@ -52,6 +52,11 @@ final class LauncherProtection {
             if (!recoveryReachable(value)) {
                 save(value.put("withdrawn", true).put("error", "控制通知或恢复入口不可达，未继续隐藏；请核实通知权限")); release(value); return;
             }
+            if (system.conflictsWithAccessibilitySecurity()) {
+                save(value.put("withdrawn", true).put("error", "ColorOS 安全中心检测到隐藏桌面图标会自动关闭无障碍服务，为保证锁机有效已自动跳过隐藏桌面图标"));
+                release(value);
+                return;
+            }
             int state = system.componentState();
             if (value.optBoolean("applied") && state != DISABLED) {
                 save(value.put("pending", false).put("withdrawn", true).put("error", "桌面入口已有后续更改，已保留；本轮不再隐藏")); release(value); return;

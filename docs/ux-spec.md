@@ -40,7 +40,7 @@
 1. **单一会话与存储所有权**：Java `FocusEngine`、`RestEngine`、`LockEngine`、`FocusControl` 与 SQLite（`LocalStore`）拥有计时、互斥（专注 / 休息 / 锁机）与专注记录的唯一所有权。Vue 层（`src/`）**禁止**建立第二套计时引擎或第二套业务数据库，仅编辑偏好并渲染原生返回快照。
 2. **保留全部 40 个 `CatFocus` 方法（支持增量扩展） + 9 个 `AppUpdates` 方法 + 6 个窗口自定义事件**：
    - `CatFocusPlugin.java` 原有 **40 个 `@PluginMethod`** 签名保持不变：
-     - `src/platform/bridge.ts`（原有 **34 个** + `1` 个增量）：`resolveMainEntry`, `startLock`, `lockAction`, `loadData`, `saveData`, `replaceData`, `startFocus`, `focusAction`, `startRest`, `restAction`, `grantTemporaryAccess`, `observeControl`, `getRecentTasksStatus`, `getLauncherStatus`, `getWallpaperStatus`, `prepareWallpaper`, `requestWallpaperPicker`, `importWallpaperOriginal`, `confirmWallpaperManualRecovery`, `openWallpaperSettings`, `consumeFocusReturn`, `consumeLockReturn`, `protectionStatus`, `listProtectionApps`, `openProtectionSettings`, `previewRecovery`, `confirmRecovery`, `consumeRecoveryReturn`, `exportFile`, `importFile`, `permissions`（增量返回可选字段 `batteryOptimizationIgnored`、`foregroundServiceActive`）, `requestNotifications`, `openAlarmSettings`, `openBatteryOptimizationSettings`（增量）, `syncReminders`。
+     - `src/platform/bridge.ts`（原有 **34 个** + 增量）：`resolveMainEntry`, `startLock`, `lockAction`, `loadData`, `saveData`, `replaceData`, `startFocus`, `focusAction`, `startRest`, `restAction`, `grantTemporaryAccess`, `observeControl`, `getRecentTasksStatus`, `getLauncherStatus`, `getWallpaperStatus`, `prepareWallpaper`, `requestWallpaperPicker`, `importWallpaperOriginal`, `confirmWallpaperManualRecovery`, `openWallpaperSettings`, `consumeFocusReturn`, `consumeLockReturn`, `protectionStatus`, `listProtectionApps`, `openProtectionSettings`, `previewRecovery`, `confirmRecovery`, `consumeRecoveryReturn`, `exportFile`, `importFile`, `permissions`（增量返回可选字段 `batteryOptimizationIgnored`、`foregroundServiceActive`）, `requestNotifications`, `openAlarmSettings`, `openBatteryOptimizationSettings`（增量）, `syncReminders`；以及对抗层与四维保活增量方法 `setFocusOverlayState`, `getKeepAliveGuide`, `openKeepAliveSettings`, `getDeviceAdminStatus`, `requestDeviceAdmin`, `deactivateDeviceAdmin`。
      - `src/platform/dnd.ts`（**3 个**）：`getDndStatus`, `openDndSettings`, `restoreDnd`。
      - `src/platform/notifications.ts`（**3 个**）：`getNotificationStatus`, `openNotificationAccessSettings`, `rebindNotificationListener`。
    - `AppUpdatesPlugin.java` / `src/platform/updates.ts` 全部 **9 个 `@PluginMethod`** 签名保持不变：`status`, `check`, `download`, `cancel`, `backups`, `exportBackup`, `restoreBackup`, `installPermission`, `install`。
@@ -70,10 +70,13 @@
 9. **每次启动自动检查更新与不打扰单层提示（Option A）**：
    - 每次冷启动（及 60 秒进程内冷却窗口之外的前台恢复）在后台静默检查更新（`force = false`）；网络异常或离线保持静默，绝不打断学习或阻塞启动。
    - 发现新版本后，在 `App.vue` 仅当 `native === true`、`app.ready`、无进行中专注/休息/锁机会话、处于主标签页（`!full`）、DOM 中无任何打开的 `<dialog>` 且该 `versionCode` 未被用户点击过 `稍后再说` 时，弹出 1 次单层 `<Sheet>`（版本与包大小卡片 + 限高可滚更新说明 + 安心数据备份提示 + 1 个主 CTA `下载更新` / `安装更新` + 次按钮 `稍后再说`）。点击 `稍后再说` 或非下载中关闭弹窗后将该 `versionCode` 记入 `localStorage`，此后同一版本不再主动弹窗打扰（仍保留「我的」小红点与手动检查入口，直到更高 `versionCode` 发布）；下载中提供 `收起，后台继续下载` 出口而不永久忽略当前版本。绝不静默自动下载，且可被 `RecoverySheet` / `ux-close-sheets` 抢占关闭。
-10. **Android 前台服务、双引擎免掉权应用限制与冷静授权引导（遵守 ADR 0004）**：
-   - **专注/锁机期间前台服务**：`FocusKeepAliveService`（`foregroundServiceType="specialUse"`）仅在专注或独立锁机进行中运行，复用现有专注常驻通知（`Reminders.FOCUS_ID = 40`、`focus-status` 低打扰频道），不弹出第二条通知；会话结束、重启或故障恢复后立即停止，平时不在后台驻留，也不挂任何待机保活通知。
-   - **双引擎免掉权应用限制模型**：日常「应用限制」与「独立锁机」默认由 **「使用情况访问（`PACKAGE_USAGE_STATS`）」+「悬浮窗（`SYSTEM_ALERT_WINDOW`）」** 持久化权限驱动——划卡退出、强制停止或重启手机后系统均不撤回，无需反复重新授权。活跃会话期间由 `FocusKeepAliveService` 托管轻量 `UsageAppMonitor` 检测前台应用，检测到非白名单应用时优先拉起 `FocusBlockActivity`，若系统限制后台弹窗则自动以全屏 `FocusBlockOverlay` 遮罩兜底并保留「返回当前会话」与「临时打开应用」出口；**「无障碍服务」**降级为可选高阶增强（仅开启「限制桌面与最近任务」或「精确防关闭」时计为必需；已连接时提供 `<100ms` 瞬时拦截，未开启或被系统撤回时由主引擎无缝接管）。
-   - **冷静、一步直达、零红标焦虑的后台授权**：电池优化放行与可选高阶无障碍（当未开启严格导航/防关闭增强时）均属于推荐增强项，**绝不**阻塞普通专注/锁机启动，**绝不**计入待办顶栏或 `StudyModeSheet` `missingPermissions` 缺失权限计数，**绝不**使用红色警示 badge/文字。仅在 Tier 2（`SettingsView`、`StudyModeSheet` `权限与使用帮助`）与 Tier 3（`/permissions` 独立诊断卡片及 `/help#help-keepalive`）提供冷静入口；严格如实披露能力边界：持久化使用情况与悬浮窗权限可解决退出重进掉权问题，但桌面/最近任务与精确防关闭仍受无障碍服务与厂商策略制约。
+10. **Android 前台服务、双引擎免掉权应用限制、全专注全屏覆盖、融合防绕过与四维冷静保活（遵守 ADR 0004）**：
+   - **专注/锁机期间前台服务**：`FocusKeepAliveService`（`foregroundServiceType="specialUse"`）仅在专注或独立锁机进行中运行，复用现有专注常驻通知（`Reminders.FOCUS_ID = 40`、`focus-status` 低打扰频道），不弹出第二条通知；`onTaskRemoved` 与活跃期低频心跳守护在会话进行中按需自救拉起，会话结束、重启（未开启重启续锁）或故障恢复后立即停止，平时不在后台驻留，也不挂任何待机保活通知。
+   - **全专注全屏原生悬浮窗覆盖与双引擎应用限制**：
+     - **普通专注（未开学霸模式）**：开启专注后如已具备悬浮窗权限，由 `FocusBlockOverlay` 提供全屏专注控制覆盖（支持暂停/继续、内联确认结束、返回待办与安全入口）；当用户上滑回桌面、切最近任务或切换至其他应用（`onUserLeaveHint` / `onPause`）时**立即自动收起覆盖层**，确保手机日常操作完全不受影响；切回 `/focus` 时恢复覆盖。若未授予悬浮窗权限，则平滑降级为全屏沉浸 `FocusView`，绝不阻塞 1 步开始专注。
+     - **学霸模式 / 独立锁机**：优先以无障碍 `TYPE_ACCESSIBILITY_OVERLAY`（连接时）或 `TYPE_APPLICATION_OVERLAY`（持久化「使用情况访问 + 悬浮窗」免掉权主引擎）执行 **0ms 全屏覆盖 + 按键事件过滤（`dispatchKeyEvent` + 无障碍 `onKeyEvent`）**，不随上滑切出而撤离；内建「白名单应用」快捷切出列表，切入白名单学习应用时自动让路，切离白名单、返回桌面/多任务或触发国产五大 ROM 精准防关闭时 0ms 瞬时遮挡并发 `GLOBAL_ACTION_BACK` 强拉回专注页；遮罩底部常驻冷静 2 步安全出口（`遇到问题？紧急与故障恢复`）。
+   - **融合防关闭与可选进阶增强（默认关闭，折叠于 `▸ 进阶防绕过`）**：在精准识别五大国产 ROM 应用详情/卸载/无障碍页并保持 Wi-Fi/蓝牙等日常设置可用之外，提供可选「严格权限目录防撤权」、可选最小空策略普通设备管理器「防卸载保护」（含一键停用）与可选「重启后未到期继续锁机」。
+   - **冷静、一步直达、零红标焦虑的四维保活向导**：电池优化放行、自启动白名单跳转、多任务手动锁卡手势图解（与 `hideRecents` 互斥提醒）及可选高阶无障碍均属建议增强项，**绝不**阻塞普通专注/锁机启动，**绝不**计入 `missingPermissions` 缺失权限计数或红标，收拢于 `StudyModeSheet` 同容器内联子视图 `keepAliveGuide`（0 嵌套弹窗）与 Tier 3 `/permissions`、`/help#help-keepalive`。
 
 ### 2.3 `GLOSSARY.md` 术语契约与禁用词表
 
@@ -384,7 +387,7 @@
 
 ---
 
-### 5.3 `StudyModeSheet.vue`（单层 8 视图弹窗栈）
+### 5.3 `StudyModeSheet.vue`（单层 9 视图弹窗栈）
 
 #### A. 线框图
 
@@ -416,14 +419,17 @@
 [view: 'strict'] (‹ 学霸模式)             │ [         确认保存原状态           ] │
 ┌ ‹ 学霸模式  严格模式         (●━━) × ┐  └────────────────────────────────────┘
 │ 开启后倒计时不可暂停，切出桌面会拉回。│
-│ [⚠ 还差无障碍权限 · 去授权 ›]        │  [view: 'permissions' & 'permissionGuide']
+│ [⚠ 还差无障碍权限 · 去授权 ›]        │  [view: 'permissions' / 'permissionGuide' / 'keepAliveGuide']
 │ 倒计时不可暂停、不可提前结束   (●━━) │  ┌ ‹ 学霸模式  权限与使用帮助 ───── × ┐
 │ 限制桌面与最近任务（切出拉回） (●━━) │  │ 仅列出已开启模块真正需要的权限     │
-│ 精确防关闭（拦截强退与撤权）   (●━━) │  │ [逐项授权行 + 一键开启引导]        │
+│ 精确防关闭（拦截强退与撤权）   (●━━) │  │ [逐项授权行 + 四维保活与锁卡向导 ›]│
 │ ▸ 进阶防绕过（可能影响日常使用）     │  │ 完整权限诊断 / 使用帮助 / 故障恢复 │
 │   (展开含 FORCE-04 隐藏最近任务 /    │  │ (点击上述3项先 emit('close') 再跳转)│
 │    FORCE-05 隐藏桌面图标 /           │  └────────────────────────────────────┘
-│    FORCE-06 壁纸辅助保护)            │
+│    FORCE-06 壁纸辅助保护 /           │    └→ [view: 'keepAliveGuide'] (‹ 权限与使用帮助)
+│    严格权限目录防撤权 /              │       (同容器单层 4 步保活向导: FGS / 电池优化 /
+│    防卸载保护（设备管理器）/         │        本机自启动直达 / 本机锁卡手势 + 互斥提示)
+│    重启后未到期继续锁机)             │
 │ [            恢复推荐默认          ] │  [view: 'quiet'] (‹ 学霸模式)
 └──────────────────────────────────────┘  ┌ ‹ 学霸模式  免打扰           (●━━) × ┐
                                           │ 减少专注期间的声音、振动与通知打扰。│

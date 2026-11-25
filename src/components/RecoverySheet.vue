@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { RecoverySnapshot } from '../domain/model'
-import { protectionDriver, recoveryDriver } from '../platform/bridge'
+import type { DeviceAdminStatus, RecoverySnapshot } from '../domain/model'
+import { deviceAdminDriver, native, protectionDriver, recoveryDriver } from '../platform/bridge'
 import Sheet from './Sheet.vue'
 
 const props = withDefaults(defineProps<{ open: boolean; inline?: boolean }>(), { inline: false })
 const emit = defineEmits<{ close: [] }>()
 const snapshot = ref<RecoverySnapshot | null>(null), busy = ref(false), error = ref(''), confirmed = ref(false)
+const deviceAdminStatus = ref<DeviceAdminStatus | null>(null)
 const manualWallpaperChecked = ref(false)
 let previewRevision = 0
 const labels = { active: '可恢复', restored: '已恢复', failed: '未恢复，可重试', limited: '受系统限制' }
@@ -18,6 +19,10 @@ async function loadPreview() {
   try {
     const value = await recoveryDriver.preview()
     if (revision === previewRevision) snapshot.value = value
+    if (native && deviceAdminDriver?.status) {
+      const admin = await deviceAdminDriver.status().catch(() => null)
+      if (revision === previewRevision) deviceAdminStatus.value = admin
+    }
   } catch (e) {
     if (revision === previewRevision) error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -31,6 +36,10 @@ async function returnedFromSystem() {
   try {
     const value = await recoveryDriver.preview()
     if (revision === previewRevision && props.open) snapshot.value = value
+    if (native && deviceAdminDriver?.status) {
+      const admin = await deviceAdminDriver.status().catch(() => null)
+      if (revision === previewRevision && props.open) deviceAdminStatus.value = admin
+    }
   } catch (e) {
     if (revision === previewRevision && props.open) error.value = e instanceof Error ? e.message : String(e)
   }
@@ -83,6 +92,13 @@ async function openWallpaperSettings() {
   try { await protectionDriver.openWallpaperSettings() }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
 }
+async function disableDeviceAdmin() {
+  if (busy.value) return
+  busy.value = true; error.value = ''
+  try { deviceAdminStatus.value = await deviceAdminDriver.deactivate() }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  finally { busy.value = false }
+}
 </script>
 <template>
   <Sheet v-if="!inline" :open="open" title="保护帮助与故障恢复" :close-disabled="busy" @close="close">
@@ -100,6 +116,11 @@ async function openWallpaperSettings() {
           <label class="manual-wallpaper"><input v-model="manualWallpaperChecked" type="checkbox" /> 我已在系统中恢复或选择了新的主屏与锁屏，并核对显示</label>
           <button type="button" class="secondary wide" :disabled="busy || !manualWallpaperChecked" @click="manualWallpaperRecovery">确认已手动核对壁纸恢复</button>
         </template>
+      </div>
+      <div v-if="deviceAdminStatus?.active" class="recovery-step">
+        <strong>防卸载保护（设备管理器） · 已激活</strong>
+        <p>如需卸载或撤回防卸载增强，可在此一键停用，不影响计时与记录。</p>
+        <button type="button" class="secondary wide" :disabled="busy" @click="disableDeviceAdmin">一键停用防卸载保护</button>
       </div>
       <p v-if="snapshot?.supported && !snapshot.steps.length" role="status">没有已登记的恢复项目，计时保持原状。</p>
       <p v-if="confirmed && !snapshot?.pending" role="status">本次恢复已完成。计时与配置保留。</p>
@@ -122,6 +143,11 @@ async function openWallpaperSettings() {
         <label class="manual-wallpaper"><input v-model="manualWallpaperChecked" type="checkbox" /> 我已在系统中恢复或选择了新的主屏与锁屏，并核对显示</label>
         <button type="button" class="secondary wide" :disabled="busy || !manualWallpaperChecked" @click="manualWallpaperRecovery">确认已手动核对壁纸恢复</button>
       </template>
+    </div>
+    <div v-if="deviceAdminStatus?.active" class="recovery-step">
+      <strong>防卸载保护（设备管理器） · 已激活</strong>
+      <p>如需卸载或撤回防卸载增强，可在此一键停用，不影响计时与记录。</p>
+      <button type="button" class="secondary wide" :disabled="busy" @click="disableDeviceAdmin">一键停用防卸载保护</button>
     </div>
     <p v-if="snapshot?.supported && !snapshot.steps.length" role="status">没有已登记的恢复项目，计时保持原状。</p>
     <p v-if="confirmed && !snapshot?.pending" role="status">本次恢复已完成。计时与配置保留。</p>

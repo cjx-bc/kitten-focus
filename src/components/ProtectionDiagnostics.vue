@@ -3,8 +3,10 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { App } from '@capacitor/app'
 import type { PluginListenerHandle } from '@capacitor/core'
 import { useApp } from '../stores/app'
-import { defaultProtection } from '../domain/model'
+import { defaultProtection, type DeviceAdminStatus } from '../domain/model'
 import {
+  deviceAdminDriver,
+  keepAliveDriver,
   native,
   openBatteryOptimizationSettings,
   permissionStatus,
@@ -17,6 +19,7 @@ import { notificationDriver } from '../platform/notifications'
 import { readProtectionDiagnostics, protectionStateLabels, type CapabilityDiagnostic, type ProtectionDiagnostics } from '../platform/protectionDiagnostics'
 import Sheet from './Sheet.vue'
 const app = useApp(), result = ref<ProtectionDiagnostics>(), busy = ref(false), rebindBusy = ref(false), error = ref(''), checkedAt = ref('')
+const deviceAdminStatus = ref<DeviceAdminStatus | null>(null)
 const sysPerm = ref<SystemPermissions>({
   notifications: false,
   exactAlarms: false,
@@ -29,9 +32,10 @@ async function refresh() {
   if (busy.value) return
   busy.value = true; error.value = ''
   try {
-    const [diagRes, permRes] = await Promise.allSettled([
+    const [diagRes, permRes, adminRes] = await Promise.allSettled([
       readProtectionDiagnostics(app.data.preferences.protection ?? defaultProtection()),
       permissionStatus(),
+      deviceAdminDriver?.status?.() ?? Promise.resolve(null),
     ])
     if (diagRes.status === 'fulfilled') {
       result.value = diagRes.value
@@ -40,6 +44,9 @@ async function refresh() {
     }
     if (permRes.status === 'fulfilled' && permRes.value) {
       sysPerm.value = { ...sysPerm.value, ...permRes.value }
+    }
+    if (adminRes.status === 'fulfilled' && adminRes.value) {
+      deviceAdminStatus.value = adminRes.value
     }
     checkedAt.value = new Date().toLocaleTimeString()
   }
@@ -64,6 +71,24 @@ async function openBattery() {
   error.value = ''
   try {
     await openBatteryOptimizationSettings()
+    await refresh()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
+async function openAutostart() {
+  error.value = ''
+  try {
+    await keepAliveDriver.openSettings('autostart')
+    await refresh()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
+async function disableDeviceAdmin() {
+  error.value = ''
+  try {
+    deviceAdminStatus.value = await deviceAdminDriver.deactivate()
     await refresh()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -164,9 +189,21 @@ onBeforeUnmount(() => {
         <button v-if="native" type="button" class="secondary wide" :disabled="busy" @click="openBattery">
           前往系统电池优化设置
         </button>
+        <button v-if="native" type="button" class="secondary wide" :disabled="busy" @click="openAutostart">
+          前往本机自启动管理
+        </button>
       </div>
     </details>
     <p v-if="result" class="field-help">{{ result.identity }}</p>
+    <button
+      v-if="native && deviceAdminStatus?.active"
+      type="button"
+      class="secondary wide"
+      :disabled="busy"
+      @click="disableDeviceAdmin"
+    >
+      一键停用防卸载保护（设备管理器）
+    </button>
     <p v-if="error" class="form-error" role="alert">{{ error }}。当前结果可能已过期，请重新检查。</p>
     <Sheet :open="!!permission" title="权限用途与选择" @close="permission = undefined">
       <div class="permission-copy">

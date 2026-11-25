@@ -20,30 +20,46 @@ final class FocusNavigation {
         String target(String packageName, String className);
         void returnToFocus(String target) throws Exception;
     }
+    static String matchNavigationTarget(String pkg, String cls, Set<String> launchers, java.util.List<ResolveInfo> homeActivities) {
+        if (pkg == null || cls == null) return "";
+        if ("com.android.systemui".equals(pkg) && ("com.android.systemui.recents.RecentsActivity".equals(cls)
+            || "com.android.systemui.recents.tv.RecentsTvActivity".equals(cls)
+            || cls.contains("Recents") || cls.contains("Overview"))) return "recents";
+        if (launchers != null && launchers.contains(pkg)) {
+            if (cls.endsWith("RecentsActivity") || cls.endsWith("OverviewActivity")
+                || cls.contains("Recents") || cls.contains("Overview") || cls.contains("TaskStack")
+                || cls.contains("RecentApp") || cls.contains("GestureNav") || cls.contains("Quickstep")) {
+                return "recents";
+            }
+            return "launcher";
+        }
+        if (("com.miui.home".equals(pkg) || "com.android.launcher".equals(pkg) || "com.oppo.launcher".equals(pkg)
+            || "com.oplus.launcher".equals(pkg) || "com.bbk.launcher2".equals(pkg)
+            || "com.huawei.android.launcher".equals(pkg) || "com.hihonor.android.launcher".equals(pkg)
+            || "com.sec.android.app.launcher".equals(pkg))
+            && (cls.contains("Recents") || cls.contains("Overview") || cls.contains("TaskStack") || cls.contains("RecentApp"))) {
+            return "recents";
+        }
+        return "";
+    }
+
     static Device android(Context context, FocusProtection.AccessibilityState state) {
         return new Device() {
-            private Set<String> launchers() {
-                Set<String> names = new HashSet<>();
+            private java.util.List<ResolveInfo> homeActivities() {
                 Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-                for (ResolveInfo info : context.getPackageManager().queryIntentActivities(home, PackageManager.MATCH_DEFAULT_ONLY))
-                    names.add(info.activityInfo.packageName);
+                return context.getPackageManager().queryIntentActivities(home, PackageManager.MATCH_DEFAULT_ONLY);
+            }
+            private Set<String> launchers(java.util.List<ResolveInfo> homes) {
+                Set<String> names = new HashSet<>();
+                for (ResolveInfo info : homes) if (info.activityInfo != null) names.add(info.activityInfo.packageName);
                 return names;
             }
-            public boolean supported() { return !launchers().isEmpty(); }
+            public boolean supported() { return !launchers(homeActivities()).isEmpty(); }
             public boolean authorized() { return state == null ? FocusProtection.authorized(context) : state.authorized(); }
             public boolean connected() { return state == null ? FocusAccessibilityService.connected() : state.connected(); }
             public String target(String pkg, String cls) {
-                // A launcher owns Home and, on Quickstep devices, Overview. Restrict only its
-                // activity windows; IME, permission dialogs and arbitrary SystemUI stay untouched.
-                if (launchers().contains(pkg) && cls != null) {
-                    Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-                    for (ResolveInfo info : context.getPackageManager().queryIntentActivities(home, PackageManager.MATCH_DEFAULT_ONLY))
-                        if (pkg.equals(info.activityInfo.packageName) && cls.equals(info.activityInfo.name)) return "launcher";
-                    if (cls.startsWith(pkg + ".") && (cls.endsWith("RecentsActivity") || cls.endsWith("OverviewActivity"))) return "recents";
-                }
-                if ("com.android.systemui".equals(pkg) && ("com.android.systemui.recents.RecentsActivity".equals(cls)
-                    || "com.android.systemui.recents.tv.RecentsTvActivity".equals(cls))) return "recents";
-                return "";
+                java.util.List<ResolveInfo> homes = homeActivities();
+                return matchNavigationTarget(pkg, cls, launchers(homes), homes);
             }
             public void returnToFocus(String target) {
                 if (!FocusAccessibilityService.returnToFocus(context, target)) throw new IllegalStateException("无障碍导航执行器未连接");

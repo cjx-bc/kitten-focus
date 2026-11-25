@@ -23,8 +23,17 @@ import java.nio.charset.StandardCharsets;
 
 @CapacitorPlugin(name="CatFocus",permissions={@Permission(alias="notifications",strings={Manifest.permission.POST_NOTIFICATIONS})})
 public class CatFocusPlugin extends Plugin {
+    private static volatile java.lang.ref.WeakReference<CatFocusPlugin> activeInstance;
     private FocusControl control;private LocalStore store;
-    @Override public void load(){control=new FocusControl(getContext());store=LocalStore.get(getContext());}
+    @Override public void load(){control=new FocusControl(getContext());store=LocalStore.get(getContext());activeInstance=new java.lang.ref.WeakReference<>(this);}
+    static void emitJsEvent(String eventName,String path){
+        java.lang.ref.WeakReference<CatFocusPlugin> ref=activeInstance;
+        CatFocusPlugin plugin=ref==null?null:ref.get();
+        if(plugin==null||!plugin.hasListeners(eventName))return;
+        JSObject payload=new JSObject();
+        if(path!=null&&!path.isEmpty())payload.put("path",path);
+        plugin.notifyListeners(eventName,payload);
+    }
     private interface Operation { JSONObject run() throws Exception; }
     private void resolve(PluginCall call,Operation operation){try{JSONObject result=operation.run();call.resolve(result==null?new JSObject():new JSObject(result.toString()));}catch(Exception error){call.reject(error.getMessage(),error);}}
     @PluginMethod public void loadData(PluginCall call){resolve(call,()->{new UpgradeBackups(getContext()).prepareStartup();JSONObject data=control.loadData();return new JSONObject().put("data",data==null?JSONObject.NULL:data);});}
@@ -104,4 +113,41 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void importFile(PluginCall call){if(readActive()){call.reject("请先结束当前专注");return;}startActivityForResult(call,new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"),"importResult");}
     private boolean readActive(){try{return store.read("active")!=null;}catch(Exception error){return true;}}
     @ActivityCallback private void importResult(PluginCall call,ActivityResult result){if(call==null)return;if(result.getResultCode()!=Activity.RESULT_OK||result.getData()==null||result.getData().getData()==null){call.reject("已取消选择备份");return;}try(InputStream stream=getContext().getContentResolver().openInputStream(result.getData().getData());ByteArrayOutputStream bytes=new ByteArrayOutputStream()){if(stream==null)throw new IllegalStateException("无法读取备份文件");byte[] buffer=new byte[8192];int count;while((count=stream.read(buffer))!=-1){bytes.write(buffer,0,count);if(bytes.size()>20*1024*1024)throw new IllegalArgumentException("备份文件过大");}call.resolve(new JSObject().put("text",bytes.toString(StandardCharsets.UTF_8.name())));}catch(Exception error){call.reject("备份读取失败",error);}}
+
+    @PluginMethod public void setFocusOverlayState(PluginCall call){resolve(call,()->{
+        MainActivity.updateRouteState(getContext(),call.getString("route","/"));
+        return new JSONObject().put("ok",true);
+    });}
+
+    @PluginMethod public void getKeepAliveGuide(PluginCall call){resolve(call,()->OemKeepAliveRouter.buildGuide(getContext(),store));}
+
+    @PluginMethod public void openKeepAliveSettings(PluginCall call){resolve(call,()->{
+        String target=call.getString("target","autostart");
+        if("battery".equals(target)){
+            BackgroundKeepAlive.openBatteryOptimizationSettings(getContext());
+        }else if("autostart".equals(target)){
+            OemKeepAliveRouter.openAutoStartSettings(getContext());
+        }else{
+            OemKeepAliveRouter.openAppDetailsSettings(getContext());
+        }
+        return new JSONObject().put("opened",true);
+    });}
+
+    @PluginMethod public void getDeviceAdminStatus(PluginCall call){resolve(call,()->{
+        JSONObject resolved=FocusProtection.resolveEffective(FocusProtection.preferences(store));
+        boolean prefEnabled=FocusProtection.enhancementRequested(resolved,DeviceAdminProtection.KEY);
+        return DeviceAdminProtection.status(getContext(),prefEnabled);
+    });}
+
+    @PluginMethod public void requestDeviceAdmin(PluginCall call){resolve(call,()->{
+        DeviceAdminProtection.requestActivation(getActivity(), getContext());
+        return new JSONObject().put("opened",true);
+    });}
+
+    @PluginMethod public void deactivateDeviceAdmin(PluginCall call){resolve(call,()->{
+        DeviceAdminProtection.deactivate(getContext());
+        JSONObject resolved=FocusProtection.resolveEffective(FocusProtection.preferences(store));
+        boolean prefEnabled=FocusProtection.enhancementRequested(resolved,DeviceAdminProtection.KEY);
+        return DeviceAdminProtection.status(getContext(),prefEnabled);
+    });}
 }

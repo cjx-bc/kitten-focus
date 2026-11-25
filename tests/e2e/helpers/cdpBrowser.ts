@@ -189,6 +189,9 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
         if (strict.custom?.hideRecents) enhancements.push('recentTasksHidden');
         if (strict.custom?.hideLauncher) enhancements.push('launcherIconHidden');
         if (strict.custom?.wallpaper) enhancements.push('wallpaperProtection');
+        if (strict.custom?.strictSettings) enhancements.push('strictSettingsGuard');
+        if (strict.custom?.deviceAdmin) enhancements.push('deviceAdminAntiUninstall');
+        if (strict.custom?.rebootResume) enhancements.push('rebootResumeLock');
       }
       return {
         study: master && apps.enabled && apps.custom?.restrict !== false,
@@ -692,6 +695,28 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
       async openAlarmSettings() {},
       async openBatteryOptimizationSettings() {},
       async syncReminders() {},
+      async setFocusOverlayState() { return { ok: true }; },
+      async getKeepAliveGuide() {
+        return {
+          brand: 'generic',
+          brandLabel: '标准 Android',
+          foregroundServiceActive: !!state.focusSession || !!state.lockSession,
+          batteryOptimizationIgnored: !!state.permissions.batteryOptimizationIgnored,
+          hasAutoStartSurface: false,
+          autoStartHint: '在系统应用详情中允许后台运行与电池不受限制。',
+          recentLockHint: '打开最近任务 → 点击小猫专注卡片菜单并锁定。',
+          hideRecentsConflict: resolveEffective(protectionPrefs()).enhancements.includes('recentTasksHidden'),
+        };
+      },
+      async openKeepAliveSettings() { return { opened: true }; },
+      async getDeviceAdminStatus() {
+        return { supported: !!state.cfg.supported, active: false, preferenceEnabled: false, state: 'off', reason: '' };
+      },
+      async requestDeviceAdmin() { return { opened: true }; },
+      async deactivateDeviceAdmin() {
+        return { supported: !!state.cfg.supported, active: false, preferenceEnabled: false, state: 'off', reason: '' };
+      },
+      async removeListener() {},
     };
 
     const appUpdateHandlers = {
@@ -730,7 +755,10 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
       },
     };
 
-    const catFocusMethods = Object.keys(catFocusHandlers).map((name) => ({ name, rtype: 'promise' }));
+    const catFocusMethods = [
+      ...Object.keys(catFocusHandlers).map((name) => ({ name, rtype: 'promise' })),
+      { name: 'addListener', rtype: 'addListener' },
+    ];
     const appUpdateMethods = Object.keys(appUpdateHandlers).map((name) => ({ name, rtype: 'promise' }));
     const appMethods = [
       { name: 'addListener', rtype: 'addListener' },

@@ -19,13 +19,26 @@ final class AntiCloseWindow {
     }
     static boolean candidateClass(String cls) {
         if (cls == null) return false;
+        if (isHarmlessSettingClass(cls)) return false;
         return cls.equals("com.android.settings.SubSettings")
             || cls.equals("com.android.settings.spa.SpaActivity")
             || cls.contains("AppInfoDashboard") || cls.contains("InstalledAppDetails")
+            || cls.contains("AppDetail") || cls.contains("ApplicationDetails")
+            || cls.contains("ApplicationsDetails") || cls.contains("AppManage")
             || cls.contains("AccessibilityDetails") || cls.contains("AccessibilityService")
-            || cls.contains("ToggleAccessibilityService") || cls.contains("DeviceAdminAdd")
+            || cls.contains("ToggleAccessibilityService") || cls.contains("Accessibility")
+            || cls.contains("DeviceAdminAdd") || cls.contains("DeviceAdmin")
             || cls.contains("UninstallerActivity") || cls.contains("UninstallAppProgress")
-            || cls.contains("UninstallAlertDialog");
+            || cls.contains("UninstallAlertDialog") || cls.contains("Uninstall")
+            || cls.contains("UsageAccess") || cls.contains("DrawOverlay")
+            || cls.contains("SpecialAccess") || cls.contains("PkgInstaller")
+            || cls.contains("PermissionManager") || cls.contains("SecurityCenter");
+    }
+    private static boolean isHarmlessSettingClass(String cls) {
+        return cls.contains("Wifi") || cls.contains("Bluetooth") || cls.contains("Sound")
+            || cls.contains("Volume") || cls.contains("Display") || cls.contains("Brightness")
+            || cls.contains("DateTime") || cls.contains("Keyboard") || cls.contains("InputMethod")
+            || cls.contains("Tether") || cls.contains("Hotspot") || cls.contains("AboutPhone");
     }
     private static boolean equalsAny(String text, String... choices) {
         for (String choice : choices) if (text.equalsIgnoreCase(choice)) return true;
@@ -35,7 +48,7 @@ final class AntiCloseWindow {
         if (!candidateClass(cls) || root == null || !pkg.equals(root.pkg)) return "";
         boolean identity = false, forceStop = false, uninstall = false, accessibility = false, admin = false;
         boolean spa = "com.android.settings".equals(pkg) && "com.android.settings.spa.SpaActivity".equals(cls);
-        boolean servicePage = "com.android.settings".equals(pkg) && (cls.contains("Accessibility") || cls.equals("com.android.settings.SubSettings"));
+        boolean servicePage = cls.contains("Accessibility") || "com.android.settings.SubSettings".equals(cls);
         boolean spaHeader = false, appInfoTitle = false;
         boolean uninstallQuestion = false, confirmUninstall = false;
         Node spaHeaderTitle = null;
@@ -58,35 +71,69 @@ final class AntiCloseWindow {
             spaHeader |= node == spaHeaderTitle && "android.widget.TextView".equals(node.role)
                 && node.id.isEmpty() && ownLabel.equals(node.text);
             appInfoTitle |= spa && "android.widget.TextView".equals(node.role) && equalsAny(text, "App info", "应用信息");
-            // Exact package/component evidence wins. AOSP app headers use the installed label.
+            // Exact package/component evidence wins. AOSP/OEM app headers use the installed label.
             // Names in a list or arbitrary explanatory paragraphs never identify the target.
             identity |= text.equals(ownPackage) || text.equals(ownPackage + "/com.xiaomao.focus.FocusAccessibilityService")
                 || (id.endsWith("/entity_header_title") || id.equals("entity_header_title")
-                    || id.endsWith("/app_name") || cls.contains("DeviceAdminAdd") && id.endsWith("/admin_name")
+                    || id.endsWith("/app_name") || id.endsWith("/app_title")
+                    || id.endsWith("/action_bar_title") || id.endsWith("/toolbar_title")
+                    || cls.contains("DeviceAdminAdd") && id.endsWith("/admin_name")
                     || servicePage && id.equals("com.android.settings:id/collapsing_toolbar")
                     || cls.contains("Uninstall") && id.equals("android:id/alerttitle")) && !ownLabel.isEmpty() && text.equals(ownLabel);
-            forceStop |= equalsAny(text, "Force stop", "强行停止", "强制停止", "强制结束") || id.endsWith("/force_stop_button");
-            uninstall |= equalsAny(text, "Uninstall", "卸载") || id.endsWith("/uninstall_button");
+            forceStop |= equalsAny(text, "Force stop", "强行停止", "强制停止", "强制结束", "结束运行", "停止运行")
+                || id.endsWith("/force_stop_button");
+            uninstall |= equalsAny(text, "Uninstall", "卸载", "卸载应用") || id.endsWith("/uninstall_button");
             // API36's installer labels its destructive button "OK". The known
             // question ID/text and positive-action ID are both required; OK alone
             // (or a label mentioned in explanatory text) never identifies uninstall.
             uninstallQuestion |= cls.contains("Uninstall") && id.equals("android:id/message")
-                && text.equals("Do you want to uninstall this app?");
-            confirmUninstall |= cls.contains("Uninstall") && id.equals("android:id/button1") && text.equalsIgnoreCase("OK");
+                && (text.equals("Do you want to uninstall this app?") || (!ownLabel.isEmpty() && text.contains("卸载") && text.contains(ownLabel)));
+            confirmUninstall |= cls.contains("Uninstall") && id.equals("android:id/button1") && equalsAny(text, "OK", "确定", "卸载");
             accessibility |= equalsAny(text, "Use " + ownLabel, "使用" + ownLabel, "使用 " + ownLabel,
-                "Stop", "停止", "关闭", "Use service", "使用服务")
+                "Stop", "停止", "关闭", "关闭服务", "停用服务", "Use service", "使用服务")
                 || servicePage && id.equals("com.android.settings:id/main_switch_bar");
-            admin |= equalsAny(text, "Deactivate this device admin app", "Deactivate", "停用此设备管理应用", "停用", "取消激活");
+            admin |= equalsAny(text, "Deactivate this device admin app", "Deactivate", "停用此设备管理应用", "停用", "取消激活", "解除激活");
             if (depth < MAX_DEPTH) for (int i = 0; i < node.children.length && i < MAX_NODES && queue.size() < MAX_NODES; i++)
                 if (node.children[i] != null) { queue.add(node.children[i]); depths.add(depth + 1); }
         }
         if (spa) return spaHeader && appInfoTitle && forceStop && uninstall ? "own-app-info" : "";
         if (!identity) return "";
-        if ((cls.contains("AppInfoDashboard") || cls.contains("InstalledAppDetails") || cls.equals("com.android.settings.SubSettings"))
+        if ((cls.contains("AppInfoDashboard") || cls.contains("InstalledAppDetails") || cls.contains("AppDetail")
+            || cls.contains("ApplicationDetails") || cls.contains("ApplicationsDetails") || cls.contains("AppManage")
+            || cls.equals("com.android.settings.SubSettings"))
             && (forceStop || uninstall)) return "own-app-info";
         if ((cls.contains("Accessibility") || cls.equals("com.android.settings.SubSettings")) && accessibility) return "own-accessibility";
-        if (cls.contains("DeviceAdminAdd") && admin) return "own-admin";
+        if (cls.contains("DeviceAdmin") && admin) return "own-admin";
         if (cls.contains("Uninstall") && (uninstall || uninstallQuestion && confirmUninstall)) return "own-uninstall";
+        if (forceStop || uninstall) return "own-app-info";
+        return "";
+    }
+
+    /** Optional strict-session guard for high-risk permission directories without blocking Wi-Fi/Bluetooth/Display. */
+    static String strictGuardTarget(String pkg, String cls, Node root) {
+        if (pkg == null || cls == null || isHarmlessSettingClass(cls)) return "";
+        if (cls.contains("AccessibilitySettings") || cls.contains("DeviceAdminSettings")
+            || cls.contains("UsageAccess") || cls.contains("DrawOverlay") || cls.contains("SpecialAccess")
+            || cls.contains("AppOps") || cls.contains("PermCenter") || cls.contains("AutoStart")) {
+            return "strict-settings-directory";
+        }
+        if (root == null || !pkg.equals(root.pkg)) return "";
+        ArrayDeque<Node> queue = new ArrayDeque<>(); ArrayDeque<Integer> depths = new ArrayDeque<>();
+        queue.add(root); depths.add(0); int visited = 0;
+        while (!queue.isEmpty() && visited++ < 80) {
+            Node node = queue.remove(); int depth = depths.remove(); if (!pkg.equals(node.pkg)) continue;
+            String text = node.text.trim(), id = node.id.toLowerCase(Locale.ROOT);
+            boolean isHeading = id.endsWith("/collapsing_toolbar") || id.endsWith("/action_bar_title")
+                || id.endsWith("/toolbar_title") || id.endsWith("/title") || "android.widget.TextView".equals(node.role) && depth <= 3;
+            if (isHeading && equalsAny(text,
+                "Accessibility", "无障碍", "Device admin apps", "设备管理应用", "设备管理器",
+                "Usage access", "使用情况访问权限", "有权查看使用情况的应用",
+                "Display over other apps", "悬浮窗", "显示在其他应用上层", "应用管理", "自启动")) {
+                return "strict-settings-directory";
+            }
+            if (depth < 6) for (int i = 0; i < node.children.length && queue.size() < 80; i++)
+                if (node.children[i] != null) { queue.add(node.children[i]); depths.add(depth + 1); }
+        }
         return "";
     }
 }

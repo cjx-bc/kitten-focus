@@ -10,6 +10,7 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
@@ -48,22 +49,31 @@ final class FocusProtection {
         return protection == null ? new JSONObject() : protection;
     }
 
+    static boolean isAccessibilityEnabledInSettings(boolean globalEnabled, String enabledServices, String packageName, String serviceClassName) {
+        if (!globalEnabled || enabledServices == null || packageName == null || serviceClassName == null) return false;
+        String fullFlat = packageName + "/" + serviceClassName;
+        String shortFlat = serviceClassName.startsWith(packageName + ".")
+            ? packageName + "/" + serviceClassName.substring(packageName.length())
+            : fullFlat;
+        for (String component : enabledServices.split(":")) {
+            String trimmed = component.trim();
+            if (fullFlat.equals(trimmed) || shortFlat.equals(trimmed)) return true;
+        }
+        return false;
+    }
+
     static boolean authorized(Context context) {
         ComponentName own = new ComponentName(context, FocusAccessibilityService.class);
 
         // The AccessibilityManager list is populated from currently bound services.
         // During an application/process restart it can be temporarily empty even
         // though Android has retained the user's grant in its secure settings.
-        // Read that persistent grant first so a reconnecting service is reported as
-        // authorized, while connected() continues to expose the separate runtime
-        // connection state.
-        String enabled = Settings.Secure.getString(
-            context.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        if (enabled != null) {
-            for (String component : enabled.split(":")) {
-                if (own.equals(ComponentName.unflattenFromString(component))) return true;
-            }
-        }
+        // Verify both the global accessibility switch and ENABLED_ACCESSIBILITY_SERVICES
+        // so stale entries never cause a false positive when accessibility is globally off.
+        android.content.ContentResolver cr = context.getContentResolver();
+        boolean globalEnabled = Settings.Secure.getInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1;
+        String enabled = Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (isAccessibilityEnabledInSettings(globalEnabled, enabled, own.getPackageName(), own.getClassName())) return true;
 
         AccessibilityManager manager = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
         if (manager == null) return false;
@@ -81,6 +91,45 @@ final class FocusProtection {
             public boolean authorized() { return usageReady || a11yAuth; }
             public boolean connected() { return usageReady || a11yConn; }
         };
+    }
+
+    static boolean isAppRestrictionReady(Context context) {
+        AccessibilityState state = appRestrictionState(context);
+        return state.authorized() && state.connected();
+    }
+
+    static boolean isActiveCallAudioMode(int mode) {
+        return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_RINGTONE;
+    }
+
+    static boolean isInActiveCall(Context context) {
+        if (context == null) return false;
+        try {
+            AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+            if (audio == null) return false;
+            return isActiveCallAudioMode(audio.getMode());
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    static java.util.List<String[]> resolveWhitelistApps(Context context, JSONArray whitelistPackages) {
+        java.util.List<String[]> result = new java.util.ArrayList<>();
+        if (context == null || whitelistPackages == null) return result;
+        PackageManager pm = context.getPackageManager();
+        String ownPkg = context.getPackageName();
+        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+        for (int i = 0; i < whitelistPackages.length(); i++) {
+            String pkg = whitelistPackages.optString(i, "");
+            if (pkg.isEmpty() || pkg.equals(ownPkg) || !seen.add(pkg)) continue;
+            if (pm.getLaunchIntentForPackage(pkg) == null) continue;
+            String label = pkg;
+            try {
+                label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+            } catch (PackageManager.NameNotFoundException ignored) { }
+            result.add(new String[] { pkg, label });
+        }
+        return result;
     }
 
     static JSONObject capture(Context context, LocalStore store, JSONObject session) throws JSONException {
@@ -160,6 +209,9 @@ final class FocusProtection {
             if (moduleSubBool(strict, "hideRecents", false)) enhancements.put(RecentTasksProtection.KEY);
             if (moduleSubBool(strict, "hideLauncher", false)) enhancements.put(LauncherProtection.KEY);
             if (moduleSubBool(strict, "wallpaper", false)) enhancements.put(WallpaperProtection.KEY);
+            if (moduleSubBool(strict, "strictSettings", false)) enhancements.put(FocusAntiClose.STRICT_SETTINGS_OPTION);
+            if (moduleSubBool(strict, "deviceAdmin", false)) enhancements.put(DeviceAdminProtection.KEY);
+            if (moduleSubBool(strict, "rebootResume", false)) enhancements.put("rebootResumeLock");
         }
         JSONArray existing = prefs.optJSONArray("enhancements");
         if (existing != null) for (int i = 0; i < existing.length(); i++) {
@@ -200,9 +252,18 @@ final class FocusProtection {
             String value = enhancements.optString(i);
             if ("navigationHomeRecents".equals(value) || RecentTasksProtection.KEY.equals(value)
                 || LauncherProtection.KEY.equals(value) || FocusAntiClose.OPTION.equals(value) || WallpaperProtection.KEY.equals(value)
-                || FocusRecovery.MAIN_ENTRY.equals(value)) selected.put(value);
+                || FocusRecovery.MAIN_ENTRY.equals(value) || FocusAntiClose.STRICT_SETTINGS_OPTION.equals(value)
+                || DeviceAdminProtection.KEY.equals(value) || "rebootResumeLock".equals(value)) selected.put(value);
         }
         return selected;
+    }
+
+    static boolean strictSettingsRequested(JSONObject protection) {
+        return enhancementRequested(protection, FocusAntiClose.STRICT_SETTINGS_OPTION);
+    }
+
+    static boolean rebootResumeRequested(JSONObject protection) {
+        return enhancementRequested(protection, "rebootResumeLock");
     }
 
     static JSONObject status(Context context, LocalStore store, JSONObject observation) throws JSONException {
@@ -227,7 +288,9 @@ final class FocusProtection {
             : current && !executionFailure.isEmpty() ? executionFailure
             : current && !effective ? "本轮应用限制已失效，请检查使用情况访问、悬浮窗或无障碍权限"
             : !granted ? "尚未授予使用情况访问或悬浮窗权限"
-            : !connected ? "已开启部分权限，请确认使用情况访问与悬浮窗权限已就绪"
+            : !connected ? (a11yAuth && !a11yConn && !usageOverlayReady
+                ? "无障碍授权已保留，但系统服务未连接（可能被系统后台清理，请关闭后重开无障碍或开启使用情况访问与悬浮窗）"
+                : "已开启部分权限，请确认使用情况访问与悬浮窗权限已就绪")
             : current ? "lock".equals(observation.optString("owner")) ? "本轮锁机保护中；有效白名单已固定" : "本轮有效白名单已固定；暂停计时仍限制应用"
             : preferred ? (AppUsageGuard.ENGINE_ACCESSIBILITY.equals(engine)
                 ? "无障碍服务已就绪，开始专注后执行应用限制"
@@ -311,8 +374,7 @@ final class FocusProtection {
         JSONObject temporary = session.optJSONObject("temporaryAccess");
         if (temporary != null && temporary.optLong("remainingMs") > 0 && packageName.equals(temporary.optString("targetPackage"))) return false;
         JSONArray whitelist = protection.optJSONArray("whitelist");
-        if (whitelist != null) for (int i = 0; i < whitelist.length(); i++)
-            if (packageName.equals(whitelist.optString(i))) return false;
+        if (isPackageInWhitelist(whitelist, packageName)) return false;
         if (necessaryPackages(context).contains(packageName)) return false;
         if (settingsAuthorizationAllowed(packageName)) return false;
         // FORCE-05 applies its own exact target guard; unrelated system Settings/installers stay usable.
@@ -361,6 +423,42 @@ final class FocusProtection {
         if ("com.android.systemui".equals(packageName) || "android".equals(packageName)) return true;
         String ime = currentInputMethodPackage(context);
         return !ime.isEmpty() && ime.equals(packageName);
+    }
+
+    static boolean matchesWhitelistEntry(String whitelistedPackage, String targetPackage) {
+        if (whitelistedPackage == null || targetPackage == null || whitelistedPackage.isEmpty() || targetPackage.isEmpty()) {
+            return false;
+        }
+        if (whitelistedPackage.equals(targetPackage)) return true;
+        if (("com.google.android.apps.bard".equals(whitelistedPackage)
+            || "com.google.android.apps.googleassistant".equals(whitelistedPackage)
+            || "com.google.ar.lens".equals(whitelistedPackage))
+            && "com.google.android.googlequicksearchbox".equals(targetPackage)) {
+            return true;
+        }
+        return false;
+    }
+
+    static boolean isPackageInWhitelist(JSONArray whitelist, String targetPackage) {
+        if (whitelist == null || targetPackage == null || targetPackage.isEmpty()) return false;
+        for (int i = 0; i < whitelist.length(); i++) {
+            if (matchesWhitelistEntry(whitelist.optString(i), targetPackage)) return true;
+        }
+        return false;
+    }
+
+    static boolean isWhitelistedExternalApp(Context context, JSONObject observation, String packageName) {
+        if (context == null || observation == null || packageName == null || packageName.isEmpty()) return false;
+        if (context.getPackageName().equals(packageName)) return false;
+        JSONObject session = ControlSession.from(observation);
+        if (session == null) return false;
+        JSONObject temporary = session.optJSONObject("temporaryAccess");
+        if (temporary != null && temporary.optLong("remainingMs") > 0 && packageName.equals(temporary.optString("targetPackage"))) {
+            return true;
+        }
+        JSONObject protection = session.optJSONObject("protection");
+        JSONArray whitelist = protection == null ? null : protection.optJSONArray("whitelist");
+        return isPackageInWhitelist(whitelist, packageName);
     }
 
     static JSONArray apps(Context context, LocalStore store) throws JSONException {

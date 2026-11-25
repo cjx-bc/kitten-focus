@@ -32,6 +32,12 @@ final class Reminders {
     static final int FOCUS_ID=40;static final String FOCUS_ACTION="com.xiaomao.focus.FOCUS_DUE";
     static final int REST_ID=43;
     static final String REST_ACTION="com.xiaomao.focus.REST_DUE";
+    static final int KEEP_ALIVE_REVIVE_ID=46;
+    static final String KEEP_ALIVE_REVIVE_ACTION="com.xiaomao.focus.KEEP_ALIVE_REVIVE";
+    static final int KEEP_ALIVE_HEARTBEAT_ID=47;
+    static final String KEEP_ALIVE_HEARTBEAT_ACTION="com.xiaomao.focus.KEEP_ALIVE_HEARTBEAT";
+    static final int ACCESSIBILITY_REVOKED_ID=48;
+    static final long KEEP_ALIVE_HEARTBEAT_MS=180_000L;
     static final String FOCUS_FINISHED_TITLE="本次专注正常结束";
     private static final int MAX_SCHEDULED_REMINDERS=450;
     private static PendingIntent restIntent(Context c){return PendingIntent.getBroadcast(c,REST_ID,new Intent(c,ReminderReceiver.class).setAction(REST_ACTION),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
@@ -56,13 +62,30 @@ final class Reminders {
     }
     static boolean exactAllowed(Context c){return Build.VERSION.SDK_INT<31||c.getSystemService(AlarmManager.class).canScheduleExactAlarms();}
     private static PendingIntent focusIntent(Context c){return PendingIntent.getBroadcast(c,FOCUS_ID,new Intent(c,ReminderReceiver.class).setAction(FOCUS_ACTION),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    private static PendingIntent keepAliveReviveIntent(Context c){return PendingIntent.getBroadcast(c,KEEP_ALIVE_REVIVE_ID,new Intent(c,ReminderReceiver.class).setAction(KEEP_ALIVE_REVIVE_ACTION),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    private static PendingIntent keepAliveHeartbeatIntent(Context c){return PendingIntent.getBroadcast(c,KEEP_ALIVE_HEARTBEAT_ID,new Intent(c,ReminderReceiver.class).setAction(KEEP_ALIVE_HEARTBEAT_ACTION),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    static void scheduleKeepAliveRevive(Context c,long delayMs){schedule(c,AlarmManager.ELAPSED_REALTIME_WAKEUP,android.os.SystemClock.elapsedRealtime()+Math.max(250L,delayMs),keepAliveReviveIntent(c));}
+    static void scheduleKeepAliveHeartbeat(Context c){schedule(c,AlarmManager.ELAPSED_REALTIME_WAKEUP,android.os.SystemClock.elapsedRealtime()+KEEP_ALIVE_HEARTBEAT_MS,keepAliveHeartbeatIntent(c));}
+    static void cancelKeepAlive(Context c){AlarmManager m=c.getSystemService(AlarmManager.class);if(m!=null){m.cancel(keepAliveReviveIntent(c));m.cancel(keepAliveHeartbeatIntent(c));}}
     private static PendingIntent open(Context c){return PendingIntent.getActivity(c,0,new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
     private static PendingIntent returnToFocus(Context c){return PendingIntent.getActivity(c,FOCUS_ID,new Intent(c,MainActivity.class).putExtra("returnToFocus",true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
     private static PendingIntent recovery(Context c){return PendingIntent.getActivity(c,44,new Intent(c,MainActivity.class).putExtra("openRecovery",true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
-    static void scheduleFocus(Context c,JSONObject s){if(!s.optString("mode").equals("countdown")||!s.optString("state").equals("running"))return;long due=s.optLong("anchorMono")+Math.max(0,s.optLong("targetMs")-s.optLong("elapsedMs"));schedule(c,AlarmManager.ELAPSED_REALTIME_WAKEUP,due,focusIntent(c));}
+    static void scheduleFocus(Context c,JSONObject s){
+        if(!s.optString("mode").equals("countdown")||!s.optString("state").equals("running"))return;
+        long remaining=Math.max(0L,s.optLong("targetMs")-s.optLong("elapsedMs"));
+        AlarmManager manager=c.getSystemService(AlarmManager.class);
+        if(manager!=null&&exactAllowed(c)){
+            try{
+                manager.setAlarmClock(new AlarmManager.AlarmClockInfo(System.currentTimeMillis()+remaining,returnToFocus(c)),focusIntent(c));
+                return;
+            }catch(RuntimeException ignored){}
+        }
+        long due=s.optLong("anchorMono")+remaining;
+        schedule(c,AlarmManager.ELAPSED_REALTIME_WAKEUP,due,focusIntent(c));
+    }
     private static void schedule(Context c,int type,long due,PendingIntent intent){AlarmManager manager=c.getSystemService(AlarmManager.class);try{if(exactAllowed(c)){manager.setExactAndAllowWhileIdle(type,due,intent);return;}}catch(SecurityException ignored){}try{manager.setAndAllowWhileIdle(type,due,intent);}catch(SecurityException ignored){}}
     static void cancelFocusAlarm(Context c){c.getSystemService(AlarmManager.class).cancel(focusIntent(c));}
-    static void cancelFocus(Context c){FocusKeepAliveService.stop(c);cancelFocusAlarm(c);NotificationManagerCompat.from(c).cancel(FOCUS_ID);}
+    static void cancelFocus(Context c){FocusKeepAliveService.stop(c);cancelKeepAlive(c);cancelFocusAlarm(c);NotificationManagerCompat.from(c).cancel(FOCUS_ID);}
     private static void channel(Context c,String id,String title,boolean sound,boolean vibration,boolean low){if(Build.VERSION.SDK_INT>=26){NotificationChannel channel=new NotificationChannel(id,title,low?NotificationManager.IMPORTANCE_LOW:NotificationManager.IMPORTANCE_DEFAULT);channel.enableVibration(vibration);if(!sound)channel.setSound(null,null);else channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());c.getSystemService(NotificationManager.class).createNotificationChannel(channel);}}
     private static NotificationCompat.Builder builder(Context c,String channel){return new NotificationCompat.Builder(c,channel).setSmallIcon(R.drawable.ic_stat_focus).setContentIntent(open(c)).setColor(0xff222222);}
     static Notification buildFocusNotification(Context c,JSONObject s,long elapsed){channel(c,"focus-status","专注状态",false,false,true);boolean paused=s.optString("state").equals("paused"),countdown=s.optString("mode").equals("countdown");NotificationCompat.Builder notification=builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle(s.optString("title","专注中")).setContentText(paused?"已暂停 · 点击返回专注":countdown?"倒计时专注进行中":"正计时专注进行中").setOngoing(true).setOnlyAlertOnce(true).setSilent(true);
@@ -72,6 +95,11 @@ final class Reminders {
         return notification.build();}
     static Notification buildFallbackKeepAliveNotification(Context c){channel(c,"focus-status","专注状态",false,false,true);return builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle("小猫专注").setContentText("正在同步专注状态").setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build();}
     static void showFocus(Context c,JSONObject s,long elapsed){FocusKeepAliveService.ensureStarted(c);if(!notificationsAllowed(c))return;post(c,FOCUS_ID,buildFocusNotification(c,s,elapsed));}
+    static void showAccessibilityRevoked(Context c){
+        if(c==null||!notificationsAllowed(c))return;
+        channel(c,"focus-alert","专注保护提醒",true,true,false);
+        post(c,ACCESSIBILITY_REVOKED_ID,builder(c,"focus-alert").setContentIntent(returnToFocus(c)).setContentTitle("无障碍保护已被系统关闭").setContentText("点击返回小猫专注查看状态或重新开启").setAutoCancel(true).build());
+    }
     static void showFinished(Context c,JSONObject s){if(!notificationsAllowed(c))return;boolean sound=true,vibration=true;try{JSONObject data=LocalStore.get(c).read("data");if(data!=null){JSONObject preferences=data.optJSONObject("preferences");if(preferences!=null){sound=preferences.optBoolean("sound",true);vibration=preferences.optBoolean("vibration",true);}}}catch(Exception ignored){}String id="focus-done-"+sound+"-"+vibration;channel(c,id,"专注结束提醒",sound,vibration,false);post(c,41,builder(c,id).setContentTitle(FOCUS_FINISHED_TITLE).setContentText(s.optString("title")+" · 认真投入的时间已经记录").setAutoCancel(true).build());}
     static void showLockFinished(Context c,JSONObject session) {
         if(!notificationsAllowed(c))return;

@@ -1,0 +1,376 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-23T10:28:00Z",
+  "title": "Design System: 小猫专注 (Kitten Focus)",
+  "extensions": {
+    "colorMeta": {
+      "pure-paper": {
+        "role": "neutral",
+        "displayName": "Pure Paper",
+        "canonical": "oklch(100% 0 0)",
+        "tonalRamp": [
+          "oklch(25% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(52% 0 0)",
+          "oklch(65% 0 0)",
+          "oklch(78% 0 0)",
+          "oklch(88% 0 0)",
+          "oklch(96% 0 0)",
+          "oklch(100% 0 0)"
+        ]
+      },
+      "soft-mist": {
+        "role": "neutral",
+        "displayName": "Soft Mist",
+        "canonical": "oklch(97% 0 0)",
+        "tonalRamp": [
+          "oklch(22% 0 0)",
+          "oklch(34% 0 0)",
+          "oklch(48% 0 0)",
+          "oklch(62% 0 0)",
+          "oklch(75% 0 0)",
+          "oklch(87% 0 0)",
+          "oklch(95% 0 0)",
+          "oklch(97% 0 0)"
+        ]
+      },
+      "ink-charcoal": {
+        "role": "neutral",
+        "displayName": "Ink Charcoal",
+        "canonical": "oklch(25% 0 0)",
+        "tonalRamp": [
+          "oklch(18% 0 0)",
+          "oklch(25% 0 0)",
+          "oklch(36% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(63% 0 0)",
+          "oklch(77% 0 0)",
+          "oklch(89% 0 0)",
+          "oklch(96% 0 0)"
+        ]
+      },
+      "slate-muted": {
+        "role": "neutral",
+        "displayName": "Slate Muted",
+        "canonical": "oklch(55.5% 0.008 286)",
+        "tonalRamp": [
+          "oklch(20% 0.004 286)",
+          "oklch(32% 0.006 286)",
+          "oklch(44% 0.007 286)",
+          "oklch(55.5% 0.008 286)",
+          "oklch(68% 0.007 286)",
+          "oklch(80% 0.005 286)",
+          "oklch(90% 0.003 286)",
+          "oklch(96% 0.002 286)"
+        ]
+      },
+      "surface-slate": {
+        "role": "neutral",
+        "displayName": "Surface Slate",
+        "canonical": "oklch(51% 0.008 286)",
+        "tonalRamp": [
+          "oklch(19% 0.004 286)",
+          "oklch(31% 0.006 286)",
+          "oklch(42% 0.007 286)",
+          "oklch(51% 0.008 286)",
+          "oklch(64% 0.007 286)",
+          "oklch(77% 0.005 286)",
+          "oklch(88% 0.003 286)",
+          "oklch(95% 0.002 286)"
+        ]
+      },
+      "hairline-chalk": {
+        "role": "neutral",
+        "displayName": "Hairline Chalk",
+        "canonical": "oklch(93.7% 0 0)",
+        "tonalRamp": [
+          "oklch(22% 0 0)",
+          "oklch(35% 0 0)",
+          "oklch(48% 0 0)",
+          "oklch(62% 0 0)",
+          "oklch(74% 0 0)",
+          "oklch(85% 0 0)",
+          "oklch(93.7% 0 0)",
+          "oklch(97% 0 0)"
+        ]
+      },
+      "field-mist": {
+        "role": "neutral",
+        "displayName": "Field Mist",
+        "canonical": "oklch(94.2% 0.004 286)",
+        "tonalRamp": [
+          "oklch(22% 0.003 286)",
+          "oklch(35% 0.004 286)",
+          "oklch(48% 0.004 286)",
+          "oklch(62% 0.004 286)",
+          "oklch(75% 0.004 286)",
+          "oklch(86% 0.004 286)",
+          "oklch(94.2% 0.004 286)",
+          "oklch(97% 0.002 286)"
+        ]
+      },
+      "focus-slate": {
+        "role": "neutral",
+        "displayName": "Focus Slate",
+        "canonical": "oklch(61.5% 0.008 286)",
+        "tonalRamp": [
+          "oklch(21% 0.004 286)",
+          "oklch(34% 0.006 286)",
+          "oklch(48% 0.007 286)",
+          "oklch(61.5% 0.008 286)",
+          "oklch(73% 0.006 286)",
+          "oklch(83% 0.005 286)",
+          "oklch(91% 0.003 286)",
+          "oklch(96% 0.002 286)"
+        ]
+      },
+      "signal-vermilion": {
+        "role": "primary",
+        "displayName": "Signal Vermilion",
+        "canonical": "oklch(63.4% 0.201 29.8)",
+        "tonalRamp": [
+          "oklch(26% 0.08 29.8)",
+          "oklch(38% 0.13 29.8)",
+          "oklch(50% 0.17 29.8)",
+          "oklch(63.4% 0.201 29.8)",
+          "oklch(72% 0.16 29.8)",
+          "oklch(81% 0.11 29.8)",
+          "oklch(90% 0.06 29.8)",
+          "oklch(96% 0.025 29.8)"
+        ]
+      },
+      "alert-crimson": {
+        "role": "primary",
+        "displayName": "Alert Crimson",
+        "canonical": "oklch(53.2% 0.181 29.2)",
+        "tonalRamp": [
+          "oklch(24% 0.08 29.2)",
+          "oklch(37% 0.14 29.2)",
+          "oklch(53.2% 0.181 29.2)",
+          "oklch(63% 0.16 29.2)",
+          "oklch(72% 0.12 29.2)",
+          "oklch(81% 0.08 29.2)",
+          "oklch(90% 0.04 29.2)",
+          "oklch(96% 0.02 29.2)"
+        ]
+      },
+      "blush-alert": {
+        "role": "primary",
+        "displayName": "Blush Alert",
+        "canonical": "oklch(95.9% 0.018 24.5)",
+        "tonalRamp": [
+          "oklch(26% 0.06 24.5)",
+          "oklch(40% 0.08 24.5)",
+          "oklch(54% 0.09 24.5)",
+          "oklch(68% 0.07 24.5)",
+          "oklch(79% 0.05 24.5)",
+          "oklch(88% 0.035 24.5)",
+          "oklch(93% 0.025 24.5)",
+          "oklch(95.9% 0.018 24.5)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Focus Timer Display",
+        "purpose": "Centered countdown and stopwatch readouts using bundled Nunito tabular figures."
+      },
+      "headline": {
+        "displayName": "Page Headline",
+        "purpose": "Top-level view headings across main tabs and completion summary states."
+      },
+      "title": {
+        "displayName": "Sheet & Section Title",
+        "purpose": "Modal sheet sticky titles, secondary route headers, and brand identity titles."
+      },
+      "body": {
+        "displayName": "Interface Body",
+        "purpose": "Primary labels, settings items, release notes, and offline documentation paragraphs."
+      },
+      "label": {
+        "displayName": "Caption & Metadata",
+        "purpose": "Row subtitles, section dividers, status badges, and chart axes (>= 12px floor)."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sheet-modal",
+        "value": "0 20px 80px rgba(0, 0, 0, 0.133)",
+        "purpose": "Elevates floating native dialog sheets over the dimmed backdrop."
+      },
+      {
+        "name": "desktop-shell",
+        "value": "0 0 0 1px #e7e7e7, 0 20px 80px rgba(0, 0, 0, 0.031)",
+        "purpose": "Frames the 520px mobile app column on viewports >= 600px."
+      },
+      {
+        "name": "switch-thumb",
+        "value": "0 1px 3px rgba(0, 0, 0, 0.141)",
+        "purpose": "Separates draggable 18px switch knobs from soft-gray tracks."
+      }
+    ],
+    "motion": [
+      {
+        "name": "press-feedback",
+        "value": "opacity 120ms ease, background-color 120ms ease",
+        "purpose": "Tactile active dimming on buttons, links, and disclosure summaries."
+      },
+      {
+        "name": "sheet-enter",
+        "value": "opacity 180ms ease, transform 180ms cubic-bezier(0.2, 0, 0, 1)",
+        "purpose": "Calm upward settle when presenting single-layer dialog sheets."
+      },
+      {
+        "name": "sheet-leave",
+        "value": "opacity 120ms ease, transform 120ms ease",
+        "purpose": "Quick non-intrusive dismissal before releasing native dialog state."
+      },
+      {
+        "name": "switch-toggle",
+        "value": "transform 180ms cubic-bezier(0.2, 0, 0, 1), background-color 180ms ease",
+        "purpose": "Smooth horizontal thumb travel and morph on toggle switches."
+      },
+      {
+        "name": "splash-wink",
+        "value": "1000ms total (320ms calm eye-contact lead-in + ear-twitch wink) -> 180ms exit",
+        "purpose": "Single-stage native Android launch mascot animation before home transition."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow-phone",
+        "value": "max-width: 340px (page inline padding narrows from 24px to 16px)"
+      },
+      {
+        "name": "compact-phone",
+        "value": "390px baseline mobile viewport"
+      },
+      {
+        "name": "centered-shell",
+        "value": "min-width: 600px (app-shell centers at 520px width)"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action Capsule",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Sole primary CTA pill (<= 1 per screen or modal sheet) anchored in Ink Charcoal.",
+      "html": "<button type=\"button\" class=\"ds-btn-primary\">下载更新</button>",
+      "css": ".ds-btn-primary { min-height: 50px; min-width: 48px; width: 100%; border: 0; border-radius: 999px; padding: 13px 24px; background: var(--ink, #222222); color: var(--white, #ffffff); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; transition: opacity 120ms ease; } .ds-btn-primary:hover:not(:disabled) { opacity: 0.92; } .ds-btn-primary:active:not(:disabled) { opacity: 0.65; } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus, #838388); outline-offset: 4px; }"
+    },
+    {
+      "name": "Secondary Action Capsule",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Calm Soft Mist capsule that lifts to white with a hairline border inside cards.",
+      "html": "<div class=\"ds-card-wrap\"><button type=\"button\" class=\"ds-btn-secondary\">一键允许后台运行</button></div>",
+      "css": ".ds-card-wrap { background: var(--surface, #f5f5f5); border-radius: var(--radius, 20px); padding: 16px; } .ds-btn-secondary { min-height: 50px; min-width: 48px; width: 100%; border: 1px solid var(--line, #eaeaea); border-radius: 999px; padding: 13px 24px; background: var(--white, #ffffff); color: var(--ink, #222222); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; transition: opacity 120ms ease; } .ds-btn-secondary:hover:not(:disabled) { opacity: 0.88; } .ds-btn-secondary:active:not(:disabled) { opacity: 0.65; } .ds-btn-secondary:focus-visible { outline: 2px solid var(--focus, #838388); outline-offset: 4px; }"
+    },
+    {
+      "name": "Danger Action Capsule",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Soft Blush Alert pill reserved exclusively for destructive actions.",
+      "html": "<button type=\"button\" class=\"ds-btn-danger\">删除待办</button>",
+      "css": ".ds-btn-danger { min-height: 50px; min-width: 48px; border: 0; border-radius: 999px; padding: 13px 24px; background: #fff1ef; color: #c13a25; font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; transition: opacity 120ms ease; } .ds-btn-danger:hover:not(:disabled) { opacity: 0.9; } .ds-btn-danger:active:not(:disabled) { opacity: 0.65; } .ds-btn-danger:focus-visible { outline: 2px solid var(--focus, #838388); outline-offset: 4px; }"
+    },
+    {
+      "name": "Soft Mist Surface Card",
+      "kind": "card",
+      "refersTo": "card-surface",
+      "description": "Flat 20px Soft Mist container pairing crisp charcoal headings with AA-verified Surface Slate metadata.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-card-head\"><strong>后台运行不限制</strong><span class=\"ds-badge\">建议</span><span class=\"ds-state\">未放行 · 可选</span></div><p class=\"ds-card-copy\">减少长时间专注或锁屏时被系统省电清理。不开启也能正常计时。</p></article>",
+      "css": ".ds-card { background: var(--surface, #f5f5f5); border-radius: var(--radius, 20px); padding: 16px 18px; display: grid; gap: 8px; color: var(--ink, #222222); } .ds-card-head { display: flex; align-items: center; gap: 8px; font-size: 14px; } .ds-badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--white, #ffffff); color: var(--muted-surface, #66666b); } .ds-state { margin-left: auto; font-size: 12px; color: var(--muted-surface, #66666b); } .ds-card-copy { margin: 0; font-size: 12px; line-height: 1.65; color: var(--muted-surface, #66666b); }"
+    },
+    {
+      "name": "Input Scheme A Field",
+      "kind": "input",
+      "refersTo": "input-default",
+      "description": "12px field transitioning from Soft Mist / Field Mist border to Pure Paper / Focus Slate without ring jitter.",
+      "html": "<label class=\"ds-field\"><span>默认时长（分钟）</span><input type=\"number\" class=\"ds-input\" value=\"25\" min=\"1\" /></label>",
+      "css": ".ds-field { display: grid; gap: 8px; font-size: 14px; color: var(--ink, #222222); } .ds-input { width: 100%; min-height: 48px; border: 1.5px solid var(--field-line, #ececee); border-radius: 12px; background: var(--surface, #f5f5f5); color: var(--ink, #222222); padding: 12px 14px; outline: none; font: inherit; transition: background-color 150ms ease, border-color 150ms ease; } .ds-input:hover { border-color: #d6d6da; } .ds-input:focus { background: var(--white, #ffffff); border-color: var(--focus, #838388); }"
+    },
+    {
+      "name": "Selection Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip-default",
+      "description": "48px-tall capsule chip toggling crisply to Ink Charcoal on selection.",
+      "html": "<div class=\"ds-chip-row\"><button type=\"button\" class=\"ds-chip is-active\">25 分钟</button><button type=\"button\" class=\"ds-chip\">45 分钟</button></div>",
+      "css": ".ds-chip-row { display: flex; gap: 8px; } .ds-chip { min-height: 48px; min-width: 48px; border: 0; border-radius: 999px; padding: 10px 16px; background: var(--surface, #f5f5f5); color: var(--ink, #222222); font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background-color 120ms ease, opacity 120ms ease; } .ds-chip.is-active { background: var(--ink, #222222); color: var(--white, #ffffff); } .ds-chip:hover:not(.is-active) { background: #ebebee; } .ds-chip:focus-visible { outline: 2px solid var(--focus, #838388); outline-offset: 4px; }"
+    },
+    {
+      "name": "Tactile Switch Row",
+      "kind": "custom",
+      "refersTo": "card-surface",
+      "description": "50px grouped toggle row with morphing circular thumb and hairline divider.",
+      "html": "<label class=\"ds-switch-row\"><span>结束提示音</span><input type=\"checkbox\" class=\"ds-switch\" checked /></label>",
+      "css": ".ds-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 50px; padding: 8px 0; font-size: 14px; color: var(--ink, #222222); cursor: pointer; } .ds-switch { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border: 1px solid #d9d9df; border-radius: 999px; background: #e7e7ec; position: relative; cursor: pointer; transition: background-color 180ms ease, border-color 180ms ease; } .ds-switch:before { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--white, #ffffff); box-shadow: 0 1px 3px rgba(0,0,0,0.14); transition: width 120ms cubic-bezier(0.2, 0, 0, 1), transform 180ms cubic-bezier(0.2, 0, 0, 1); } .ds-switch:checked { background: #29292d; border-color: #29292d; } .ds-switch:checked:before { transform: translateX(18px); } .ds-switch:active:before { width: 22px; } .ds-switch:checked:active:before { transform: translateX(14px); } .ds-switch:focus-visible { outline: 2px solid var(--focus, #838388); outline-offset: 4px; }"
+    },
+    {
+      "name": "Five-Tab Icon Bottom Bar",
+      "kind": "nav",
+      "refersTo": "nav-tabbar",
+      "description": "Icon-only primary navigation with 48px+ targets, accessible labels, and optional vermilion update dot.",
+      "html": "<nav class=\"ds-tabbar\" aria-label=\"主导航\"><a href=\"#/tasks\" aria-label=\"待办\" aria-current=\"page\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m3 17 2 2 4-4\"/><path d=\"m3 7 2 2 4-4\"/><path d=\"M13 6h8\"/><path d=\"M13 12h8\"/><path d=\"M13 18h8\"/></svg></a><a href=\"#/settings\" aria-label=\"我的，有新版本\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"8\" r=\"5\"/><path d=\"M20 21a8 8 0 0 0-16 0\"/></svg><span class=\"ds-dot\" aria-hidden=\"true\"></span></a></nav>",
+      "css": ".ds-tabbar { height: 64px; padding: 6px 10px; background: rgba(255,255,255,0.97); border-top: 1px solid #f1f1f1; display: flex; justify-content: space-around; align-items: center; } .ds-tabbar a { position: relative; min-height: 48px; min-width: 52px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted, #737378); text-decoration: none; transition: opacity 120ms ease; } .ds-tabbar a[aria-current=\"page\"] { color: var(--ink, #222222); } .ds-tabbar a:hover { opacity: 0.78; } .ds-tabbar a:focus-visible { outline: 2px solid var(--focus, #838388); outline-offset: 4px; border-radius: 12px; } .ds-dot { position: absolute; top: 9px; right: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent, #ef4e36); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Monochrome Companion Notebook (黑白手帐与小猫)",
+    "overview": "Kitten Focus trades heavy productivity chrome for the calm clarity of an open monochrome notebook: generous pure-paper white space, soft neutral surfaces, rounded tabular timer numerals, and a restrained monochrome cat-head companion that lowers friction during personal focus sessions.\n\nStrict restraint governs density, color, and motion across a light-only scheme (24px page padding, 16px under 340px), single primary actions, zero nested modal layers, zero decorative gradients, and calm status semantics that never impose red alerts on optional settings.",
+    "keyCharacteristics": [
+      "High-contrast monochrome surfaces (#ffffff canvas, #f5f5f5 grouped cards, #222222 ink) with whisper-thin #eaeaea hairlines.",
+      "Bundled Nunito tabular numerals for timers and counts, paired with crisp system Chinese sans copy (>= 12px minimum).",
+      "Soft 20px card/sheet corners paired with full-pill buttons, switches, and chips backed by >= 48px x 48px hit targets.",
+      "Tactile low-anxiety Input Scheme A focus styling and brief 150-220ms transitions that disable cleanly under reduced motion."
+    ],
+    "rules": [
+      {
+        "name": "The One-Accent Restraint Rule",
+        "body": "Signal Vermilion (#ef4e36) appears only on small focal indicators so black Ink Charcoal capsules stay the sole primary action anchor.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dual-Slate AA Rule",
+        "body": "Secondary text on #ffffff uses Slate Muted (#737378), while secondary text inside #f5f5f5 or #fff1ef surfaces MUST use Surface Slate (#66666b).",
+        "section": "colors"
+      },
+      {
+        "name": "The Zero-Panic Optionality Rule",
+        "body": "Recommended optional settings (such as 后台运行不限制) avoid #c13a25 / #fff1ef; ungranted items sit in calm Surface Slate (#66666b) and granted items show Ink Charcoal (#222222) with a check icon.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular-Time Rule",
+        "body": "Every timer, metric readout, percentage, and package size uses Nunito with tabular-nums to prevent horizontal digit jitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The 12px Legibility Floor Rule",
+        "body": "No visible text, chart axis label, timetable label, or status badge may fall below 12px.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal-First Flatness Rule",
+        "body": "At rest inside a page flow, cards, list groups, notices, and navigation bars rely purely on background stepping and #eaeaea hairlines—never drop shadows or gradients.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do preserve pure 20px corners across every card, notice, diagnostic disclosure, and dialog sheet, paired with >= 48px x 48px hit targets and >= 12px typography.",
+      "Do use Surface Slate (#66666b) rather than Slate Muted (#737378) whenever muted copy, icons, or quiet buttons sit inside a #f5f5f5 card or #fff1ef banner, maintaining >= 4.5:1 contrast.",
+      "Do pair white-bordered secondary capsules (#ffffff fill + 1px solid #eaeaea) whenever a secondary CTA sits inside a #f5f5f5 card or permission card.",
+      "Do reuse the single open modal container with inline view transitions and confirm strips so at most one native <dialog> is open at any time.",
+      "Do format every timer, metric, package size, and progress percentage in Nunito with tabular-nums, and guard all transitions/animations behind reduced-motion rules."
+    ],
+    "donts": [
+      "Don't place more than 1 primary CTA or more than 4 first-glance decision controls on any screen or sheet, and never expose engineering telemetry on Tier 1 home views.",
+      "Don't use red warning colors (#ef4e36 / #c13a25 / #fff1ef), warning triangles, or blocking dialogs on optional recommendations like battery optimization exemption (后台运行不限制) or version updates.",
+      "Don't use single-sided colored left border stripes, nested cards-inside-cards, decorative color gradients, emoji placeholders in place of Lucide line icons, or eyebrows/kickers above headings.",
+      "Don't render focus glow outlines in #ef4e36 on text/select/date inputs; follow Input Scheme A (#f5f5f5/#ececee -> #ffffff/#838388) with unchanged box dimensions.",
+      "Don't introduce dark-theme toggles, fake Android immunity claims (防强停/防卸载), or forbidden glossary copy (番茄钟, 待办完成, 本次专注已完成) into any surface."
+    ]
+  }
+}

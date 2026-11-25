@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, computed, watch, ref, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { App as CapacitorApp } from '@capacitor/app'
-import { consumeFocusReturn, consumeLockReturn, consumeRecoveryReturn, resolveMainEntry, native } from './platform/bridge'
+import { consumeFocusReturn, consumeLockReturn, consumeRecoveryReturn, resolveMainEntry, native, onNativeOverlayEvent, syncFocusOverlayState } from './platform/bridge'
 import { notifyNativeSplashReady } from './platform/splash'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
@@ -25,6 +25,18 @@ const app = useApp(),
   route = useRoute(),
   router = useRouter(),
   full = computed(() => ['/focus', '/rest', '/lock', '/permissions', '/help', '/emergency', '/recovery'].includes(route.path))
+watch(
+  [
+    () => app.ready,
+    () => route.path,
+    () => app.focus.session?.id,
+    () => app.focus.session?.protection?.study,
+    () => app.lock.session?.id,
+  ],
+  () => {
+    if (native && app.ready) void syncFocusOverlayState(route.path)
+  },
+)
 function showToastPopover() {
   const el = toastEl.value
   if (!el || !app.toast) return
@@ -153,6 +165,7 @@ function scheduleSplashReady() {
 const onCloseSheets = () => {
   updatePromptOpen.value = false
 }
+let stopOverlayEvents: (() => void) | undefined
 onMounted(async () => {
   window.addEventListener('open-recovery', onOpenRecovery)
   window.addEventListener('recovery-return-request', onRecoveryReturnRequest)
@@ -169,8 +182,18 @@ onMounted(async () => {
     if (await consumeRecoveryReturn()) await openRecoveryPreempting()
     void updates.init()
     if (native) {
+      void syncFocusOverlayState(route.path)
+      stopOverlayEvents = await onNativeOverlayEvent({
+        onNavigate: (path) => {
+          void router.push(path)
+        },
+        onSessionChanged: () => {
+          void app.tick()
+        },
+      })
       await CapacitorApp.addListener('appStateChange', (state) => {
         if (state.isActive) {
+          void syncFocusOverlayState(route.path)
           void app.tick()
           void updates.refresh().catch(() => {})
           void updates.check()
@@ -198,6 +221,7 @@ onMounted(async () => {
   }
 })
 onBeforeUnmount(() => {
+  stopOverlayEvents?.()
   window.removeEventListener('open-recovery', onOpenRecovery)
   window.removeEventListener('recovery-return-request', onRecoveryReturnRequest)
   window.removeEventListener('focus-return-request', onFocusReturnRequest)

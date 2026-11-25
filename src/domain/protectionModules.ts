@@ -18,6 +18,9 @@ export const STRICT_SUB_KEYS: readonly StrictSubKey[] = [
   'hideRecents',
   'hideLauncher',
   'wallpaper',
+  'strictSettings',
+  'deviceAdmin',
+  'rebootResume',
 ]
 export const QUIET_SUB_KEYS: readonly QuietSubKey[] = ['sound', 'intercept', 'whitelistPass']
 
@@ -30,6 +33,9 @@ export const RECOMMENDED_MODULE_DEFAULTS = {
     hideRecents: false,
     hideLauncher: false,
     wallpaper: false,
+    strictSettings: false,
+    deviceAdmin: false,
+    rebootResume: false,
   } as Record<StrictSubKey, boolean>,
   quiet: { sound: true, intercept: true, whitelistPass: true } as Record<QuietSubKey, boolean>,
 } as const
@@ -43,6 +49,9 @@ export const STRICT_ENHANCEMENT_MAP: Record<
   hideRecents: 'recentTasksHidden',
   hideLauncher: 'launcherIconHidden',
   wallpaper: 'wallpaperProtection',
+  strictSettings: 'strictSettingsGuard',
+  deviceAdmin: 'deviceAdminAntiUninstall',
+  rebootResume: 'rebootResumeLock',
 }
 
 const VALID_SUB_KEYS: Record<ProtectionModuleKey, readonly string[]> = {
@@ -192,6 +201,9 @@ export function migrateProtectionPreferences(
     hideRecents: enhSet.has('recentTasksHidden'),
     hideLauncher: enhSet.has('launcherIconHidden'),
     wallpaper: enhSet.has('wallpaperProtection'),
+    strictSettings: enhSet.has('strictSettingsGuard'),
+    deviceAdmin: enhSet.has('deviceAdminAntiUninstall'),
+    rebootResume: enhSet.has('rebootResumeLock'),
   }
   const strictEnabled = Object.values(strictValues).some(Boolean)
   const quietValues: Record<QuietSubKey, boolean> = {
@@ -440,6 +452,21 @@ export function syncLegacyFlatMutation(
       before.enhancements.includes('wallpaperProtection'),
       nextFlat.enhancements.includes('wallpaperProtection'),
     ],
+    [
+      'strictSettings',
+      before.enhancements.includes('strictSettingsGuard'),
+      nextFlat.enhancements.includes('strictSettingsGuard'),
+    ],
+    [
+      'deviceAdmin',
+      before.enhancements.includes('deviceAdminAntiUninstall'),
+      nextFlat.enhancements.includes('deviceAdminAntiUninstall'),
+    ],
+    [
+      'rebootResume',
+      before.enhancements.includes('rebootResumeLock'),
+      nextFlat.enhancements.includes('rebootResumeLock'),
+    ],
   ]
   if (strictPairs.some(([, prev, next]) => prev !== next)) {
     const nextStrictValues: Record<StrictSubKey, boolean> = {
@@ -449,6 +476,9 @@ export function syncLegacyFlatMutation(
       hideRecents: nextFlat.enhancements.includes('recentTasksHidden'),
       hideLauncher: nextFlat.enhancements.includes('launcherIconHidden'),
       wallpaper: nextFlat.enhancements.includes('wallpaperProtection'),
+      strictSettings: nextFlat.enhancements.includes('strictSettingsGuard'),
+      deviceAdmin: nextFlat.enhancements.includes('deviceAdminAntiUninstall'),
+      rebootResume: nextFlat.enhancements.includes('rebootResumeLock'),
     }
     const anyStrictOn = Object.values(nextStrictValues).some(Boolean)
     const nextMods = structuredClone(updated.modules!)

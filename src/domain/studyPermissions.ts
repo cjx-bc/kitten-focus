@@ -138,6 +138,7 @@ export function collectRequiredPermissions(
   }
   if (strictOn && strictSub.navigation) accessUsers.push('严格模式 · 限制桌面与最近任务')
   if (strictOn && strictSub.antiClose) accessUsers.push('严格模式 · 精确防关闭')
+  if (strictOn && strictSub.strictSettings) accessUsers.push('严格模式 · 严格权限目录防撤权')
   if (accessUsers.length > 0) {
     const supported = Boolean(p?.supported)
     const ready = supported && a11yReady

@@ -42,7 +42,12 @@ final class LockEngine {
     }
     private boolean interrupted(JSONObject session) { return session.optInt("bootId") != clock.boot() || clock.mono() < session.optLong("anchorMono"); }
     private long elapsed(JSONObject session) {
-        return Math.min(session.optLong("targetMs"), session.optLong("elapsedMs") + (interrupted(session) ? 0 : Math.max(0, clock.mono() - session.optLong("anchorMono"))));
+        if (interrupted(session)) {
+            return FocusEngine.canResumeAfterReboot(session, clock)
+                ? FocusEngine.resumedElapsedAfterReboot(session, clock.epoch())
+                : session.optLong("elapsedMs");
+        }
+        return Math.min(session.optLong("targetMs"), session.optLong("elapsedMs") + Math.max(0, clock.mono() - session.optLong("anchorMono")));
     }
     JSONObject observe() throws JSONException {
         JSONObject session = store.read("active"); if (!owns(session)) session = null;
@@ -57,7 +62,23 @@ final class LockEngine {
             if (!action.equals("read") && !action.equals("finish")) throw new IllegalArgumentException("锁机操作无效");
             return observe();
         }
-        boolean interrupted = interrupted(session); long elapsed = elapsed(session); boolean reached = elapsed >= session.optLong("targetMs");
+        boolean interrupted = interrupted(session);
+        long epoch = clock.epoch(), mono = clock.mono();
+        if (interrupted && FocusEngine.canResumeAfterReboot(session, clock)) {
+            long resumed = FocusEngine.resumedElapsedAfterReboot(session, epoch);
+            session.put("elapsedMs", resumed).put("bootId", clock.boot()).put("anchorMono", mono).put("anchorEpoch", epoch);
+            store.write("active", session);
+            Reminders.scheduleFocus(context, session);
+            Reminders.showFocus(context, session, resumed);
+            return observe();
+        }
+        boolean expiredAfterReboot = interrupted && session.optBoolean("rebootResume") && session.optBoolean("strictMode")
+            && session.optLong("deadlineEpoch") > 0 && session.optLong("deadlineEpoch") <= epoch;
+        if (expiredAfterReboot) {
+            interrupted = false;
+        }
+        long elapsed = expiredAfterReboot ? session.optLong("targetMs") : elapsed(session);
+        boolean reached = elapsed >= session.optLong("targetMs");
         if (!action.equals("read") && session.optBoolean("strictMode") && !interrupted && !reached)
             throw new IllegalStateException("严格锁机不能暂停、取消或提前解除；请等待本轮到期，帮助和故障恢复仍可进入");
         if (!action.equals("read") && !action.equals("finish")) throw new IllegalArgumentException("锁机操作无效");

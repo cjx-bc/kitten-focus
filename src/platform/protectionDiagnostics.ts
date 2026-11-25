@@ -175,6 +175,6 @@ export async function readProtectionDiagnostics(saved: Partial<ProtectionPrefere
       : rows.some(row => row.state === 'protecting') ? 'protecting' : rows.some(row => row.state === 'ready') ? 'ready' : 'off',
     capabilities: rows,
     identity: !native || !identity || identity.unknown ? '未核实本机设备管理身份，不能据此判断系统策略能力。'
-      : `普通管理员：${identity.ordinaryAdmin ? '已激活' : '未激活'}；设备所有者：${identity.deviceOwner ? '是' : '否'}；资料所有者：${identity.profileOwner ? '是' : '否'}。当前精确防关闭只使用普通无障碍，不施加系统防卸载策略。`,
+      : `普通管理员：${identity.ordinaryAdmin ? '已激活（仅用于防止专注期间误卸载，无擦除/锁屏权限，可随时一键停用）' : '未激活'}；设备所有者：${identity.deviceOwner ? '是' : '否'}；资料所有者：${identity.profileOwner ? '是' : '否'}。精确防关闭默认通过无障碍识别高危关闭/撤权页。`,
   }
 }

@@ -49,6 +49,9 @@ export type StrictSubKey =
   | 'hideRecents'
   | 'hideLauncher'
   | 'wallpaper'
+  | 'strictSettings'
+  | 'deviceAdmin'
+  | 'rebootResume'
 export type QuietSubKey = 'sound' | 'intercept' | 'whitelistPass'
 export type ProtectionModuleKey = 'apps' | 'strict' | 'quiet'
 export type ProtectionEnhancementKey =
@@ -58,6 +61,28 @@ export type ProtectionEnhancementKey =
   | 'launcherIconHidden'
   | 'wallpaperProtection'
   | 'lockMainInterfaceRestricted'
+  | 'strictSettingsGuard'
+  | 'deviceAdminAntiUninstall'
+  | 'rebootResumeLock'
+
+export interface KeepAliveGuide {
+  brand: 'oppo' | 'xiaomi' | 'vivo' | 'huawei' | 'samsung' | 'generic'
+  brandLabel: string
+  foregroundServiceActive: boolean
+  batteryOptimizationIgnored: boolean
+  hasAutoStartSurface: boolean
+  autoStartHint: string
+  recentLockHint: string
+  hideRecentsConflict: boolean
+}
+
+export interface DeviceAdminStatus {
+  supported: boolean
+  active: boolean
+  preferenceEnabled: boolean
+  state: 'active' | 'authorization' | 'off' | 'unsupported'
+  reason: string
+}
 
 export interface ModulePref<K extends string = string> {
   enabled: boolean

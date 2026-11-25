@@ -14,3 +14,9 @@ date: 2026-11-15
 2026-11-15 to-spec 续写补齐已有原型的锁机、放行通知与故障恢复操作默认，见[执行规格](../focus-control-implementation-spec.md)。这次同步修正原 ADR 仅列 Foqos 的过时来源描述；第三方来源适配、系统能力与恢复路线仍需验证，因此保持 proposed，不将候选研究或产品规则补齐标为架构已经通过实现验证。
 
 2026-11-21 学霸模式设置页整合改版（见[学霸模式改版方案](../study-mode-redesign.md)）：在 Vue 配置层收拢为“总开关 + 应用限制 / 严格模式（含防退出）/ 免打扰（合并声音免打扰与通知拦截）+ 授权与权限中心”，并增加“学霸专注期间锁定专注页（保留帮助/紧急/故障恢复出口）”以及模块“默认开启 + 记住自定义”偏好模型；通过 `resolveEffectiveProtection` 在会话开始前展开为既有扁平字段交由原生控制层，原生会话快照、执行边界与恢复出口保持不变。将“锁机时限制主界面入口”移至独立锁机配置页。
+
+2026-11-24 对抗层与四维保活融合升级：
+1. **全专注全屏悬浮窗覆盖与按键过滤边界**：`FocusBlockOverlay` 在普通专注下于应用离开前台（`onUserLeaveHint` / `onPause`）时即刻收起，不干扰桌面与日常应用使用；在学霸模式与锁机下自动优先升阶为 `TYPE_ACCESSIBILITY_OVERLAY`（连接无障碍时）或 `TYPE_APPLICATION_OVERLAY`，配合 `dispatchKeyEvent` 与无障碍 `onKeyEvent`（`flagRequestFilterKeyEvents`）拦截 `APP_SWITCH` / `BACK` / `MENU` / `SEARCH` 并放行音量与电源键。同时如实披露：Android 4.0+ 系统框架在 WMS 层截获 `KEYCODE_HOME` 与全面屏底部手势，应用层无法直接吞掉硬件 Home，需靠无障碍侦测桌面/多任务事件后 0ms 全屏遮罩、`GLOBAL_ACTION_BACK` 关概览与 `MainActivity` 强拉回协同达成闭环，且遮罩底部保留 2 步直达的紧急与故障恢复出口。
+2. **国产 ROM 精准防关闭与可选严格权限目录门禁**：扩展 OPPO/ColorOS、小米/HyperOS、vivo/OriginOS、华为/荣耀、三星系统设置与安全中心包名及窗口特征，默认维持“精准识别自身强停/卸载/撤权页、放行 Wi-Fi 与日常设置”；另在严格模式进阶折叠区提供可选 `strictSettingsGuard` 门禁高危权限目录页。
+3. **可选最小权限普通设备管理器（Q1-A）与可选重启续锁（Q3-B）**：允许用户主动激活仅声明空 `<uses-policies />` 的普通 `DeviceAdminReceiver`（默认关闭、绝不申请擦除数据或密码策略、明确区别于 Device Owner、在设置与故障恢复中心提供一键 `removeActiveAdmin()` 停用）；严格倒计时与严格锁机在进阶折叠区提供可选 `rebootResumeLock`（默认关闭，开机后若未到持久化 `deadlineEpoch` 则恢复剩余锁机，超期则正常结算释放）。
+4. **四维保活基线**：将「活跃期 `specialUse` 前台服务 + 划卡自救与低频心跳 + 电池优化豁免 + 按品牌直达自启动白名单 + 多任务手动锁卡手势向导」作为冷静、非阻塞建议基线，明确提示多任务锁卡与 `hideRecents` 的互斥关系，不虚报系统防杀免疫。

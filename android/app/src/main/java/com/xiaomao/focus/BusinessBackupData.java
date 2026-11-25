@@ -44,7 +44,7 @@ final class BusinessBackupData {
     }
     private static final java.util.Map<String, java.util.Set<String>> MODULE_SUB_KEYS = java.util.Map.of(
         "apps", java.util.Set.of("restrict", "temporaryAccess"),
-        "strict", java.util.Set.of("noPauseEnd", "navigation", "antiClose", "hideRecents", "hideLauncher", "wallpaper"),
+        "strict", java.util.Set.of("noPauseEnd", "navigation", "antiClose", "hideRecents", "hideLauncher", "wallpaper", "strictSettings", "deviceAdmin", "rebootResume"),
         "quiet", java.util.Set.of("sound", "intercept", "whitelistPass")
     );
     private static void validateModules(Object raw) throws JSONException {

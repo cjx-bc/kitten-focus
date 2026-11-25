@@ -21,6 +21,16 @@ final class AndroidLauncherSystem implements LauncherSystem {
         context.getPackageManager().setComponentEnabledSetting(alias, state, PackageManager.DONT_KILL_APP);
         if (componentState() != state) throw new IllegalStateException("系统未确认桌面入口组件状态，请进入故障恢复重试");
     }
+    @Override
+    public boolean conflictsWithAccessibilitySecurity() {
+        return shouldSkipLauncherHidingOnOem(
+            OemKeepAliveRouter.detectBrand(android.os.Build.MANUFACTURER, android.os.Build.BRAND),
+            FocusProtection.authorized(context) || FocusAccessibilityService.connected()
+        );
+    }
+    static boolean shouldSkipLauncherHidingOnOem(String brand, boolean accessibilityActive) {
+        return OemKeepAliveRouter.BRAND_OPPO.equals(brand) && accessibilityActive;
+    }
     public boolean launcherVisible() {
         Intent launch = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.getPackageName());
         for (android.content.pm.ResolveInfo info : context.getPackageManager().queryIntentActivities(launch, 0))

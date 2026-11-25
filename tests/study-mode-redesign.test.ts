@@ -61,6 +61,38 @@ vi.mock('../src/platform/bridge', () => ({
   openAlarmSettings: vi.fn(),
   exportFile: vi.fn(),
   importNativeFile: vi.fn(),
+  syncFocusOverlayState: vi.fn(),
+  onNativeOverlayEvent: vi.fn(async () => () => {}),
+  keepAliveDriver: {
+    guide: vi.fn(async () => ({
+      brand: 'generic',
+      brandLabel: '标准 Android',
+      foregroundServiceActive: false,
+      batteryOptimizationIgnored: false,
+      hasAutoStartSurface: false,
+      autoStartHint: '测试自启动提示',
+      recentLockHint: '测试锁卡提示',
+      hideRecentsConflict: false,
+    })),
+    openSettings: vi.fn(async () => true),
+  },
+  deviceAdminDriver: {
+    status: vi.fn(async () => ({
+      supported: true,
+      active: false,
+      preferenceEnabled: false,
+      state: 'off',
+      reason: '',
+    })),
+    requestActivation: vi.fn(async () => true),
+    deactivate: vi.fn(async () => ({
+      supported: true,
+      active: false,
+      preferenceEnabled: false,
+      state: 'off',
+      reason: '',
+    })),
+  },
   controlDriver: { observe: mocks.controlObserve },
   protectionDriver: {
     status: mocks.protection,
@@ -281,6 +313,9 @@ describe('P2: modular protection defaults, custom retention, migration, and back
       hideRecents: false,
       hideLauncher: false,
       wallpaper: false,
+      strictSettings: false,
+      deviceAdmin: false,
+      rebootResume: false,
     })
     expect(isModuleCustomized('strict', p.modules?.strict)).toBe(false)
     expect(p.strict).toBe(true)
@@ -482,6 +517,9 @@ describe('QA blocker regressions (Blockers #1, #2, #3, P1, P2, P3)', () => {
       hideRecents: false,
       hideLauncher: false,
       wallpaper: false,
+      strictSettings: false,
+      deviceAdmin: false,
+      rebootResume: false,
     })
 
     const disclosureMatch = strictSheet.html.match(/<details[^>]*class="[^"]*\badvanced-disclosure\b[^"]*"[^>]*>[\s\S]*?<\/details>/)

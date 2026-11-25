@@ -7,6 +7,7 @@ export type SheetView =
   | 'wallpaperConsent'
   | 'quiet'
   | 'permissions'
+  | 'keepAliveGuide'
   | 'permissionGuide'
 </script>
 
@@ -17,6 +18,8 @@ import { useApp } from '../stores/app'
 import {
   defaultProtection,
   type AppsSubKey,
+  type DeviceAdminStatus,
+  type KeepAliveGuide,
   type LauncherStatus,
   type ProtectionModuleKey,
   type ProtectionStatus,
@@ -43,6 +46,8 @@ import {
 } from '../domain/studyPermissions'
 import { capabilityToggleDisabled } from '../domain/protectionDisplay'
 import {
+  deviceAdminDriver,
+  keepAliveDriver,
   native,
   openBatteryOptimizationSettings,
   permissionStatus,
@@ -80,6 +85,36 @@ const notificationStatus = ref<NotificationStatus | null>(null)
 const recentTasksStatus = ref<RecentTasksStatus | null>(null)
 const launcherStatus = ref<LauncherStatus | null>(null)
 const wallpaperStatus = ref<WallpaperStatus | null>(null)
+const keepAliveGuide = ref<KeepAliveGuide | null>(null)
+const deviceAdminStatus = ref<DeviceAdminStatus | null>(null)
+const KEEP_ALIVE_AUTOSTART_KEY = 'cat_focus_keepalive_autostart_done'
+const KEEP_ALIVE_LOCKCARD_KEY = 'cat_focus_keepalive_lockcard_done'
+function readLocalFlag(key: string): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+function writeLocalFlag(key: string, checked: boolean) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, checked ? '1' : '0')
+    }
+  } catch {}
+}
+const autoStartChecked = ref(readLocalFlag(KEEP_ALIVE_AUTOSTART_KEY))
+const recentLockChecked = ref(readLocalFlag(KEEP_ALIVE_LOCKCARD_KEY))
+function toggleAutoStartChecked(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  autoStartChecked.value = checked
+  writeLocalFlag(KEEP_ALIVE_AUTOSTART_KEY, checked)
+}
+function toggleRecentLockChecked(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  recentLockChecked.value = checked
+  writeLocalFlag(KEEP_ALIVE_LOCKCARD_KEY, checked)
+}
 const systemPermissions = ref<SystemPermissions>({
   notifications: false,
   exactAlarms: false,
@@ -122,6 +157,7 @@ const backLabel = computed<string | undefined>(() => {
   if (view.value === 'home') return undefined
   if (view.value === 'whitelist') return '应用限制'
   if (view.value === 'wallpaperConsent') return '严格模式'
+  if (view.value === 'keepAliveGuide') return '权限与使用帮助'
   return '学霸模式'
 })
 
@@ -131,6 +167,8 @@ function goBack() {
     view.value = 'apps'
   } else if (view.value === 'wallpaperConsent') {
     view.value = 'strict'
+  } else if (view.value === 'keepAliveGuide') {
+    view.value = 'permissions'
   } else {
     view.value = 'home'
   }
@@ -278,6 +316,8 @@ const sheetTitle = computed(() => {
       return '免打扰'
     case 'permissions':
       return '权限与使用帮助'
+    case 'keepAliveGuide':
+      return '后台防清理与保活'
     case 'permissionGuide':
       return guidePermissions.value.length > 0
         ? `还差 ${guidePermissions.value.length} 项权限`
@@ -314,7 +354,7 @@ async function saveStudy(study: boolean) {
 
 async function refresh() {
   const request = ++revision
-  const [protRes, dndRes, notifRes, recentRes, launcherRes, wallpaperRes, sysRes] = await Promise.allSettled([
+  const [protRes, dndRes, notifRes, recentRes, launcherRes, wallpaperRes, sysRes, keepAliveRes, adminRes] = await Promise.allSettled([
     protectionDriver.status(),
     dndDriver.read(),
     notificationDriver.read(),
@@ -322,6 +362,8 @@ async function refresh() {
     protectionDriver.launcher(),
     protectionDriver.wallpaper(),
     permissionStatus(),
+    keepAliveDriver?.guide?.() ?? Promise.resolve(null),
+    deviceAdminDriver?.status?.() ?? Promise.resolve(null),
   ])
   if (request !== revision) return
   if (dndRes.status === 'fulfilled') dndStatus.value = dndRes.value
@@ -329,6 +371,8 @@ async function refresh() {
   if (recentRes.status === 'fulfilled') recentTasksStatus.value = recentRes.value
   if (launcherRes.status === 'fulfilled') launcherStatus.value = launcherRes.value
   if (wallpaperRes.status === 'fulfilled') wallpaperStatus.value = wallpaperRes.value
+  if (keepAliveRes.status === 'fulfilled' && keepAliveRes.value) keepAliveGuide.value = keepAliveRes.value
+  if (adminRes.status === 'fulfilled' && adminRes.value) deviceAdminStatus.value = adminRes.value
   if (sysRes.status === 'fulfilled' && sysRes.value) {
     systemPermissions.value = {
       ...systemPermissions.value,
@@ -426,6 +470,56 @@ async function openBatteryKeepAlive() {
     await refresh()
   } catch (e) {
     pendingBatteryFeedback.value = false
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function openKeepAliveTarget(target: 'battery' | 'autostart' | 'appDetails') {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  if (target === 'battery') {
+    pendingBatteryFeedback.value = !systemPermissions.value.batteryOptimizationIgnored
+  }
+  try {
+    if (target === 'battery') {
+      await openBatteryOptimizationSettings()
+    } else {
+      await keepAliveDriver.openSettings(target)
+    }
+    await refresh()
+  } catch (e) {
+    pendingBatteryFeedback.value = false
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function activateDeviceAdmin() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    await deviceAdminDriver.requestActivation()
+    await refresh()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function deactivateDeviceAdmin() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    deviceAdminStatus.value = await deviceAdminDriver.deactivate()
+    app.notify('已停用防卸载保护')
+  } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
     busy.value = false
@@ -1048,6 +1142,72 @@ async function importWallpaperOriginal(lockSource: boolean) {
               />
             </label>
           </div>
+
+          <div class="sub-item-row">
+            <label class="switch">
+              <span>
+                严格权限目录防撤权
+                <small>在严格会话中拦截无障碍与权限管理入口，不影响日常网络或蓝牙设置</small>
+              </span>
+              <input
+                type="checkbox"
+                :checked="strictSub.strictSettings"
+                :disabled="capabilityToggleDisabled(strictSub.strictSettings, status?.supported, busy)"
+                @change="toggleSubItem('strict', 'strictSettings', $event)"
+              />
+            </label>
+          </div>
+
+          <div class="sub-item-row">
+            <label class="switch">
+              <span>
+                防卸载保护（设备管理器）
+                <small>仅防止专注或锁机期间误卸载，无擦除数据或改密码权限，随时可一键停用</small>
+              </span>
+              <input
+                type="checkbox"
+                :checked="strictSub.deviceAdmin"
+                :disabled="capabilityToggleDisabled(strictSub.deviceAdmin, status?.supported, busy)"
+                @change="toggleSubItem('strict', 'deviceAdmin', $event)"
+              />
+            </label>
+            <div v-if="strictSub.deviceAdmin || deviceAdminStatus?.active" class="sub-item-action">
+              <p v-if="deviceAdminStatus?.reason" class="field-help">{{ deviceAdminStatus.reason }}</p>
+              <button
+                v-if="deviceAdminStatus?.active"
+                type="button"
+                class="secondary wide"
+                :disabled="busy"
+                @click="deactivateDeviceAdmin"
+              >
+                一键停用防卸载保护
+              </button>
+              <button
+                v-else-if="deviceAdminStatus?.supported"
+                type="button"
+                class="secondary wide"
+                :disabled="busy"
+                @click="activateDeviceAdmin"
+              >
+                前往系统激活防卸载
+              </button>
+            </div>
+          </div>
+
+          <div class="sub-item-row">
+            <label class="switch">
+              <span>
+                重启后未到期继续锁机
+                <small>重启手机后若严格倒计时或严格锁机尚未到期，自动续接限制</small>
+              </span>
+              <input
+                type="checkbox"
+                :checked="strictSub.rebootResume"
+                :disabled="capabilityToggleDisabled(strictSub.rebootResume, status?.supported, busy)"
+                @change="toggleSubItem('strict', 'rebootResume', $event)"
+              />
+            </label>
+          </div>
         </div>
       </details>
 
@@ -1274,6 +1434,14 @@ async function importWallpaperOriginal(lockSource: boolean) {
           >
             查看各品牌防清理设置 <Icon name="right" :size="14" />
           </button>
+          <button
+            type="button"
+            class="secondary wide"
+            :disabled="busy"
+            @click="view = 'keepAliveGuide'"
+          >
+            打开 4 步保活与锁卡向导
+          </button>
         </article>
         <article
           v-if="status?.supported && !permissionMap.has('accessibility')"
@@ -1319,6 +1487,95 @@ async function importWallpaperOriginal(lockSource: boolean) {
 
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <button type="button" class="primary wide" @click="view = 'home'">完成</button>
+    </div>
+
+    <!-- 4 步后台防清理与保活向导 -->
+    <div v-else-if="view === 'keepAliveGuide'" class="study-stack">
+      <p class="detail-desc">
+        当前机型识别：<strong>{{ keepAliveGuide?.brandLabel || '标准 Android' }}</strong>。按以下 4 步完成后台放行，可显著降低系统回收概率。
+      </p>
+
+      <p v-if="keepAliveGuide?.hideRecentsConflict" class="notice" role="status">
+        已开启「隐藏最近任务卡片」，系统会隐藏小猫卡片导致无法手动加锁。需要锁卡保活时，建议前往「严格模式 → 进阶防绕过」关闭隐藏卡片。
+      </p>
+
+      <article class="perm-card">
+        <div class="perm-head">
+          <strong>1. 专注进行中前台提醒保活</strong>
+          <span class="perm-state" :class="keepAliveGuide?.foregroundServiceActive ? 'ok' : 'calm'">
+            {{ keepAliveGuide?.foregroundServiceActive ? '运行中' : '专注时自动启动' }}
+          </span>
+        </div>
+        <p class="field-help">仅在专注或锁机进行中激活并复用专注状态通知，结束后立即停止。</p>
+      </article>
+
+      <article class="perm-card">
+        <div class="perm-head">
+          <strong>2. 允许后台运行与电池优化白名单</strong>
+          <span
+            class="perm-state"
+            :class="keepAliveGuide?.batteryOptimizationIgnored || systemPermissions.batteryOptimizationIgnored ? 'ok' : 'calm'"
+          >
+            {{
+              keepAliveGuide?.batteryOptimizationIgnored || systemPermissions.batteryOptimizationIgnored
+                ? '已放行'
+                : '未放行'
+            }}
+          </span>
+        </div>
+        <p class="field-help">避免熄屏或长时间锁机时被系统省电策略中断。</p>
+        <button
+          type="button"
+          class="secondary wide"
+          :disabled="busy"
+          @click="openKeepAliveTarget('battery')"
+        >
+          前往电池优化设置
+        </button>
+      </article>
+
+      <article class="perm-card">
+        <div class="perm-head">
+          <strong>3. 允许本机自启动管理</strong>
+          <span class="perm-state" :class="autoStartChecked ? 'ok' : 'calm'">
+            {{ autoStartChecked ? '已自查完成' : '手动设置' }}
+          </span>
+        </div>
+        <p class="field-help">
+          {{ keepAliveGuide?.autoStartHint || '在系统应用详情中允许后台运行与电池不受限制。' }}
+        </p>
+        <button
+          type="button"
+          class="secondary wide"
+          :disabled="busy"
+          @click="openKeepAliveTarget('autostart')"
+        >
+          前往本机自启动设置
+        </button>
+        <label class="keepalive-check">
+          <input type="checkbox" :checked="autoStartChecked" @change="toggleAutoStartChecked" />
+          <span>我已在本机设置中开启</span>
+        </label>
+      </article>
+
+      <article class="perm-card">
+        <div class="perm-head">
+          <strong>4. 在最近任务中锁定小猫卡片</strong>
+          <span class="perm-state" :class="recentLockChecked ? 'ok' : 'calm'">
+            {{ recentLockChecked ? '已自查完成' : '手动操作' }}
+          </span>
+        </div>
+        <p class="field-help">
+          {{ keepAliveGuide?.recentLockHint || '打开最近任务并锁定小猫专注卡片，防止一键清理滑掉。' }}
+        </p>
+        <label class="keepalive-check">
+          <input type="checkbox" :checked="recentLockChecked" @change="toggleRecentLockChecked" />
+          <span>我已在最近任务页加锁</span>
+        </label>
+      </article>
+
+      <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+      <button type="button" class="primary wide" @click="view = 'permissions'">返回</button>
     </div>
 
     <!-- 统一权限引导清单 -->
@@ -1611,5 +1868,22 @@ small {
 .wallpaper-consent input {
   flex: 0 0 auto;
   margin-top: 2px;
+}
+.sub-item-action {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.keepalive-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.keepalive-check input {
+  flex: 0 0 auto;
 }
 </style>

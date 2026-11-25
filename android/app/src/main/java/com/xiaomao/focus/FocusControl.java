@@ -203,7 +203,11 @@ final class FocusControl {
             started.put("temporaryAccessRuntime", new JSONObject().put("used", 0).put("requests", new JSONArray()));
             started.put("state", "running").put("elapsedMs", 0).put("pausedMs", 0)
                 .put("segments", new JSONArray());
-            started.put("protection", accessibility == null ? FocusProtection.capture(context, store, session) : FocusProtection.capture(context, store, session, accessibility));
+            JSONObject capturedProtection = accessibility == null ? FocusProtection.capture(context, store, session) : FocusProtection.capture(context, store, session, accessibility);
+            started.put("protection", capturedProtection);
+            if (strict && FocusProtection.rebootResumeRequested(capturedProtection)) {
+                started.put("rebootResume", true).put("deadlineEpoch", clock.epoch() + session.optLong("targetMs"));
+            }
             started.put("dndRequested", protection != null && Boolean.TRUE.equals(protection.opt("dnd")));
             navigation.checkStart(started);
             antiClose.checkStart(started);
@@ -261,9 +265,13 @@ final class FocusControl {
             if (Boolean.TRUE.equals(configuration.opt("strict")) && !strictLockConfirmed)
                 throw new IllegalStateException("请先确认严格锁机：开始后不能暂停、取消或提前解除，到期自动结束");
             JSONObject session = lock.create(configuration);
-            session.put("protection", accessibility == null
+            JSONObject capturedLockProtection = accessibility == null
                 ? FocusProtection.captureLock(context, store, configuration)
-                : FocusProtection.captureLock(context, store, configuration, accessibility));
+                : FocusProtection.captureLock(context, store, configuration, accessibility);
+            session.put("protection", capturedLockProtection);
+            if (Boolean.TRUE.equals(configuration.opt("strict")) && FocusProtection.rebootResumeRequested(capturedLockProtection)) {
+                session.put("rebootResume", true).put("deadlineEpoch", clock.epoch() + session.optLong("targetMs"));
+            }
             navigation.checkStart(session);
             antiClose.checkStart(session);
             session.put("originalEnhancedProtectionSettings", FocusProtection.lockEnhancements(store, configuration));
@@ -323,6 +331,7 @@ final class FocusControl {
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
             if (active == null) { navigation.release(); antiClose.release(); }
+            else { FocusKeepAliveService.ensureStarted(context); }
             synchronizeEffects(store.read("active"));
             return observeControl();
         }
@@ -451,7 +460,7 @@ final class FocusControl {
             if (!FocusProtection.shouldBlock(context, observation, target, ""))
                 return grantResult("denied", "此应用不受本轮限制，无需临时放行", false, session);
             if (!(accessibility == null
-                ? AppUsageGuard.isReady(context) || (FocusProtection.authorized(context) && FocusAccessibilityService.connected())
+                ? FocusProtection.isAppRestrictionReady(context)
                 : accessibility.authorized() && accessibility.connected()))
                 return grantResult("failed", "应用限制授权或服务连接已失效，没有扣次", false, session);
             JSONObject before = new JSONObject(session.toString());
