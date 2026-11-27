@@ -1,5 +1,5 @@
 import type { FocusRecord } from './model'
-import { intervalBuckets, zoneDate } from './dates'
+import { addDays, dateKey, intervalBuckets, localDate, zoneDate, zoneHour } from './dates'
 
 const DAY_MS = 86_400_000
 
@@ -23,6 +23,29 @@ export interface TodaySummary {
   items: Map<string, TodayItemSummary>
 }
 
+export interface StatisticsCategory {
+  id: string
+  name: string
+  color: string
+  ms: number
+  count: number
+}
+
+export interface HeatmapDay {
+  date: string
+  ms: number
+  count: number
+  level: 0 | 1 | 2 | 3 | 4
+}
+
+export interface YearlyHeatmap {
+  from: string
+  to: string
+  days: HeatmapDay[]
+  maxMs: number
+  maxCount: number
+}
+
 export function statistics(
   records: FocusRecord[],
   from: string,
@@ -32,19 +55,29 @@ export function statistics(
   const [minEpoch, maxEpoch] = rangeEpochBounds(from, to)
   const inRange = (date: string) => date >= from && date <= to
   const daily = new Map<string, number>(),
+    dailyCounts = new Map<string, number>(),
     hours = Array<number>(24).fill(0),
-    categories = new Map<string, { id: string; name: string; color: string; ms: number }>()
+    hourCounts = Array<number>(24).fill(0),
+    categories = new Map<string, StatisticsCategory>()
   let totalMs = 0,
     count = 0,
+    earlyCount = 0,
     startedTotalMs = 0
   for (const record of records) {
-    if (
-      record.startedAt >= minEpoch &&
-      record.startedAt <= maxEpoch &&
-      inRange(zoneDate(record.startedAt, record.timeZone))
-    ) {
+    const startDate =
+      record.startedAt >= minEpoch && record.startedAt <= maxEpoch
+        ? zoneDate(record.startedAt, record.timeZone)
+        : ''
+    const startedInRange = Boolean(startDate && inRange(startDate))
+    if (startedInRange) {
       count++
+      if (record.status === 'early') earlyCount++
       startedTotalMs += record.durationMs
+      dailyCounts.set(startDate, (dailyCounts.get(startDate) || 0) + 1)
+      const startHour = zoneHour(record.startedAt, record.timeZone)
+      if (startHour >= 0 && startHour < 24) {
+        hourCounts[startHour] = (hourCounts[startHour] ?? 0) + 1
+      }
     }
     let recordMs = 0
     for (const segment of record.segments) {
@@ -57,27 +90,84 @@ export function statistics(
         daily.set(bucket.date, (daily.get(bucket.date) || 0) + bucket.ms)
       }
     }
-    if (recordMs) {
+    if (recordMs > 0 || startedInRange) {
       const id = (group === 'theme' ? record.themeId : record.itemId) || 'free',
         row = categories.get(id) || {
           id,
           name: group === 'theme' ? record.themeName || '自由专注' : record.title,
           color: record.color,
           ms: 0,
+          count: 0,
         }
       row.ms += recordMs
+      if (startedInRange) row.count += 1
       categories.set(id, row)
     }
   }
   return {
     totalMs,
     count,
+    earlyCount,
     averageMs: count ? startedTotalMs / count : null,
     days: daily.size,
     daily: [...daily].sort(([a], [b]) => a.localeCompare(b)),
+    dailyCounts: [...dailyCounts].sort(([a], [b]) => a.localeCompare(b)),
     hours,
-    categories: [...categories.values()].sort((a, b) => b.ms - a.ms),
+    hourCounts,
+    categories: [...categories.values()].sort((a, b) => b.ms - a.ms || b.count - a.count),
   }
+}
+
+function normalizeAnchorDate(anchorDate: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(anchorDate)) {
+    const parsed = localDate(anchorDate)
+    if (Number.isFinite(parsed.getTime()) && dateKey(parsed) === anchorDate) {
+      return anchorDate
+    }
+  }
+  return dateKey()
+}
+
+function intensityLevel(value: number, maxValue: number, hasActivity: boolean): 0 | 1 | 2 | 3 | 4 {
+  if (!hasActivity) return 0
+  if (maxValue <= 0 || value <= 0) return 1
+  const ratio = value / maxValue
+  if (ratio <= 0.25) return 1
+  if (ratio <= 0.5) return 2
+  if (ratio <= 0.75) return 3
+  return 4
+}
+
+/** Build a 365-day heatmap ending on anchorDate using the same timezone rules as statistics(). */
+export function yearlyHeatmap(
+  records: FocusRecord[],
+  anchorDate: string,
+  metric: 'duration' | 'count' = 'duration',
+): YearlyHeatmap {
+  const to = normalizeAnchorDate(anchorDate)
+  const from = addDays(to, -364)
+  const summary = statistics(records, from, to)
+  const msByDate = new Map(summary.daily)
+  const countByDate = new Map(summary.dailyCounts)
+
+  let maxMs = 0
+  let maxCount = 0
+  for (const ms of msByDate.values()) if (ms > maxMs) maxMs = ms
+  for (const cnt of countByDate.values()) if (cnt > maxCount) maxCount = cnt
+
+  const days: HeatmapDay[] = []
+  for (let i = 0, day = from; i < 365; i++, day = addDays(day, 1)) {
+    const ms = msByDate.get(day) || 0
+    const count = countByDate.get(day) || 0
+    const active = ms > 0 || count > 0
+    const level =
+      metric === 'count'
+        ? intensityLevel(count, maxCount, active)
+        : intensityLevel(ms, maxMs, active)
+    days.push({ date: day, ms, count, level })
+  }
+
+  return { from, to, days, maxMs, maxCount }
 }
 
 export function todaySummary(records: FocusRecord[], today: string): TodaySummary {

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useApp } from '../stores/app'
-import { statistics } from '../domain/statistics'
+import { statistics, yearlyHeatmap } from '../domain/statistics'
 import {
   dateKey,
   localDate,
   addDays,
+  weekday,
   periodRange,
   duration,
   readableDate,
@@ -16,14 +17,21 @@ import type { FocusRecord } from '../domain/model'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
 import Chart from '../components/Chart.vue'
+
 const app = useApp(),
   period = ref('day'),
   anchor = ref(dateKey()),
+  metric = ref<'duration' | 'count'>('duration'),
   group = ref<'theme' | 'item'>('theme'),
   recordsOpen = ref(false),
   recordView = ref<'list' | 'detail'>('list'),
   selected = ref<FocusRecord | null>(null),
   confirmDelete = ref(false)
+
+const heatmapCanvas = ref<HTMLCanvasElement | null>(null)
+const selectedHeatmapIdx = ref(364)
+const heatmapDragging = ref(false)
+
 const periods = [
   ['day', '日'],
   ['week', '周'],
@@ -31,6 +39,9 @@ const periods = [
   ['year', '年'],
   ['all', '累计'],
 ]
+
+const HEATMAP_COLORS = ['#EAEAEA', '#D1D1D6', '#8E8E93', '#222222', '#EF4E36'] as const
+
 function isValidDateKey(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const parsed = localDate(value)
@@ -47,10 +58,14 @@ const range = computed(() => periodRange(period.value, safeAnchor.value)),
   stats = computed(() => statistics(app.data.records, ...range.value, group.value)),
   records = computed(() =>
     app.data.records
-      .filter((r) => statistics([r], ...range.value).totalMs > 0)
+      .filter((r) => {
+        const s = statistics([r], ...range.value)
+        return s.totalMs > 0 || s.count > 0
+      })
       .sort((a, b) => b.startedAt - a.startedAt),
   ),
   longestMs = computed(() => records.value.reduce((max, r) => Math.max(max, r.durationMs), 0))
+
 const periodTitle = computed(() =>
   period.value === 'all'
     ? '全部专注'
@@ -62,6 +77,7 @@ const periodTitle = computed(() =>
           ? `${safeAnchor.value.slice(0, 4)}年`
           : `${readableDate(range.value[0])} — ${readableDate(range.value[1])}`,
 )
+
 function changeDate(direction: number) {
   const d = localDate(safeAnchor.value)
   if (period.value === 'month') d.setMonth(d.getMonth() + direction, 1)
@@ -69,51 +85,210 @@ function changeDate(direction: number) {
   else d.setDate(d.getDate() + direction * (period.value === 'week' ? 7 : 1))
   anchor.value = dateKey(d)
 }
+
 const trend = computed(() => {
-  if (period.value === 'day')
+  const byCount = metric.value === 'count'
+  if (period.value === 'day') {
     return {
       labels: Array.from({ length: 24 }, (_, i) => (i % 4 === 0 ? `${i}时` : '')),
-      values: stats.value.hours.map((ms) => ms / 60000),
+      values: byCount ? stats.value.hourCounts : stats.value.hours.map((ms) => ms / 60000),
     }
+  }
   if (period.value === 'year' || period.value === 'all') {
+    const source = byCount ? stats.value.dailyCounts : stats.value.daily
     const rows = new Map<string, number>()
-    for (const [day, ms] of stats.value.daily) {
+    for (const [day, val] of source) {
       const key = day.slice(0, 7)
-      rows.set(key, (rows.get(key) || 0) + ms)
+      rows.set(key, (rows.get(key) || 0) + val)
     }
-    if (period.value === 'year')
+    if (period.value === 'year') {
       for (let m = 1; m <= 12; m++) {
         const key = `${safeAnchor.value.slice(0, 4)}-${String(m).padStart(2, '0')}`
         if (!rows.has(key)) rows.set(key, 0)
       }
+    }
     const sorted = [...rows].sort(([a], [b]) => a.localeCompare(b))
     return {
       labels: sorted.map(([date]) =>
         period.value === 'year' ? `${Number(date.slice(5))}月` : date.slice(2),
       ),
-      values: sorted.map(([, ms]) => ms / 60000),
+      values: sorted.map(([, val]) => (byCount ? val : val / 60000)),
     }
   }
-  const rows = new Map(stats.value.daily),
+  const rows = new Map(byCount ? stats.value.dailyCounts : stats.value.daily),
     labels: string[] = [],
     values: number[] = []
   for (let day = range.value[0], guard = 0; day <= range.value[1] && guard < 400; day = addDays(day, 1), guard++) {
     labels.push(String(Number(day.slice(8))))
-    values.push((rows.get(day) || 0) / 60000)
+    const val = rows.get(day) || 0
+    values.push(byCount ? val : val / 60000)
   }
   return { labels, values }
 })
-const trendOption = computed(() => {
+
+const trendStats = computed(() => {
   const values = trend.value.values
+  const nonZero = values.filter((v) => v > 0)
+  const mean = nonZero.length ? nonZero.reduce((sum, v) => sum + v, 0) / nonZero.length : 0
+  const qualifiedCount = mean > 0 ? values.filter((v) => v >= mean).length : 0
   const peak = Math.max(0, ...values)
+  return { values, mean, qualifiedCount, peak }
+})
+
+const trendMeanLabel = computed(() => {
+  const { mean } = trendStats.value
+  if (mean <= 0) return ''
+  return metric.value === 'count'
+    ? `${mean.toFixed(1).replace(/\.0$/, '')} 次`
+    : duration(Math.round(mean * 60000))
+})
+
+const trendStatusSummary = computed(() => {
+  const { mean, qualifiedCount } = trendStats.value
+  if (mean <= 0) return ''
+  return `非零均值 ${trendMeanLabel.value} · ${qualifiedCount} 个时段达标`
+})
+
+const trendOption = computed(() => {
+  const { values, mean, peak } = trendStats.value
+  const isCount = metric.value === 'count'
+  const showZeroRestingHeads = values.length <= 14
+
+  const baseSeries = [
+    {
+      type: 'bar',
+      data: values.map((value) => ({
+        value,
+        itemStyle: {
+          color: mean > 0 && value >= mean ? '#222222' : '#D1D1D6',
+          borderRadius: [5, 5, 0, 0],
+        },
+      })),
+      barMaxWidth: 24,
+      itemStyle: { color: '#222222', borderRadius: [5, 5, 0, 0] },
+      ...(mean > 0
+        ? {
+            markLine: {
+              symbol: ['none', 'none'],
+              silent: true,
+              lineStyle: { color: '#737378', type: 'dashed', width: 1.5 },
+              label: {
+                show: true,
+                position: 'insideEndTop',
+                formatter: `均值 ${trendMeanLabel.value}`,
+                color: '#66666b',
+                fontSize: 12,
+              },
+              data: [{ yAxis: mean }],
+            },
+          }
+        : {}),
+    },
+    ...(mean > 0
+      ? [
+          {
+            type: 'custom',
+            silent: true,
+            tooltip: { show: false },
+            z: 6,
+            data: values.map((v, i) => [i, v]),
+            renderItem: (
+              params: { dataIndex: number },
+              api: {
+                value: (idx: number) => number
+                coord: (pt: [number, number]) => [number, number]
+                size?: (val: [number, number]) => [number, number]
+              },
+            ) => {
+              const val = Number(api.value(1))
+              if (val <= 0 && !showZeroRestingHeads) return null
+              const [x, y] = api.coord([params.dataIndex, val])
+              const slotW = api.size ? api.size([1, 0])[0] : 24
+              const r = Math.max(4.5, Math.min(8, slotW * 0.34))
+              if (val >= mean) {
+                // Perked dark animal head with #EF4E36 red comb
+                const cy = y - r - 2
+                return {
+                  type: 'group',
+                  children: [
+                    // Red comb bumps
+                    { type: 'circle', shape: { cx: x - r * 0.32, cy: cy - r * 0.88, r: r * 0.24 }, style: { fill: '#EF4E36' } },
+                    { type: 'circle', shape: { cx: x, cy: cy - r * 1.04, r: r * 0.28 }, style: { fill: '#EF4E36' } },
+                    { type: 'circle', shape: { cx: x + r * 0.32, cy: cy - r * 0.88, r: r * 0.24 }, style: { fill: '#EF4E36' } },
+                    // Perked ears
+                    {
+                      type: 'polygon',
+                      shape: {
+                        points: [
+                          [x - r * 0.82, cy - r * 0.15],
+                          [x - r * 0.72, cy - r * 0.92],
+                          [x - r * 0.22, cy - r * 0.62],
+                        ],
+                      },
+                      style: { fill: '#222222' },
+                    },
+                    {
+                      type: 'polygon',
+                      shape: {
+                        points: [
+                          [x + r * 0.82, cy - r * 0.15],
+                          [x + r * 0.72, cy - r * 0.92],
+                          [x + r * 0.22, cy - r * 0.62],
+                        ],
+                      },
+                      style: { fill: '#222222' },
+                    },
+                    // Dark head
+                    { type: 'circle', shape: { cx: x, cy, r }, style: { fill: '#222222' } },
+                    // White eye circles + dark pupils
+                    { type: 'circle', shape: { cx: x - r * 0.34, cy: cy - r * 0.04, r: r * 0.25 }, style: { fill: '#FFFFFF' } },
+                    { type: 'circle', shape: { cx: x + r * 0.34, cy: cy - r * 0.04, r: r * 0.25 }, style: { fill: '#FFFFFF' } },
+                    { type: 'circle', shape: { cx: x - r * 0.3, cy: cy - r * 0.04, r: r * 0.12 }, style: { fill: '#222222' } },
+                    { type: 'circle', shape: { cx: x + r * 0.3, cy: cy - r * 0.04, r: r * 0.12 }, style: { fill: '#222222' } },
+                    // Tiny accent beak/nose
+                    { type: 'circle', shape: { cx: x, cy: cy + r * 0.26, r: r * 0.14 }, style: { fill: '#EF4E36' } },
+                  ],
+                }
+              }
+              // Resting light-gray animal head
+              const ry = r * 0.72
+              const rx = r * 0.98
+              const cy = y - ry - 1.5
+              return {
+                type: 'group',
+                children: [
+                  {
+                    type: 'ellipse',
+                    shape: { cx: x, cy, rx, ry },
+                    style: { fill: '#D1D1D6', stroke: '#AEAEB2', lineWidth: 1 },
+                  },
+                  {
+                    type: 'line',
+                    shape: { x1: x - rx * 0.44, y1: cy, x2: x - rx * 0.14, y2: cy },
+                    style: { stroke: '#737378', lineWidth: 1.4, lineCap: 'round' },
+                  },
+                  {
+                    type: 'line',
+                    shape: { x1: x + rx * 0.14, y1: cy, x2: x + rx * 0.44, y2: cy },
+                    style: { stroke: '#737378', lineWidth: 1.4, lineCap: 'round' },
+                  },
+                ],
+              }
+            },
+          },
+        ]
+      : []),
+  ]
+
   return {
     animation: false,
     tooltip: {
       trigger: 'axis',
       textStyle: { fontSize: 12 },
-      valueFormatter: (value: unknown) => duration(Number(value) * 60000),
+      valueFormatter: (value: unknown) =>
+        isCount ? `${Math.round(Number(value))} 次` : duration(Number(value) * 60000),
     },
-    grid: { left: 44, right: 8, top: 24, bottom: 28 },
+    grid: { left: 44, right: 10, top: 40, bottom: 28 },
     xAxis: {
       type: 'category',
       data: trend.value.labels,
@@ -123,7 +298,7 @@ const trendOption = computed(() => {
     },
     yAxis: {
       type: 'value',
-      name: '分钟',
+      name: isCount ? '次' : '分钟',
       min: 0,
       minInterval: 1,
       max: peak > 0 && peak < 1 ? 1 : undefined,
@@ -131,59 +306,81 @@ const trendOption = computed(() => {
       splitLine: { lineStyle: { color: '#EAEAEA', type: 'dashed' } },
       axisLabel: { color: '#737378', fontSize: 12 },
     },
+    series: baseSeries,
+  }
+})
+
+const activeCategories = computed(() => {
+  const byCount = metric.value === 'count'
+  return stats.value.categories
+    .filter((c) => (byCount ? c.count > 0 : c.ms > 0))
+    .slice()
+    .sort((a, b) => (byCount ? b.count - a.count || b.ms - a.ms : b.ms - a.ms || b.count - a.count))
+})
+
+const distributionTotal = computed(() =>
+  metric.value === 'count' ? stats.value.count : stats.value.totalMs,
+)
+
+const pieOption = computed(() => {
+  const byCount = metric.value === 'count'
+  return {
+    animation: false,
+    tooltip: {
+      trigger: 'item',
+      textStyle: { fontSize: 12 },
+      formatter: (p: unknown) => {
+        const row = p as { name: string; value: number; percent: number }
+        const formatted = byCount ? `${Math.round(row.value)} 次` : duration(row.value)
+        return `${escapeHtml(String(row.name ?? ''))}<br/>${formatted} · ${row.percent}%`
+      },
+    },
     series: [
       {
-        type: 'bar',
-        data: values.map((value) => ({
-          value,
-          itemStyle: {
-            color: peak > 0 && value === peak ? '#EF4E36' : '#222222',
-            borderRadius: [5, 5, 0, 0],
-          },
+        type: 'pie',
+        radius: ['57%', '78%'],
+        center: ['50%', '50%'],
+        label: { show: false },
+        itemStyle: { borderColor: '#F5F5F5', borderWidth: 4, borderRadius: 5 },
+        data: activeCategories.value.map((c) => ({
+          name: c.name,
+          value: byCount ? c.count : c.ms,
+          itemStyle: { color: c.color },
         })),
-        barMaxWidth: 24,
-        itemStyle: { color: '#222222', borderRadius: [5, 5, 0, 0] },
       },
     ],
   }
 })
-const pieOption = computed(() => ({
-  animation: false,
-  tooltip: {
-    trigger: 'item',
-    textStyle: { fontSize: 12 },
-    formatter: (p: unknown) => {
-      const row = p as { name: string; value: number; percent: number }
-      return `${escapeHtml(String(row.name ?? ''))}<br/>${duration(row.value)} · ${row.percent}%`
-    },
-  },
-  series: [
-    {
-      type: 'pie',
-      radius: ['57%', '78%'],
-      center: ['50%', '50%'],
-      label: { show: false },
-      itemStyle: { borderColor: '#F5F5F5', borderWidth: 4, borderRadius: 5 },
-      data: stats.value.categories.map((c) => ({
-        name: c.name,
-        value: c.ms,
-        itemStyle: { color: c.color },
-      })),
-    },
-  ],
-}))
+
 const hourOption = computed(() => {
-  const values = stats.value.hours.map((v) => v / 60000)
+  const isCount = metric.value === 'count'
+  const values = isCount ? stats.value.hourCounts : stats.value.hours.map((v) => v / 60000)
   const peak = Math.max(0, ...values)
   return {
-    ...trendOption.value,
-    yAxis: {
-      ...trendOption.value.yAxis,
-      max: peak > 0 && peak < 1 ? 1 : undefined,
+    animation: false,
+    tooltip: {
+      trigger: 'axis',
+      textStyle: { fontSize: 12 },
+      valueFormatter: (value: unknown) =>
+        isCount ? `${Math.round(Number(value))} 次` : duration(Number(value) * 60000),
     },
+    grid: { left: 44, right: 10, top: 24, bottom: 28 },
     xAxis: {
-      ...trendOption.value.xAxis,
+      type: 'category',
       data: Array.from({ length: 24 }, (_, i) => (i % 4 === 0 ? `${i}时` : '')),
+      axisLine: { lineStyle: { color: '#EAEAEA' } },
+      axisTick: { show: false },
+      axisLabel: { color: '#737378', fontSize: 12 },
+    },
+    yAxis: {
+      type: 'value',
+      name: isCount ? '次' : '分钟',
+      min: 0,
+      minInterval: 1,
+      max: peak > 0 && peak < 1 ? 1 : undefined,
+      nameTextStyle: { color: '#737378', fontSize: 12 },
+      splitLine: { lineStyle: { color: '#EAEAEA', type: 'dashed' } },
+      axisLabel: { color: '#737378', fontSize: 12 },
     },
     series: [
       {
@@ -201,8 +398,212 @@ const hourOption = computed(() => {
     ],
   }
 })
+
+// 365-day single-canvas heatmap (Year view)
+const heatmapAnchor = computed(() => {
+  const today = dateKey()
+  return safeAnchor.value.slice(0, 4) === today.slice(0, 4)
+    ? safeAnchor.value
+    : `${safeAnchor.value.slice(0, 4)}-12-31`
+})
+
+const heatmap = computed(() => yearlyHeatmap(app.data.records, heatmapAnchor.value, metric.value))
+
+watch(heatmapAnchor, () => {
+  selectedHeatmapIdx.value = Math.max(0, heatmap.value.days.length - 1)
+})
+
+const selectedHeatmapDay = computed(
+  () => heatmap.value.days[selectedHeatmapIdx.value] ?? heatmap.value.days[heatmap.value.days.length - 1]!,
+)
+
+const heatmapReadoutText = computed(() => {
+  const d = selectedHeatmapDay.value
+  return `${readableDate(d.date)} · ${d.count} 次 · ${duration(d.ms)}`
+})
+
+function heatmapLayout(cssWidth: number, cssHeight: number) {
+  const leadingEmpty = weekday(heatmap.value.from) - 1
+  const totalCols = Math.ceil((leadingEmpty + heatmap.value.days.length) / 7)
+  const padX = 4
+  const padY = 6
+  const colPitch = Math.max(4, (cssWidth - padX * 2) / totalCols)
+  const rowPitch = Math.max(6, (cssHeight - padY * 2) / 7)
+  const cellW = Math.max(2.5, colPitch - 1.5)
+  const cellH = Math.max(4, Math.min(11, rowPitch - 2))
+  const offsetY = (cssHeight - rowPitch * 7) / 2
+  return { leadingEmpty, totalCols, padX, colPitch, rowPitch, cellW, cellH, offsetY }
+}
+
+function fillRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const radius = Math.min(r, w / 2, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.arcTo(x + w, y, x + w, y + h, radius)
+  ctx.arcTo(x + w, y + h, x, y + h, radius)
+  ctx.arcTo(x, y + h, x, y, radius)
+  ctx.arcTo(x, y, x + w, y, radius)
+  ctx.closePath()
+  ctx.fill()
+}
+
+function strokeRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const radius = Math.min(r, w / 2, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.arcTo(x + w, y, x + w, y + h, radius)
+  ctx.arcTo(x + w, y + h, x, y + h, radius)
+  ctx.arcTo(x, y + h, x, y, radius)
+  ctx.arcTo(x, y, x + w, y, radius)
+  ctx.closePath()
+  ctx.stroke()
+}
+
+function drawHeatmap() {
+  const canvas = heatmapCanvas.value
+  if (!canvas) return
+  const cssWidth = canvas.clientWidth
+  const cssHeight = canvas.clientHeight
+  if (cssWidth <= 0 || cssHeight <= 0) return
+  const dpr =
+    typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio)
+      ? Math.min(Math.max(window.devicePixelRatio, 1), 2)
+      : 1
+  const targetW = Math.round(cssWidth * dpr)
+  const targetH = Math.round(cssHeight * dpr)
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW
+    canvas.height = targetH
+  }
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.save()
+  ctx.scale(dpr, dpr)
+  ctx.clearRect(0, 0, cssWidth, cssHeight)
+
+  const { leadingEmpty, padX, colPitch, rowPitch, cellW, cellH, offsetY } = heatmapLayout(
+    cssWidth,
+    cssHeight,
+  )
+  const days = heatmap.value.days
+  const selectedIdx = selectedHeatmapIdx.value
+
+  for (let i = 0; i < days.length; i++) {
+    const slot = i + leadingEmpty
+    const col = Math.floor(slot / 7)
+    const row = slot % 7
+    const x = padX + col * colPitch + (colPitch - cellW) / 2
+    const y = offsetY + row * rowPitch + (rowPitch - cellH) / 2
+    const day = days[i]!
+    ctx.fillStyle = HEATMAP_COLORS[day.level]
+    fillRoundRect(ctx, x, y, cellW, cellH, 2)
+    if (i === selectedIdx) {
+      ctx.strokeStyle = day.level >= 3 ? '#FFFFFF' : '#222222'
+      ctx.lineWidth = 1.5
+      strokeRoundRect(ctx, x - 0.5, y - 0.5, cellW + 1, cellH + 1, 2.5)
+      if (day.level >= 3) {
+        ctx.strokeStyle = '#222222'
+        ctx.lineWidth = 1
+        strokeRoundRect(ctx, x - 1.5, y - 1.5, cellW + 3, cellH + 3, 3)
+      }
+    }
+  }
+  ctx.restore()
+}
+
+function selectHeatmapAtClient(clientX: number, clientY: number) {
+  const canvas = heatmapCanvas.value
+  if (!canvas) return
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
+  const x = clientX - rect.left
+  const y = clientY - rect.top
+  const { leadingEmpty, totalCols, padX, colPitch, rowPitch, offsetY } = heatmapLayout(
+    rect.width,
+    rect.height,
+  )
+  const col = Math.max(0, Math.min(totalCols - 1, Math.floor((x - padX) / colPitch)))
+  const row = Math.max(0, Math.min(6, Math.floor((y - offsetY) / rowPitch)))
+  const maxIdx = heatmap.value.days.length - 1
+  const idx = Math.max(0, Math.min(maxIdx, col * 7 + row - leadingEmpty))
+  selectedHeatmapIdx.value = idx
+}
+
+function onHeatmapPointerDown(event: PointerEvent) {
+  heatmapDragging.value = true
+  try {
+    heatmapCanvas.value?.setPointerCapture?.(event.pointerId)
+  } catch {
+    // Ignore capture errors in synthetic event environments
+  }
+  selectHeatmapAtClient(event.clientX, event.clientY)
+}
+
+function onHeatmapPointerMove(event: PointerEvent) {
+  if (!heatmapDragging.value) return
+  selectHeatmapAtClient(event.clientX, event.clientY)
+}
+
+function onHeatmapPointerEnd(event: PointerEvent) {
+  if (!heatmapDragging.value) return
+  heatmapDragging.value = false
+  try {
+    if (heatmapCanvas.value?.hasPointerCapture?.(event.pointerId)) {
+      heatmapCanvas.value.releasePointerCapture(event.pointerId)
+    }
+  } catch {
+    // Ignore release errors
+  }
+}
+
+function onHeatmapKeyDown(event: KeyboardEvent) {
+  const maxIdx = heatmap.value.days.length - 1
+  let next = selectedHeatmapIdx.value
+  if (event.key === 'ArrowLeft') next = Math.max(0, next - 1)
+  else if (event.key === 'ArrowRight') next = Math.min(maxIdx, next + 1)
+  else if (event.key === 'ArrowUp') next = Math.max(0, next - 7)
+  else if (event.key === 'ArrowDown') next = Math.min(maxIdx, next + 7)
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = maxIdx
+  else return
+  event.preventDefault()
+  selectedHeatmapIdx.value = next
+}
+
+watch(heatmapCanvas, (el, _prev, onCleanup) => {
+  if (!el) return
+  let observer: ResizeObserver | undefined
+  void nextTick(() => drawHeatmap())
+  if (typeof ResizeObserver !== 'undefined') {
+    observer = new ResizeObserver(() => drawHeatmap())
+    observer.observe(el)
+  }
+  onCleanup(() => {
+    observer?.disconnect()
+  })
+})
+
+watch([heatmap, selectedHeatmapIdx], () => {
+  void nextTick(() => drawHeatmap())
+})
+
 const stateName = (r: FocusRecord) =>
   r.status === 'completed' ? '正常结束' : r.status === 'early' ? '提前结束' : '中断'
+
 function openRecords() {
   recordView.value = 'list'
   selected.value = null
@@ -305,6 +706,9 @@ async function confirmRemove(record: FocusRecord) {
           <span>专注次数</span><strong class="number">{{ stats.count }}<small>次</small></strong>
         </div>
         <div>
+          <span>提前结束次数</span><strong class="number">{{ stats.earlyCount }}<small>次</small></strong>
+        </div>
+        <div>
           <span>平均每次时长</span
           ><strong class="number">{{
             stats.averageMs === null ? '—' : duration(stats.averageMs)
@@ -312,17 +716,84 @@ async function confirmRemove(record: FocusRecord) {
         </div>
       </div>
     </section>
-    <section class="stats-card">
+    <div class="segmented metric-tabs" role="group" aria-label="统计单位">
+      <button
+        type="button"
+        :class="{ active: metric === 'duration' }"
+        :aria-pressed="metric === 'duration'"
+        @click="metric = 'duration'"
+      >
+        按时长
+      </button>
+      <button
+        type="button"
+        :class="{ active: metric === 'count' }"
+        :aria-pressed="metric === 'count'"
+        @click="metric = 'count'"
+      >
+        按次数
+      </button>
+    </div>
+    <section class="stats-card" data-ux-card>
       <div class="row between">
-        <h2>专注趋势</h2>
+        <h2>{{ metric === 'count' ? '专注次数趋势' : '专注时长趋势' }}</h2>
         <span class="chart-caption">{{ periodTitle }}</span>
       </div>
-      <Chart :option="trendOption" label="专注时长趋势柱状图" :height="205" />
-      <p v-if="!stats.totalMs" class="chart-empty">完成一次专注，看看时间留下的痕迹。</p>
+      <Chart
+        :option="trendOption"
+        :label="`${metric === 'count' ? '专注次数' : '专注时长'}趋势柱状图${trendStatusSummary ? `，${trendStatusSummary}` : ''}`"
+        :height="215"
+      />
+      <p v-if="trendStatusSummary" class="trend-summary">{{ trendStatusSummary }}</p>
+      <p v-else class="chart-empty">完成一次专注，看看时间留下的痕迹。</p>
     </section>
-    <section class="stats-card">
+    <section v-if="period === 'year'" class="stats-card heatmap-card" data-ux-card>
       <div class="row between">
-        <h2>专注分布</h2>
+        <h2>365天热力图</h2>
+        <span class="chart-caption">{{ heatmap.from.slice(5) }} ~ {{ heatmap.to.slice(5) }}</span>
+      </div>
+      <div class="heatmap-stage" data-tab-swipe-ignore>
+        <canvas
+          ref="heatmapCanvas"
+          class="heatmap-canvas"
+          data-tab-swipe-ignore
+          tabindex="0"
+          role="slider"
+          aria-label="365天专注热力图，按住滑动或使用方向键选择日期"
+          :aria-valuemin="0"
+          :aria-valuemax="heatmap.days.length - 1"
+          :aria-valuenow="selectedHeatmapIdx"
+          :aria-valuetext="heatmapReadoutText"
+          @pointerdown="onHeatmapPointerDown"
+          @pointermove="onHeatmapPointerMove"
+          @pointerup="onHeatmapPointerEnd"
+          @pointercancel="onHeatmapPointerEnd"
+          @keydown="onHeatmapKeyDown"
+        />
+      </div>
+      <div
+        class="heatmap-footer"
+        role="status"
+        aria-live="polite"
+        :data-heatmap-date="selectedHeatmapDay.date"
+        :data-heatmap-count="selectedHeatmapDay.count"
+        :data-heatmap-ms="selectedHeatmapDay.ms"
+      >
+        <span class="heatmap-readout">
+          <strong>{{ readableDate(selectedHeatmapDay.date) }}</strong>
+          · <span class="number">{{ selectedHeatmapDay.count }}</span> 次 ·
+          <span class="number">{{ duration(selectedHeatmapDay.ms) }}</span>
+        </span>
+        <span class="heatmap-scale" aria-hidden="true">
+          <span>少</span>
+          <i v-for="c in HEATMAP_COLORS" :key="c" :style="{ background: c }" />
+          <span>多</span>
+        </span>
+      </div>
+    </section>
+    <section class="stats-card" data-ux-card>
+      <div class="row between">
+        <h2>{{ metric === 'count' ? '次数分布' : '专注分布' }}</h2>
         <div class="mini-distribution">
           <button
             type="button"
@@ -341,32 +812,40 @@ async function confirmRemove(record: FocusRecord) {
           </button>
         </div>
       </div>
-      <div v-if="stats.totalMs" class="pie-area">
+      <div v-if="distributionTotal > 0" class="pie-area">
         <Chart
           :option="pieOption"
-          :label="group === 'theme' ? '各主题专注时长占比' : '各待办专注时长占比'"
+          :label="`${group === 'theme' ? '各主题' : '各待办'}${metric === 'count' ? '专注次数' : '专注时长'}占比`"
           :height="200"
         />
         <div class="pie-center">
-          <span class="number">{{ stats.categories.length }}</span><small>个专注方向</small>
+          <span class="number">{{ activeCategories.length }}</span><small>个专注方向</small>
         </div>
       </div>
       <div v-else class="no-distribution">
         <span class="empty-ring" /><span>还没有专注记录</span>
       </div>
-      <div v-if="stats.categories.length" class="legend-list">
-        <div v-for="row in stats.categories" :key="row.id" class="legend-row">
+      <div v-if="activeCategories.length" class="legend-list">
+        <div v-for="row in activeCategories" :key="row.id" class="legend-row">
           <span class="row"><i :style="{ background: row.color }" />{{ row.name }}</span
           ><span
-            ><strong>{{ duration(row.ms) }}</strong
-            ><small>{{ ((row.ms / stats.totalMs) * 100).toFixed(1) }}%</small></span
+            ><strong>{{ metric === 'count' ? `${row.count} 次` : duration(row.ms) }}</strong
+            ><small>{{
+              distributionTotal > 0
+                ? `${(((metric === 'count' ? row.count : row.ms) / distributionTotal) * 100).toFixed(1)}%`
+                : '0.0%'
+            }}</small></span
           >
         </div>
       </div>
     </section>
-    <section class="stats-card">
+    <section class="stats-card" data-ux-card>
       <h2>时段分布</h2>
-      <Chart :option="hourOption" label="一天24小时中的实际专注时长分布" :height="190" />
+      <Chart
+        :option="hourOption"
+        :label="`一天24小时中的${metric === 'count' ? '专注次数' : '实际专注时长'}分布`"
+        :height="190"
+      />
     </section>
     <Sheet
       :open="recordsOpen"
@@ -457,8 +936,12 @@ async function confirmRemove(record: FocusRecord) {
 .period-tabs {
   margin-bottom: 12px;
 }
-.period-tabs button {
+.period-tabs button,
+.metric-tabs button {
   min-height: 48px;
+}
+.metric-tabs {
+  margin-bottom: 16px;
 }
 .period-selector {
   display: flex;
@@ -547,11 +1030,62 @@ async function confirmRemove(record: FocusRecord) {
   font-size: 12px;
   color: var(--muted-surface);
 }
+.trend-summary,
 .chart-empty {
   font-size: 12px;
   text-align: center;
   color: var(--muted-surface);
   margin-top: 8px;
+}
+.heatmap-stage {
+  margin-top: 12px;
+  background: var(--white);
+  border-radius: 14px;
+  padding: 8px;
+}
+.heatmap-canvas {
+  display: block;
+  width: 100%;
+  height: 108px;
+  min-height: 48px;
+  touch-action: none;
+  cursor: crosshair;
+  outline: none;
+}
+.heatmap-canvas:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.heatmap-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted-surface);
+}
+.heatmap-readout {
+  font-size: 12px;
+  color: var(--ink);
+}
+.heatmap-readout .number {
+  font-weight: 800;
+}
+.heatmap-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted-surface);
+}
+.heatmap-scale i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
 }
 .pie-area {
   position: relative;

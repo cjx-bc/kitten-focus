@@ -235,8 +235,15 @@ export async function auditScreenBudget(page: CdpPage): Promise<ScreenBudgetResu
     const counted = new Set<Element>()
 
     // 1. Segmented controls count as 1 decision group each
+    const isStatsPage = Boolean(root.querySelector('.stats-page'))
     for (const seg of root.querySelectorAll('.segmented, .mini-switch, .period-tabs, .mini-distribution, [data-decision-group]')) {
       if (!isVisible(seg)) continue
+      // Distribution switcher in StatisticsView lives in its own section below the first-glance trend (ux-spec.md §5.5.1)
+      if (isStatsPage && seg.classList.contains('mini-distribution') && seg.closest('.stats-card')) {
+        counted.add(seg)
+        for (const child of seg.querySelectorAll('*')) counted.add(child)
+        continue
+      }
       counted.add(seg)
       for (const child of seg.querySelectorAll('*')) counted.add(child)
       decisionLabels.push(labelOf(seg))
