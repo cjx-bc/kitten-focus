@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Base64;
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -110,6 +111,38 @@ public class CatFocusPlugin extends Plugin {
     @PluginMethod public void openBatteryOptimizationSettings(PluginCall call){resolve(call,()->{BackgroundKeepAlive.openBatteryOptimizationSettings(getContext());return null;});}
     @PluginMethod public void exportFile(PluginCall call){Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE,call.getString("name","小猫专注备份.json"));startActivityForResult(call,intent,"exportResult");}
     @ActivityCallback private void exportResult(PluginCall call,ActivityResult result){if(call==null)return;if(result.getResultCode()!=Activity.RESULT_OK||result.getData()==null||result.getData().getData()==null){call.reject("已取消导出");return;}try(OutputStream stream=getContext().getContentResolver().openOutputStream(result.getData().getData(),"wt")){if(stream==null)throw new IllegalStateException("无法打开备份文件");stream.write(call.getString("text","").getBytes(StandardCharsets.UTF_8));call.resolve();}catch(Exception error){call.reject("备份导出失败",error);}}
+    @PluginMethod public void exportBase64File(PluginCall call){
+        String base64=call.getString("base64","");
+        if(base64==null||base64.isEmpty()){
+            call.reject("导出图片数据为空");
+            return;
+        }
+        String mimeType=call.getString("mimeType","image/png");
+        if(mimeType==null||mimeType.isEmpty())mimeType="image/png";
+        String name=call.getString("name","小猫专注农场打卡.png");
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mimeType).putExtra(Intent.EXTRA_TITLE,name);
+        startActivityForResult(call,intent,"exportBase64Result");
+    }
+    @ActivityCallback private void exportBase64Result(PluginCall call,ActivityResult result){
+        if(call==null)return;
+        if(result.getResultCode()!=Activity.RESULT_OK||result.getData()==null||result.getData().getData()==null){
+            call.reject("已取消导出");
+            return;
+        }
+        try{
+            String base64=call.getString("base64","");
+            int comma=base64.indexOf(',');
+            if(comma>=0)base64=base64.substring(comma+1);
+            byte[] bytes=Base64.decode(base64,Base64.DEFAULT);
+            try(OutputStream stream=getContext().getContentResolver().openOutputStream(result.getData().getData(),"w")){
+                if(stream==null)throw new IllegalStateException("无法打开导出文件");
+                stream.write(bytes);
+            }
+            call.resolve();
+        }catch(Exception error){
+            call.reject("图片导出失败",error);
+        }
+    }
     @PluginMethod public void importFile(PluginCall call){if(readActive()){call.reject("请先结束当前专注");return;}startActivityForResult(call,new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"),"importResult");}
     private boolean readActive(){try{return store.read("active")!=null;}catch(Exception error){return true;}}
     @ActivityCallback private void importResult(PluginCall call,ActivityResult result){if(call==null)return;if(result.getResultCode()!=Activity.RESULT_OK||result.getData()==null||result.getData().getData()==null){call.reject("已取消选择备份");return;}try(InputStream stream=getContext().getContentResolver().openInputStream(result.getData().getData());ByteArrayOutputStream bytes=new ByteArrayOutputStream()){if(stream==null)throw new IllegalStateException("无法读取备份文件");byte[] buffer=new byte[8192];int count;while((count=stream.read(buffer))!=-1){bytes.write(buffer,0,count);if(bytes.size()>20*1024*1024)throw new IllegalArgumentException("备份文件过大");}call.resolve(new JSObject().put("text",bytes.toString(StandardCharsets.UTF_8.name())));}catch(Exception error){call.reject("备份读取失败",error);}}

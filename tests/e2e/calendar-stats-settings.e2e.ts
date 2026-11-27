@@ -2,7 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import path from 'node:path'
 import { startStaticServer, type StaticServer } from './helpers/staticServer'
 import { CdpPage, type CatFocusStubOptions } from './helpers/cdpBrowser'
-import { auditModals } from './helpers/uxAudit'
+import {
+  auditModals,
+  auditReducedMotion,
+  auditScreenBudget,
+} from './helpers/uxAudit'
 
 describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7, UF8)', () => {
   let server: StaticServer
@@ -536,13 +540,229 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
     p.assertNoErrors('Statistics v2 CF-09')
   })
 
-  it('renders Cat tab placeholder strictly as 小猫还未入驻 (UF1)', async () => {
-    const p = await openPage()
+  it('supports Weekly Farm natural week stepper, >36 cap with exact cottage badge, animal tap record details, reduced motion, and SAF PNG export (CF-07)', async () => {
+    const pad2 = (n: number) => String(n).padStart(2, '0')
+    const toDateKey = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+    const now = new Date()
+    const dayOfWeek = now.getDay() || 7
+    const thisMon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (dayOfWeek - 1), 9, 0, 0, 0)
+    const prevMon = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - 7, 10, 0, 0, 0)
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
+
+    // 10 * 100m valid timer records in current week => 40 raised animals (4 each)
+    const records: Array<Record<string, unknown>> = Array.from({ length: 10 }, (_, i) => {
+      const start = thisMon.getTime() + i * 2 * 3_600_000
+      const dur = 100 * 60_000
+      return {
+        id: `farm-cw-${i}`,
+        itemId: null,
+        themeId: 't1',
+        title: `高数冲刺-${i}`,
+        themeName: '高数',
+        color: '#ef4e36',
+        mode: 'countdown',
+        targetMs: dur,
+        startedAt: start,
+        endedAt: start + dur,
+        timeZone: tz,
+        durationMs: dur,
+        pausedMs: 0,
+        segments: [{ start, end: start + dur }],
+        status: 'completed',
+        animalId: i % 2 === 0 ? 'black-cat' : 'yellow-chick',
+        skinId: i % 2 === 0 ? 'cow' : 'chestnut',
+        source: 'timer',
+        note: `本周复盘-${i}`,
+      }
+    })
+    // Manual backfill & early finish in current week must be excluded from farm count
+    records.push({
+      id: 'farm-manual',
+      itemId: null,
+      themeId: 't1',
+      title: '补录阅读',
+      themeName: '高数',
+      color: '#ef4e36',
+      mode: 'countdown',
+      targetMs: 100 * 60_000,
+      startedAt: thisMon.getTime() + 1000,
+      endedAt: thisMon.getTime() + 100 * 60_000,
+      timeZone: tz,
+      durationMs: 100 * 60_000,
+      pausedMs: 0,
+      segments: [{ start: thisMon.getTime() + 1000, end: thisMon.getTime() + 100 * 60_000 }],
+      status: 'completed',
+      source: 'manual',
+    })
+    records.push({
+      id: 'farm-early',
+      itemId: null,
+      themeId: 't1',
+      title: '放弃测试',
+      themeName: '高数',
+      color: '#ef4e36',
+      mode: 'countdown',
+      targetMs: 50 * 60_000,
+      startedAt: thisMon.getTime() + 2000,
+      endedAt: thisMon.getTime() + 30 * 60_000,
+      timeZone: tz,
+      durationMs: 30 * 60_000,
+      pausedMs: 0,
+      segments: [{ start: thisMon.getTime() + 2000, end: thisMon.getTime() + 30 * 60_000 }],
+      status: 'early',
+      source: 'timer',
+    })
+    // Previous week valid record (1 white-goose)
+    records.push({
+      id: 'farm-pw-1',
+      itemId: null,
+      themeId: 't1',
+      title: '上周文学阅读',
+      themeName: '语文',
+      color: '#7b9a80',
+      mode: 'countdown',
+      targetMs: 25 * 60_000,
+      startedAt: prevMon.getTime(),
+      endedAt: prevMon.getTime() + 25 * 60_000,
+      timeZone: tz,
+      durationMs: 25 * 60_000,
+      pausedMs: 0,
+      segments: [{ start: prevMon.getTime(), end: prevMon.getTime() + 25 * 60_000 }],
+      status: 'completed',
+      animalId: 'white-goose',
+      skinId: 'default',
+      source: 'timer',
+      note: '读完两章',
+    })
+
+    const p = await openPage({
+      supported: true,
+      authorized: true,
+      connected: true,
+      initialData: {
+        schemaVersion: 1,
+        themes: [{ id: 't1', name: '高数', color: '#ef4e36', order: 0, collapsed: false }],
+        items: [],
+        records,
+        deletedRecordIds: [],
+        events: [],
+        eventExceptions: [],
+        semesters: [],
+        courses: [],
+        courseExceptions: [],
+        preferences: { defaultMinutes: 25, sound: true, vibration: true, activeSemesterId: null },
+      },
+    })
+
     await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '农场' })
     await p.waitFor(() => window.location.hash.includes('/cat'))
-    const catText = await p.evaluate(() => (document.querySelector('main')?.innerText ?? '').trim())
-    expect(catText).toBe('小猫还未入驻')
-    p.assertNoErrors('Cat tab placeholder')
+    await p.waitFor(() => document.querySelectorAll('.farm-animal-btn').length === 36, {
+      label: '36 sampled animals rendered on meadow',
+    })
+
+    // Exact cottage count === 40 while rendered meadow animals <= 36
+    const farmState = await p.evaluate(() => ({
+      cottage: (document.querySelector('.cottage-count')?.textContent ?? '').trim(),
+      animalCount: document.querySelectorAll('.farm-animal-btn').length,
+      bodyText: document.body.innerText,
+    }))
+    expect(farmState.cottage).toBe('40')
+    expect(farmState.animalCount).toBe(36)
+    expect(farmState.bodyText).toContain('一周农场')
+    expect(farmState.bodyText).toContain('本周共养大 40 只')
+
+    // Tap first animal -> bounce + bottom source record detail
+    await p.evaluate(() => {
+      ;(document.querySelector('.farm-animal-btn') as HTMLElement | null)?.click()
+    })
+    await p.waitFor(() => !!document.querySelector('.farm-record-bar'), {
+      label: 'source record detail bar visible',
+    })
+    const barText = await p.evaluate(() => document.querySelector('.farm-record-bar')?.textContent ?? '')
+    expect(barText).toContain('高数冲刺-0')
+    expect(barText).toContain('1小时40分')
+    expect(barText).toContain('本周复盘-0')
+
+    // UX budget with animal selected (<= 4 decisions, 0 primary CTAs)
+    expect((await auditScreenBudget(p)).violations).toEqual([])
+
+    // Open record detail sheet -> single dialog, close cleanly
+    await p.clickByRoleOrText({ text: '查看记录', selector: '.farm-record-action' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    expect((await auditModals(p)).violations).toEqual([])
+    expect(await p.evaluate(() => document.querySelector('dialog[open]')?.textContent ?? '')).toContain('正常结束')
+    await p.pressKey('Escape')
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
+
+    // Step to previous natural week -> cottage shows 1, white-goose rendered, tap shows 上周文学阅读
+    await p.clickByRoleOrText({ name: '上一周' })
+    await p.waitFor(() => (document.querySelector('.cottage-count')?.textContent ?? '').trim() === '1', {
+      label: 'previous week cottage count 1',
+    })
+    expect(await p.evaluate(() => document.querySelectorAll('.farm-animal-btn').length)).toBe(1)
+    expect(await p.evaluate(() => document.body.innerText)).toContain('回到本周')
+    expect((await auditScreenBudget(p)).violations).toEqual([])
+
+    await p.evaluate(() => {
+      ;(document.querySelector('.farm-animal-btn') as HTMLElement | null)?.click()
+    })
+    await p.waitFor(() => (document.querySelector('.farm-record-bar')?.textContent ?? '').includes('上周文学阅读'))
+    const prevBarText = await p.evaluate(() => document.querySelector('.farm-record-bar')?.textContent ?? '')
+    expect(prevBarText).toContain('25分钟')
+    expect(prevBarText).toContain('读完两章')
+
+    // Return to current week -> open overflow menu -> preview & export PNG via SAF
+    await p.clickByRoleOrText({ text: '回到本周' })
+    await p.waitFor(() => (document.querySelector('.cottage-count')?.textContent ?? '').trim() === '40')
+
+    await p.clickByRoleOrText({ name: '农场操作' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    expect((await auditModals(p)).violations).toEqual([])
+    expect((await auditScreenBudget(p)).violations).toEqual([])
+
+    await p.clickByRoleOrText({ text: '导出预览', withinOpenDialog: true })
+    await p.waitFor(() => !!document.querySelector('dialog[open] img.farm-export-preview'), {
+      label: 'farm check-in PNG preview image',
+    })
+    const previewSrc = await p.evaluate(
+      () => (document.querySelector('dialog[open] img.farm-export-preview') as HTMLImageElement | null)?.src ?? '',
+    )
+    expect(previewSrc.startsWith('data:image/png;base64,')).toBe(true)
+
+    await p.clickByRoleOrText({ text: '保存本周农场打卡图', withinOpenDialog: true })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0, {
+      label: 'export sheet closed after save',
+    })
+    const exported = await p.evaluate(() => {
+      const stub = window as unknown as {
+        __catFocusStub: { getState: () => { lastExportedBase64?: { base64: string; name: string; mimeType: string } } }
+      }
+      return stub.__catFocusStub.getState().lastExportedBase64 ?? null
+    })
+    expect(exported).not.toBeNull()
+    expect(exported!.mimeType).toBe('image/png')
+    expect(exported!.name).toBe(`小猫专注-一周农场-${toDateKey(thisMon)}.png`)
+    expect(exported!.base64.length).toBeGreaterThan(100)
+
+    // Reduced motion disables stroll animation
+    await p.setReducedMotion(true)
+    const reducedAudit = await auditReducedMotion(p)
+    expect(reducedAudit.violations).toEqual([])
+    const strollAnim = await p.evaluate(() => {
+      const el = document.querySelector('.farm-pet-wrap.strolling')
+      return el ? getComputedStyle(el).animationDuration : '0s'
+    })
+    expect(strollAnim).toBe('0s')
+    await p.setReducedMotion(false)
+
+    // Step to empty next week -> empty state + 去专注 CTA
+    await p.clickByRoleOrText({ name: '下一周' })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('本周还没有养大的小动物'))
+    expect((await auditScreenBudget(p)).violations).toEqual([])
+    await p.clickByRoleOrText({ text: '去专注' })
+    await p.waitFor(() => window.location.hash.includes('/focus'))
+
+    p.assertNoErrors('Weekly Farm CF-07')
   })
 
   it('persists Settings defaults, rejects corrupt backup JSON, and blocks backup restore during active focus (UF8)', async () => {

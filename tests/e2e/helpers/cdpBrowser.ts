@@ -712,6 +712,10 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
       async consumeLockReturn() { const v = state.lockReturnRequested; state.lockReturnRequested = false; persist(); return { requested: v }; },
       async consumeRecoveryReturn() { const v = state.recoveryReturnRequested; state.recoveryReturnRequested = false; persist(); return { requested: v }; },
       async exportFile() {},
+      async exportBase64File(payload) {
+        state.lastExportedBase64 = payload;
+        persist();
+      },
       async importFile() { return { text: '{}' }; },
       async permissions() { return clone(state.permissions); },
       async requestNotifications() { state.permissions.notifications = true; persist(); return clone(state.permissions); },
