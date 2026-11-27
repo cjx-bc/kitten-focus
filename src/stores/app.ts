@@ -33,6 +33,7 @@ import {
   permissionStatus,
 } from '../platform/bridge'
 import { notificationDriver } from '../platform/notifications'
+import { stopWhiteNoisePlayback, syncWhiteNoisePlayback } from '../platform/whiteNoise'
 import { makeBackup, readBackup } from '../domain/backup'
 import { validateEvent } from '../domain/calendar'
 import { dateKey, weekday } from '../domain/dates'
@@ -164,6 +165,15 @@ export const useApp = defineStore('app', () => {
     writeQueue = pending.then(() => {}, () => {})
     return pending
   }
+  function syncWhiteNoiseFromApp() {
+    const active = focus.value.session
+    void syncWhiteNoisePlayback({
+      track: data.value.preferences.whiteNoise,
+      volume: data.value.preferences.whiteNoiseVolume,
+      hasActiveFocus: Boolean(active),
+      sessionState: active?.state ?? null,
+    })
+  }
   async function mutate(update: (next: AppData) => void) {
     if (!dataLoaded) throw new Error('本地数据尚未安全加载，请先恢复升级副本')
     await dataOperation(async () => {
@@ -181,6 +191,7 @@ export const useApp = defineStore('app', () => {
         clearStrictAcknowledged()
       }
       if (error.value.startsWith('保存失败，请重试：')) error.value = ''
+      syncWhiteNoiseFromApp()
       await syncReminders().catch(() => {
         notify('数据已保存，提醒同步未完成')
       })
@@ -189,6 +200,7 @@ export const useApp = defineStore('app', () => {
   async function acceptSnapshot(snapshot: FocusSnapshot) {
     const had = focus.value.session
     focus.value = snapshot
+    syncWhiteNoiseFromApp()
     const record = snapshot.record
     if (record && !data.value.deletedRecordIds.includes(record.id)) {
       if (had?.id === record.id) {
@@ -737,6 +749,7 @@ export const useApp = defineStore('app', () => {
       ])
       lastResult.value = undefined
       rest.value = { session: null, remainingMs: 0 }
+      syncWhiteNoiseFromApp()
       notify(
         checks.some((check) => check.status === 'rejected')
           ? '备份已恢复；提醒、应用或权限检查未完成，请进入设置重试'
@@ -750,6 +763,7 @@ export const useApp = defineStore('app', () => {
   function dispose() {
     clearInterval(timerHandle)
     timerHandle = undefined
+    stopWhiteNoisePlayback()
     if (visibilityBound && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange)
       visibilityBound = false

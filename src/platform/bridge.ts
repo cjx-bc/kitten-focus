@@ -80,9 +80,10 @@ interface NativeBridge {
   getDeviceAdminStatus(): Promise<DeviceAdminStatus>
   requestDeviceAdmin(): Promise<{ opened: boolean }>
   deactivateDeviceAdmin(): Promise<DeviceAdminStatus>
+  syncWhiteNoise?(options?: { userAction?: boolean }): Promise<{ ok: boolean }>
   addListener?(
     eventName: string,
-    listenerFunc: (data: { path?: string }) => void,
+    listenerFunc: (data: { path?: string; reason?: string; track?: string }) => void,
   ): Promise<{ remove: () => Promise<void> }>
 }
 export const native = Capacitor.isNativePlatform()
@@ -400,9 +401,15 @@ export const syncFocusOverlayState = async (route: string): Promise<void> => {
   await plugin.setFocusOverlayState({ route }).catch(() => {})
 }
 
+export const syncWhiteNoise = async (userAction = false): Promise<void> => {
+  if (!native || typeof plugin.syncWhiteNoise !== 'function') return
+  await plugin.syncWhiteNoise({ userAction }).catch(() => {})
+}
+
 export const onNativeOverlayEvent = async (handlers: {
   onNavigate?: (path: string) => void
   onSessionChanged?: () => void
+  onWhiteNoisePaused?: (data: { reason?: string; track?: string }) => void
 }): Promise<() => void> => {
   if (!native || typeof plugin.addListener !== 'function') return () => {}
   const handles: Array<{ remove: () => Promise<void> }> = []
@@ -417,6 +424,13 @@ export const onNativeOverlayEvent = async (handlers: {
     handles.push(
       await plugin.addListener('sessionChanged', () => {
         handlers.onSessionChanged?.()
+      }),
+    )
+  }
+  if (handlers.onWhiteNoisePaused) {
+    handles.push(
+      await plugin.addListener('whiteNoisePaused', (data) => {
+        handlers.onWhiteNoisePaused?.(data ?? {})
       }),
     )
   }
