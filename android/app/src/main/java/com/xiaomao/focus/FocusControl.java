@@ -262,6 +262,20 @@ final class FocusControl {
             return projectTemporary(result);
         }
     }
+    JSONObject failByLeave() throws JSONException {
+        synchronized (store) {
+            JSONObject active = store.read("active");
+            if (active == null || LockEngine.owns(active) || !"running".equals(active.optString("state"))) {
+                return null;
+            }
+            JSONObject result = focus.action("fail_leave");
+            JSONObject remaining = result.optJSONObject("session");
+            recovery.releaseFinished(remaining == null ? null : remaining.optString("id"));
+            if (remaining == null) { navigation.release(); antiClose.release(); }
+            synchronizeEffects(store.read("active"));
+            return projectTemporary(result);
+        }
+    }
     JSONObject startLock(String configurationId) throws JSONException { return startLock(configurationId, false); }
     JSONObject startLock(String configurationId, boolean strictLockConfirmed) throws JSONException {
         synchronized (store) {

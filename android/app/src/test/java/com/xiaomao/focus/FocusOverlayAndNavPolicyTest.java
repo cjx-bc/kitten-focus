@@ -136,13 +136,46 @@ public class FocusOverlayAndNavPolicyTest {
 
     @Test
     public void suppressesOverlayOnSafeRoutesIncludingCatCalendarAndStatistics() {
-        assertTrue(FocusBlockOverlay.isSafeRoute("/cat"));
-        assertTrue(FocusBlockOverlay.isSafeRoute("/calendar"));
-        assertTrue(FocusBlockOverlay.isSafeRoute("/statistics"));
-        assertTrue(FocusBlockOverlay.isSafeRoute("/tasks"));
-        assertTrue(FocusBlockOverlay.isSafeRoute("/settings"));
+        String[] safeRoutes = {
+            "/", "/calendar", "/cat", "/statistics", "/settings",
+            "/tasks", "/rest", "/permissions", "/help", "/emergency", "/recovery"
+        };
+        for (String route : safeRoutes) {
+            assertTrue("Expected safe route: " + route, FocusBlockOverlay.isSafeRoute(route));
+            assertTrue("Expected suppressed for active session on: " + route, FocusBlockOverlay.shouldSuppressOverlay(true, route));
+            assertTrue("Expected suppressed for standby session on: " + route, FocusBlockOverlay.shouldSuppressOverlay(false, route));
+        }
         assertFalse(FocusBlockOverlay.isSafeRoute("/focus"));
         assertFalse(FocusBlockOverlay.isSafeRoute("/lock"));
+        assertTrue(FocusBlockOverlay.shouldSuppressOverlay(false, "/focus"));
+        assertTrue(FocusBlockOverlay.shouldSuppressOverlay(false, "/lock"));
+        assertFalse(FocusBlockOverlay.shouldSuppressOverlay(true, "/focus"));
+        assertFalse(FocusBlockOverlay.shouldSuppressOverlay(true, "/lock"));
         assertEquals(Mode.NONE, FocusBlockOverlay.resolveOverlayMode(false, true, false, false));
+    }
+
+    @Test
+    public void usesBrandSpecMonochromeTokensAndSupportsAllAnimalSilhouettesSafely() {
+        assertEquals("#FFFFFF", FocusBlockOverlay.COLOR_BG);
+        assertEquals("#F5F5F5", FocusBlockOverlay.COLOR_SURFACE);
+        assertEquals("#222222", FocusBlockOverlay.COLOR_INK);
+        assertEquals("#737378", FocusBlockOverlay.COLOR_MUTED);
+        assertEquals("#66666B", FocusBlockOverlay.COLOR_MUTED_SURFACE);
+        assertEquals("#EAEAEA", FocusBlockOverlay.COLOR_LINE);
+        assertEquals("#EF4E36", FocusBlockOverlay.COLOR_ACCENT);
+
+        assertEquals(null, FocusBlockOverlay.resolveNunitoTypeface(null));
+
+        String[] animals = {
+            "black-cat", "yellow-chick", "white-goose", "orange-cat",
+            "pixel-bird", "patch-bear", "green-parrot", "flying-pig",
+            "balloon-dog", "light-deer", "angel-cat", "black-dragon"
+        };
+        for (String animalId : animals) {
+            int[] palette = FocusBlockOverlay.resolveAnimalPalette(animalId, "default");
+            assertEquals(3, palette.length);
+        }
+        int[] chestnut = FocusBlockOverlay.resolveAnimalPalette("yellow-chick", "chestnut");
+        assertEquals(0xFF9C6B43, chestnut[0]);
     }
 }

@@ -189,4 +189,41 @@ public class FocusEngineRegretWindowTest {
         assertEquals(10 * 60_000L, rest.getLong("durationMs"));
         assertEquals(1, effects.syncRestCount);
     }
+
+    @Test
+    public void failLeaveSettlesRunningCountdownAndStopwatchAsEarlyLeftAppAfterRegretWindow() throws Exception {
+        MemoryStore store = new MemoryStore();
+        FakeClock clock = new FakeClock();
+        NoopEffects effects = new NoopEffects();
+        FocusEngine engine = new FocusEngine(store, clock, effects);
+
+        // Countdown >= 10s settles as early with failReason=left_app
+        engine.start(session("countdown", false));
+        clock.advance(10_500L);
+        JSONObject leaveResult = engine.action("fail_leave");
+        assertTrue(leaveResult.isNull("session"));
+        JSONObject record = leaveResult.getJSONObject("record");
+        assertEquals("early", record.getString("status"));
+        assertEquals("left_app", record.getString("failReason"));
+        assertEquals(10_500L, record.getLong("durationMs"));
+        assertNull(store.read("active"));
+        assertEquals(1, effects.cancelledCount);
+
+        // Stopwatch >= 10s also settles as early/left_app (not completed!)
+        engine.start(session("stopwatch", false));
+        clock.advance(12_000L);
+        JSONObject stopwatchLeave = engine.action("fail_leave");
+        JSONObject swRecord = stopwatchLeave.getJSONObject("record");
+        assertEquals("early", swRecord.getString("status"));
+        assertEquals("left_app", swRecord.getString("failReason"));
+
+        // Paused session must NOT be failed by fail_leave
+        engine.start(session("countdown", false));
+        clock.advance(15_000L);
+        engine.action("pause");
+        JSONObject pausedLeave = engine.action("fail_leave");
+        assertFalse(pausedLeave.isNull("session"));
+        assertEquals("paused", pausedLeave.getJSONObject("session").getString("state"));
+        assertFalse(pausedLeave.has("record"));
+    }
 }

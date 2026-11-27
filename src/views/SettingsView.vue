@@ -178,13 +178,19 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisible)
 })
 
-async function preference(key: 'sound' | 'vibration' | 'keepScreenOn', event: Event) {
+async function preference(
+  key: 'sound' | 'vibration' | 'keepScreenOn' | 'leaveAppFail',
+  event: Event,
+) {
   const target = event.target as HTMLInputElement
   const value = target.checked
   try {
     await app.mutate((d) => (d.preferences[key] = value))
   } catch (e) {
-    target.checked = key === 'keepScreenOn' ? app.data.preferences.keepScreenOn !== false : app.data.preferences[key]
+    target.checked =
+      key === 'keepScreenOn' || key === 'leaveAppFail'
+        ? app.data.preferences[key] !== false
+        : Boolean(app.data.preferences[key])
     app.notify(e instanceof Error ? e.message : String(e))
   }
 }
@@ -405,6 +411,20 @@ async function openBatteryOptimization() {
           {{ app.lock.session ? '进行中' : '配置与记录' }}<Icon name="right" :size="16" />
         </span>
       </RouterLink>
+      <label class="settings-row switch">
+        <span class="row settings-row-lead">
+          <Icon name="cat" :size="20" />
+          <span class="settings-row-copy">
+            <span>轻看护</span>
+            <small>熄屏锁屏与通话不受影响</small>
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          :checked="app.data.preferences.leaveAppFail !== false"
+          @change="preference('leaveAppFail', $event)"
+        />
+      </label>
     </div>
 
     <h3 class="settings-section-label">数据与支持</h3>

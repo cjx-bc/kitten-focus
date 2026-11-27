@@ -439,6 +439,26 @@ describe('UI audit fixes', () => {
     expect(mocks.app.saveEvent).toHaveBeenCalledOnce()
   })
 
+  it('SettingsView renders 轻看护 toggle in 专注保护 with <= 4 rows, default true, and exemption help text', async () => {
+    const { state, html } = await mountSSR(SettingsView)
+    expect(html).toContain('轻看护')
+    expect(html).toContain('熄屏锁屏与通话不受影响')
+    const protectSection = html.split('专注保护')[1]?.split('数据与支持')[0] ?? ''
+    const protectRows = protectSection.match(/class="settings-row(?=["\s])/g) ?? []
+    expect(protectRows.length).toBeLessThanOrEqual(4)
+    expect(protectRows.length).toBeGreaterThanOrEqual(3)
+
+    const leaveFailTarget = { checked: false }
+    await state.preference('leaveAppFail', { target: leaveFailTarget })
+    expect(mocks.app.data.preferences.leaveAppFail).toBe(false)
+
+    mocks.app.mutate.mockRejectedValueOnce(new Error('保存失败'))
+    const revertTarget = { checked: true }
+    await state.preference('leaveAppFail', { target: revertTarget })
+    expect(revertTarget.checked).toBe(false)
+    expect(mocks.app.notify).toHaveBeenCalledWith('保存失败')
+  })
+
   it('reverts checkbox checked state on error across SettingsView, StudyModeSheet, and LockMainEntrySetting', async () => {
     mocks.app.mutate.mockRejectedValueOnce(new Error('保存失败'))
     const settings = (await mountSSR(SettingsView)).state

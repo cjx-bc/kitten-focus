@@ -4,8 +4,13 @@ import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
+import android.graphics.RectF;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
@@ -44,11 +49,21 @@ final class FocusBlockOverlay {
         GUARD_PULLBACK
     }
 
+    static final String COLOR_BG = "#FFFFFF";
+    static final String COLOR_SURFACE = "#F5F5F5";
+    static final String COLOR_INK = "#222222";
+    static final String COLOR_MUTED = "#737378";
+    static final String COLOR_MUTED_SURFACE = "#66666B";
+    static final String COLOR_LINE = "#EAEAEA";
+    static final String COLOR_ACCENT = "#EF4E36";
+
     private static final long TICK_INTERVAL_MS = 1000L;
     private static final long WHITELIST_LAUNCH_GRACE_MS = 2500L;
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor();
 
     private static volatile Handler cachedMainHandler;
+    private static volatile Typeface cachedNunitoTypeface;
+    private static volatile boolean nunitoLoadAttempted = false;
     private static WindowManager windowManager;
     private static View overlayView;
     private static Context appContext;
@@ -171,7 +186,7 @@ final class FocusBlockOverlay {
     }
 
     static boolean isSafeRoute(String routePath) {
-        if (routePath == null) routePath = "/";
+        if (routePath == null || routePath.isEmpty()) routePath = "/";
         return routePath.startsWith("/recovery")
             || routePath.startsWith("/emergency")
             || routePath.startsWith("/help")
@@ -187,13 +202,17 @@ final class FocusBlockOverlay {
             || routePath.equals("/");
     }
 
+    static boolean shouldSuppressOverlay(boolean activeSession, String routePath) {
+        return !activeSession || isSafeRoute(routePath);
+    }
+
     static void updateRouteState(Context context, String routePath) {
-        if (routePath == null) routePath = "/";
+        if (routePath == null || routePath.isEmpty()) routePath = "/";
         currentRoute = routePath;
         boolean safe = isSafeRoute(routePath);
         safeRouteSuppressed = safe;
         if (safe) {
-            if (currentMode == Mode.NORMAL_FOCUS || currentMode == Mode.STUDY_LOCKED) {
+            if (currentMode != Mode.BLOCKED_APP && currentMode != Mode.GUARD_PULLBACK) {
                 dismiss();
             }
             return;
@@ -209,7 +228,9 @@ final class FocusBlockOverlay {
         yieldedWhitelistPackage = "";
         guardReasonLabel = "";
         blockedPackage = "";
-        if (!safeRouteSuppressed) {
+        if (safeRouteSuppressed) {
+            dismiss();
+        } else {
             refreshFromControlAsync(context);
         }
     }
@@ -391,7 +412,7 @@ final class FocusBlockOverlay {
                 dismiss();
                 return;
             }
-            if (safeRouteSuppressed && !blockedApp && !guardPullback) {
+            if ((safeRouteSuppressed || shouldSuppressOverlay(snap.active, currentRoute)) && !blockedApp && !guardPullback) {
                 dismiss();
                 return;
             }
@@ -451,12 +472,13 @@ final class FocusBlockOverlay {
                                 if (!finalSnap.active || FocusProtection.isInActiveCall(app)) {
                                     dismiss();
                                     CatFocusPlugin.emitJsEvent("sessionChanged", "");
+                                    MainActivity.refreshWindowState(app);
                                     return;
                                 }
                                 Mode activeMode = currentMode;
                                 boolean isBlocked = activeMode == Mode.BLOCKED_APP;
                                 boolean isGuard = activeMode == Mode.GUARD_PULLBACK;
-                                if (safeRouteSuppressed && !isBlocked && !isGuard) {
+                                if ((safeRouteSuppressed || shouldSuppressOverlay(finalSnap.active, currentRoute)) && !isBlocked && !isGuard) {
                                     dismiss();
                                     return;
                                 }
@@ -517,7 +539,8 @@ final class FocusBlockOverlay {
         final boolean keepScreenOn = snap.keepScreenOn && !snap.paused && !snap.isLock;
         String signature = mode.name() + "|" + subPanel + "|" + snap.paused + "|" + snap.strictMode
             + "|" + snap.countdown + "|" + keepScreenOn + "|" + blockedPackage + "|" + guardReasonLabel
-            + "|" + snap.temporaryRemaining + "|" + snap.whitelistApps.size() + "|" + snap.title;
+            + "|" + snap.temporaryRemaining + "|" + snap.whitelistApps.size() + "|" + snap.title
+            + "|" + snap.animalId + "|" + snap.skinId;
 
         if (overlayView != null && windowManager != null && attachedWindowContext == hostCtx && lastAttachedLocked == locked) {
             if (keepScreenOn != lastAttachedKeepScreenOn) {
@@ -664,8 +687,8 @@ final class FocusBlockOverlay {
     private static View buildOverlayView(Context app, SessionSnapshot snap, Mode mode) {
         LinearLayout root = new LinearLayout(app);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.parseColor("#FAF9F7"));
-        root.setPadding(dp(app, 22), dp(app, 52), dp(app, 22), dp(app, 36));
+        root.setBackgroundColor(Color.parseColor(COLOR_BG));
+        root.setPadding(dp(app, 24), dp(app, 52), dp(app, 24), dp(app, 36));
         root.setClickable(true);
 
         // Top row
@@ -692,6 +715,7 @@ final class FocusBlockOverlay {
             topRow.addView(helpBtn);
         } else {
             String badgeText;
+            boolean alertBadge = mode == Mode.GUARD_PULLBACK || mode == Mode.BLOCKED_APP;
             if (mode == Mode.GUARD_PULLBACK) {
                 badgeText = "已拦回专注 · " + (TextUtils.isEmpty(guardReasonLabel) ? "保护中" : guardReasonLabel);
             } else if (mode == Mode.BLOCKED_APP) {
@@ -701,13 +725,34 @@ final class FocusBlockOverlay {
             } else {
                 badgeText = snap.strictMode ? "严格学霸专注中" : "学霸专注中";
             }
+            LinearLayout badgePill = new LinearLayout(app);
+            badgePill.setOrientation(LinearLayout.HORIZONTAL);
+            badgePill.setGravity(Gravity.CENTER_VERTICAL);
+            badgePill.setBackground(pillBg(
+                Color.parseColor(COLOR_SURFACE),
+                dp(app, 20),
+                dp(app, 1),
+                Color.parseColor(COLOR_LINE)
+            ));
+            badgePill.setPadding(dp(app, 14), dp(app, 8), dp(app, 14), dp(app, 8));
+
+            if (alertBadge) {
+                View dot = new View(app);
+                dot.setBackground(pillBg(Color.parseColor(COLOR_ACCENT), dp(app, 4), 0, 0));
+                LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(app, 8), dp(app, 8));
+                dotLp.rightMargin = dp(app, 8);
+                dot.setLayoutParams(dotLp);
+                badgePill.addView(dot);
+            }
+
             TextView badge = new TextView(app);
             badge.setText(badgeText);
-            badge.setTextColor(Color.parseColor("#7A4312"));
+            badge.setTextColor(Color.parseColor(COLOR_INK));
             badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-            badge.setBackground(pillBg(Color.parseColor("#F4EAE0"), dp(app, 18), 0, 0));
-            badge.setPadding(dp(app, 14), dp(app, 8), dp(app, 14), dp(app, 8));
-            topRow.addView(badge);
+            badge.setSingleLine(true);
+            badge.setEllipsize(TextUtils.TruncateAt.END);
+            badgePill.addView(badge);
+            topRow.addView(badgePill);
         }
         root.addView(topRow);
 
@@ -722,14 +767,21 @@ final class FocusBlockOverlay {
         );
         center.setLayoutParams(centerLp);
 
+        boolean guardDoor = mode == Mode.BLOCKED_APP || mode == Mode.GUARD_PULLBACK;
+        PetGuardView petView = new PetGuardView(app, snap.animalId, snap.skinId, guardDoor);
+        LinearLayout.LayoutParams petLp = new LinearLayout.LayoutParams(dp(app, 108), dp(app, 108));
+        petLp.bottomMargin = dp(app, 10);
+        petView.setLayoutParams(petLp);
+        center.addView(petView);
+
         TextView modeHint = new TextView(app);
         modeHint.setGravity(Gravity.CENTER);
         modeHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        modeHint.setTextColor(Color.parseColor("#666666"));
+        modeHint.setTextColor(Color.parseColor(COLOR_MUTED));
         if (mode == Mode.NORMAL_FOCUS) {
             modeHint.setText(snap.paused ? "已暂停" : (snap.countdown ? "倒计时专注" : "自由正计时"));
         } else if (mode == Mode.BLOCKED_APP) {
-            modeHint.setText("当前处于学霸专注，非白名单应用已暂时限制");
+            modeHint.setText("专注中禁止使用，非白名单应用已暂时限制");
         } else if (mode == Mode.GUARD_PULLBACK) {
             modeHint.setText("专注进行中，离开操作已被稳稳拦回");
         } else {
@@ -740,7 +792,7 @@ final class FocusBlockOverlay {
         TextView titleView = new TextView(app);
         titleView.setGravity(Gravity.CENTER);
         titleView.setText(snap.title);
-        titleView.setTextColor(Color.parseColor("#111111"));
+        titleView.setTextColor(Color.parseColor(COLOR_INK));
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
         titleView.setPadding(0, dp(app, 10), 0, dp(app, 12));
         center.addView(titleView);
@@ -749,8 +801,12 @@ final class FocusBlockOverlay {
         clockView.setTag("focus_clock");
         clockView.setGravity(Gravity.CENTER);
         clockView.setText(formatClock(snap.countdown ? Math.max(0L, snap.remainingMs) : Math.max(0L, snap.elapsedMs)));
-        clockView.setTextColor(Color.parseColor("#111111"));
+        clockView.setTextColor(Color.parseColor(COLOR_INK));
         clockView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 62f);
+        Typeface nunito = resolveNunitoTypeface(app);
+        if (nunito != null) {
+            clockView.setTypeface(nunito, Typeface.BOLD);
+        }
         clockView.setFontFeatureSettings("tnum");
         center.addView(clockView);
 
@@ -758,7 +814,7 @@ final class FocusBlockOverlay {
             LinearLayout confirmCard = buildCard(app);
             TextView ask = new TextView(app);
             ask.setText(snap.isLock ? "确认提前结束本次锁机吗？" : "确认提前结束本轮专注吗？");
-            ask.setTextColor(Color.parseColor("#111111"));
+            ask.setTextColor(Color.parseColor(COLOR_INK));
             ask.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
             ask.setPadding(0, 0, 0, dp(app, 14));
             confirmCard.addView(ask);
@@ -786,7 +842,7 @@ final class FocusBlockOverlay {
             LinearLayout wlCard = buildCard(app);
             TextView wlTitle = new TextView(app);
             wlTitle.setText("学习白名单应用（点击可直接打开）");
-            wlTitle.setTextColor(Color.parseColor("#111111"));
+            wlTitle.setTextColor(Color.parseColor(COLOR_INK));
             wlTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
             wlTitle.setPadding(0, 0, 0, dp(app, 10));
             wlCard.addView(wlTitle);
@@ -799,7 +855,7 @@ final class FocusBlockOverlay {
             if (entries.isEmpty()) {
                 TextView empty = new TextView(app);
                 empty.setText("暂未添加学习白名单应用");
-                empty.setTextColor(Color.parseColor("#666666"));
+                empty.setTextColor(Color.parseColor(COLOR_MUTED));
                 empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
                 listBox.addView(empty);
             } else {
@@ -829,14 +885,14 @@ final class FocusBlockOverlay {
             LinearLayout safetyCard = buildCard(app);
             TextView safetyTitle = new TextView(app);
             safetyTitle.setText("需要退出或修复权限状态？");
-            safetyTitle.setTextColor(Color.parseColor("#111111"));
+            safetyTitle.setTextColor(Color.parseColor(COLOR_INK));
             safetyTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
             safetyTitle.setPadding(0, 0, 0, dp(app, 8));
             safetyCard.addView(safetyTitle);
 
             TextView safetyBody = new TextView(app);
             safetyBody.setText("如果遇到异常遮挡或需要撤回系统授权，可安全进入故障恢复，不影响已有学习记录。");
-            safetyBody.setTextColor(Color.parseColor("#666666"));
+            safetyBody.setTextColor(Color.parseColor(COLOR_MUTED));
             safetyBody.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             safetyBody.setPadding(0, 0, 0, dp(app, 12));
             safetyCard.addView(safetyBody);
@@ -901,7 +957,7 @@ final class FocusBlockOverlay {
 
             TextView hint = new TextView(app);
             hint.setText("可直接上滑返回桌面或切换其他应用，不影响正常使用");
-            hint.setTextColor(Color.parseColor("#666666"));
+            hint.setTextColor(Color.parseColor(COLOR_MUTED));
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
             hint.setGravity(Gravity.CENTER);
             hint.setPadding(0, dp(app, 12), 0, 0);
@@ -967,7 +1023,7 @@ final class FocusBlockOverlay {
 
             TextView safetyLink = new TextView(app);
             safetyLink.setText("遇到问题？紧急与故障恢复");
-            safetyLink.setTextColor(Color.parseColor("#666666"));
+            safetyLink.setTextColor(Color.parseColor(COLOR_MUTED));
             safetyLink.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
             safetyLink.setGravity(Gravity.CENTER);
             safetyLink.setMinimumHeight(dp(app, 48));
@@ -1005,6 +1061,7 @@ final class FocusBlockOverlay {
                     renderAsync(app, obs, currentMode == Mode.BLOCKED_APP, currentMode == Mode.GUARD_PULLBACK, guardReasonLabel);
                 }
                 CatFocusPlugin.emitJsEvent("sessionChanged", "");
+                MainActivity.refreshWindowState(app);
             } catch (Exception ignored) {
             }
         });
@@ -1079,6 +1136,10 @@ final class FocusBlockOverlay {
         s.isLock = lockSession != null || LockEngine.owns(session);
         s.title = session.optString("title", s.isLock ? "自主锁机" : "专注中");
         if (TextUtils.isEmpty(s.title)) s.title = s.isLock ? "自主锁机" : "专注中";
+        String rawAnimal = session.isNull("animalId") ? "" : session.optString("animalId", "black-cat");
+        s.animalId = (rawAnimal == null || rawAnimal.isEmpty() || "null".equals(rawAnimal)) ? "black-cat" : rawAnimal;
+        String rawSkin = session.isNull("skinId") ? "" : session.optString("skinId", "default");
+        s.skinId = (rawSkin == null || rawSkin.isEmpty() || "null".equals(rawSkin)) ? "default" : rawSkin;
         s.paused = "paused".equals(state);
         s.strictMode = session.optBoolean("strictMode", false);
         s.countdown = s.isLock || "countdown".equals(session.optString("mode", "countdown"));
@@ -1141,7 +1202,7 @@ final class FocusBlockOverlay {
     private static LinearLayout buildCard(Context app) {
         LinearLayout card = new LinearLayout(app);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(pillBg(Color.parseColor("#FFFFFF"), dp(app, 20), dp(app, 1), Color.parseColor("#E8E5DF")));
+        card.setBackground(pillBg(Color.parseColor(COLOR_BG), dp(app, 20), dp(app, 1), Color.parseColor(COLOR_LINE)));
         card.setPadding(dp(app, 18), dp(app, 18), dp(app, 18), dp(app, 18));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.topMargin = dp(app, 20);
@@ -1159,14 +1220,284 @@ final class FocusBlockOverlay {
         btn.setMinimumHeight(dp(app, 48));
         btn.setPadding(dp(app, 12), dp(app, 10), dp(app, 12), dp(app, 10));
         if (primary) {
-            btn.setTextColor(Color.WHITE);
-            btn.setBackground(pillBg(Color.parseColor("#111111"), dp(app, 24), 0, 0));
+            btn.setTextColor(Color.parseColor(COLOR_BG));
+            btn.setBackground(pillBg(Color.parseColor(COLOR_INK), dp(app, 100), 0, 0));
         } else {
-            btn.setTextColor(Color.parseColor("#111111"));
-            btn.setBackground(pillBg(Color.parseColor("#EFECE6"), dp(app, 24), 0, 0));
+            btn.setTextColor(Color.parseColor(COLOR_INK));
+            btn.setBackground(pillBg(Color.parseColor(COLOR_SURFACE), dp(app, 100), dp(app, 1), Color.parseColor(COLOR_LINE)));
         }
         btn.setOnClickListener(click);
         return btn;
+    }
+
+    static Typeface resolveNunitoTypeface(Context context) {
+        if (cachedNunitoTypeface != null) return cachedNunitoTypeface;
+        if (nunitoLoadAttempted || context == null) return null;
+        nunitoLoadAttempted = true;
+        try {
+            android.content.res.AssetManager assets = context.getApplicationContext().getAssets();
+            if (assets != null) {
+                cachedNunitoTypeface = Typeface.createFromAsset(assets, "public/fonts/Nunito.ttf");
+            }
+        } catch (Throwable ignored) {
+            // Safe fallback in JVM unit tests or environments without bundled assets.
+        }
+        return cachedNunitoTypeface;
+    }
+
+    static int[] resolveAnimalPalette(String animalId, String skinId) {
+        String id = animalId == null ? "black-cat" : animalId;
+        String skin = skinId == null ? "default" : skinId;
+        if ("black-cat".equals(id)) {
+            if ("cow".equals(skin)) return new int[] { 0xFFFFFFFF, 0xFF222222, 0xFFEF4E36 };
+            if ("siamese".equals(skin)) return new int[] { 0xFFE7D8C3, 0xFF4A3C31, 0xFF698CAA };
+            return new int[] { 0xFF222222, 0xFF3A3A3F, 0xFFEF4E36 };
+        }
+        if ("yellow-chick".equals(id)) {
+            if ("chestnut".equals(skin)) return new int[] { 0xFF9C6B43, 0xFFE6C9A8, 0xFFEF4E36 };
+            if ("snow".equals(skin)) return new int[] { 0xFFFFFFFF, 0xFFF5F5F5, 0xFFE7A54A };
+            return new int[] { 0xFFF2C94C, 0xFFFFF3C4, 0xFFEF4E36 };
+        }
+        if ("white-goose".equals(id)) return new int[] { 0xFFFFFFFF, 0xFFF5F5F5, 0xFFEF4E36 };
+        if ("orange-cat".equals(id)) return new int[] { 0xFFE7A54A, 0xFFFFF6E8, 0xFFEF4E36 };
+        if ("pixel-bird".equals(id)) return new int[] { 0xFFA08BB0, 0xFFF5F5F5, 0xFFEF4E36 };
+        if ("patch-bear".equals(id)) return new int[] { 0xFF222222, 0xFF85858B, 0xFFEF4E36 };
+        if ("green-parrot".equals(id)) return new int[] { 0xFF7B9A80, 0xFFE7A54A, 0xFFEF4E36 };
+        if ("flying-pig".equals(id)) return new int[] { 0xFF222222, 0xFF85858B, 0xFFEF4E36 };
+        if ("balloon-dog".equals(id)) return new int[] { 0xFFEF4E36, 0xFFE7A54A, 0xFFFFFFFF };
+        if ("light-deer".equals(id)) return new int[] { 0xFF698CAA, 0xFFF5F5F5, 0xFFEF4E36 };
+        if ("angel-cat".equals(id)) return new int[] { 0xFF222222, 0xFFA08BB0, 0xFFE7A54A };
+        if ("black-dragon".equals(id)) return new int[] { 0xFF222222, 0xFFE7A54A, 0xFFEF4E36 };
+        return new int[] { 0xFF222222, 0xFF3A3A3F, 0xFFEF4E36 };
+    }
+
+    private static final class PetGuardView extends View {
+        private final String animalId;
+        private final String skinId;
+        private final boolean guardDoor;
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+        private final RectF rect = new RectF();
+
+        PetGuardView(Context context, String animalId, String skinId, boolean guardDoor) {
+            super(context);
+            this.animalId = animalId == null ? "black-cat" : animalId;
+            this.skinId = skinId == null ? "default" : skinId;
+            this.guardDoor = guardDoor;
+            fill.setStyle(Paint.Style.FILL);
+            stroke.setStyle(Paint.Style.STROKE);
+            stroke.setStrokeCap(Paint.Cap.ROUND);
+            stroke.setStrokeJoin(Paint.Join.ROUND);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0f || h <= 0f) return;
+
+            float size = Math.min(w, h);
+            canvas.save();
+            canvas.translate((w - size) / 2f, (h - size) / 2f);
+            float s = size / 120f;
+            canvas.scale(s, s);
+
+            int[] palette = resolveAnimalPalette(animalId, skinId);
+            int bodyColor = palette[0];
+            int bellyColor = palette[1];
+            int accentColor = palette[2];
+            int inkColor = 0xFF222222;
+            boolean lightBody = bodyColor == 0xFFFFFFFF;
+
+            if (guardDoor) {
+                // Minimal doorway arch behind the guarding animal
+                rect.set(16f, 8f, 104f, 108f);
+                fill.setColor(0xFFF5F5F5);
+                canvas.drawRoundRect(rect, 44f, 44f, fill);
+                stroke.setColor(0xFFEAEAEA);
+                stroke.setStrokeWidth(2f);
+                canvas.drawRoundRect(rect, 44f, 44f, stroke);
+
+                fill.setColor(0xFFEF4E36);
+                rect.set(30f, 106f, 90f, 110f);
+                canvas.drawRoundRect(rect, 2f, 2f, fill);
+            }
+
+            // Ground shadow
+            fill.setColor(0x14000000);
+            rect.set(28f, 100f, 92f, 111f);
+            canvas.drawOval(rect, fill);
+
+            // Back accessories (curled tail / wings / antlers / halo)
+            if ("black-cat".equals(animalId) || "orange-cat".equals(animalId)
+                || "angel-cat".equals(animalId) || "black-dragon".equals(animalId)) {
+                stroke.setColor(inkColor);
+                stroke.setStrokeWidth(7.5f);
+                path.reset();
+                path.moveTo(82f, 90f);
+                path.quadTo(103f, 82f, 97f, 54f);
+                path.quadTo(94f, 44f, 88f, 49f);
+                canvas.drawPath(path, stroke);
+            }
+            if ("angel-cat".equals(animalId) || "flying-pig".equals(animalId) || "black-dragon".equals(animalId)) {
+                fill.setColor("angel-cat".equals(animalId) ? bellyColor : 0xFF85858B);
+                rect.set(18f, 58f, 38f, 80f);
+                canvas.drawOval(rect, fill);
+                rect.set(82f, 58f, 102f, 80f);
+                canvas.drawOval(rect, fill);
+                stroke.setColor(inkColor);
+                stroke.setStrokeWidth(2f);
+                rect.set(18f, 58f, 38f, 80f);
+                canvas.drawOval(rect, stroke);
+                rect.set(82f, 58f, 102f, 80f);
+                canvas.drawOval(rect, stroke);
+            }
+            if ("angel-cat".equals(animalId)) {
+                stroke.setColor(accentColor);
+                stroke.setStrokeWidth(3f);
+                rect.set(42f, 10f, 78f, 20f);
+                canvas.drawOval(rect, stroke);
+            }
+            if ("light-deer".equals(animalId)) {
+                stroke.setColor(inkColor);
+                stroke.setStrokeWidth(3f);
+                canvas.drawLine(42f, 30f, 32f, 14f, stroke);
+                canvas.drawLine(36f, 22f, 44f, 16f, stroke);
+                canvas.drawLine(78f, 30f, 88f, 14f, stroke);
+                canvas.drawLine(84f, 22f, 76f, 16f, stroke);
+                fill.setColor(accentColor);
+                canvas.drawCircle(32f, 14f, 3.2f, fill);
+                canvas.drawCircle(88f, 14f, 3.2f, fill);
+            }
+
+            // Ears / horns / crest
+            fill.setColor(bodyColor);
+            stroke.setColor(inkColor);
+            stroke.setStrokeWidth(2.4f);
+            if ("black-cat".equals(animalId) || "orange-cat".equals(animalId)
+                || "angel-cat".equals(animalId) || "black-dragon".equals(animalId)) {
+                path.reset();
+                path.moveTo(32f, 46f);
+                path.lineTo(31f, 19f);
+                path.lineTo(52f, 34f);
+                path.close();
+                canvas.drawPath(path, fill);
+                canvas.drawPath(path, stroke);
+
+                path.reset();
+                path.moveTo(88f, 46f);
+                path.lineTo(89f, 19f);
+                path.lineTo(68f, 34f);
+                path.close();
+                canvas.drawPath(path, fill);
+                canvas.drawPath(path, stroke);
+                if ("black-dragon".equals(animalId)) {
+                    fill.setColor(accentColor);
+                    canvas.drawCircle(34f, 22f, 3f, fill);
+                    canvas.drawCircle(86f, 22f, 3f, fill);
+                }
+            } else if ("patch-bear".equals(animalId) || "flying-pig".equals(animalId)) {
+                canvas.drawCircle(37f, 32f, 9f, fill);
+                canvas.drawCircle(37f, 32f, 9f, stroke);
+                canvas.drawCircle(83f, 32f, 9f, fill);
+                canvas.drawCircle(83f, 32f, 9f, stroke);
+            } else if ("balloon-dog".equals(animalId) || "light-deer".equals(animalId)) {
+                rect.set(24f, 36f, 38f, 62f);
+                canvas.drawOval(rect, fill);
+                canvas.drawOval(rect, stroke);
+                rect.set(82f, 36f, 96f, 62f);
+                canvas.drawOval(rect, fill);
+                canvas.drawOval(rect, stroke);
+            } else if ("yellow-chick".equals(animalId) || "green-parrot".equals(animalId)) {
+                fill.setColor(accentColor);
+                canvas.drawCircle(57f, 22f, 5.5f, fill);
+                canvas.drawCircle(64f, 24f, 4.5f, fill);
+            }
+
+            // Body
+            fill.setColor(bodyColor);
+            rect.set(36f, 62f, 84f, 103f);
+            canvas.drawRoundRect(rect, 22f, 20f, fill);
+            if (lightBody) {
+                stroke.setColor(inkColor);
+                stroke.setStrokeWidth(2.4f);
+                canvas.drawRoundRect(rect, 22f, 20f, stroke);
+            }
+            fill.setColor(bellyColor);
+            rect.set(47f, 73f, 73f, 98f);
+            canvas.drawOval(rect, fill);
+
+            // Head
+            fill.setColor(bodyColor);
+            if ("pixel-bird".equals(animalId)) {
+                rect.set(33f, 26f, 87f, 74f);
+                canvas.drawRoundRect(rect, 10f, 10f, fill);
+                if (lightBody) {
+                    canvas.drawRoundRect(rect, 10f, 10f, stroke);
+                }
+            } else {
+                rect.set(33f, 26f, 87f, 74f);
+                canvas.drawOval(rect, fill);
+                if (lightBody) {
+                    stroke.setColor(inkColor);
+                    stroke.setStrokeWidth(2.4f);
+                    canvas.drawOval(rect, stroke);
+                }
+            }
+
+            // Collar / Scarf accent
+            fill.setColor(accentColor);
+            rect.set(44f, 68f, 76f, 73f);
+            canvas.drawRoundRect(rect, 2.5f, 2.5f, fill);
+
+            // Big white round eyes + dark pupils (signature AppMark / PetGraphic look)
+            fill.setColor(0xFFFFFFFF);
+            canvas.drawCircle(48f, 49f, 8f, fill);
+            canvas.drawCircle(72f, 49f, 8f, fill);
+            stroke.setColor(inkColor);
+            stroke.setStrokeWidth(1.6f);
+            canvas.drawCircle(48f, 49f, 8f, stroke);
+            canvas.drawCircle(72f, 49f, 8f, stroke);
+
+            fill.setColor(inkColor);
+            canvas.drawCircle(50f, 49f, 3.8f, fill);
+            canvas.drawCircle(70f, 49f, 3.8f, fill);
+
+            if ("patch-bear".equals(animalId)) {
+                fill.setColor(accentColor);
+                canvas.drawCircle(72f, 49f, 9f, fill);
+            }
+
+            // Beak / Snout / Nose accent
+            if ("yellow-chick".equals(animalId) || "white-goose".equals(animalId)
+                || "pixel-bird".equals(animalId) || "green-parrot".equals(animalId)) {
+                fill.setColor(accentColor);
+                path.reset();
+                path.moveTo(55f, 55f);
+                path.lineTo(65f, 55f);
+                path.lineTo(60f, 62f);
+                path.close();
+                canvas.drawPath(path, fill);
+            } else if ("flying-pig".equals(animalId)) {
+                fill.setColor(accentColor);
+                rect.set(52f, 54f, 68f, 63f);
+                canvas.drawOval(rect, fill);
+            } else if ("light-deer".equals(animalId)) {
+                fill.setColor(accentColor);
+                canvas.drawCircle(60f, 58f, 4f, fill);
+            }
+
+            // Guard badge bell on collar
+            fill.setColor(0xFFFFFFFF);
+            canvas.drawCircle(60f, 74f, 3.5f, fill);
+            stroke.setColor(inkColor);
+            stroke.setStrokeWidth(1.4f);
+            canvas.drawCircle(60f, 74f, 3.5f, stroke);
+
+            canvas.restore();
+        }
     }
 
     private static GradientDrawable pillBg(int fillColor, int radiusPx, int strokePx, int strokeColor) {
@@ -1196,6 +1527,8 @@ final class FocusBlockOverlay {
         long remainingMs;
         int temporaryRemaining;
         String title = "";
+        String animalId = "black-cat";
+        String skinId = "default";
         JSONArray whitelistPackages;
         List<String[]> whitelistApps = new java.util.ArrayList<>();
     }

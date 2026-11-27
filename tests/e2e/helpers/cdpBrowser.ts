@@ -120,6 +120,7 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
       return {
         data: initialCfg.initialData ? JSON.parse(JSON.stringify(initialCfg.initialData)) : defaultData(),
         focusSession: null,
+        lastFinished: null,
         clockOffsetMs: 0,
         restSession: null,
         lockSession: null,
@@ -332,13 +333,14 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
           },
         };
         state.focusSession = nextSession;
+        state.lastFinished = null;
         state.restSession = null;
         persist();
         return { session: clone(nextSession), elapsedMs: 0 };
       },
       async focusAction({ action }) {
         const s = state.focusSession;
-        if (!s) return { session: null, elapsedMs: 0 };
+        if (!s) return { session: null, elapsedMs: 0, ...(state.lastFinished ? { record: clone(state.lastFinished) } : {}) };
         const now = Date.now() + state.clockOffsetMs;
         let el = computeFocusElapsed();
         if (s.mode === 'countdown' && el >= s.targetMs) {
@@ -400,8 +402,9 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
           persist();
           return { session: clone(s), elapsedMs: s.elapsedMs };
         }
-        if (action === 'finish') {
-          const status = s.mode === 'stopwatch' ? 'completed' : el >= s.targetMs ? 'completed' : 'early';
+        if (action === 'finish' || action === 'fail_leave') {
+          const failLeave = action === 'fail_leave';
+          const status = failLeave ? 'early' : (s.mode === 'stopwatch' ? 'completed' : el >= s.targetMs ? 'completed' : 'early');
           const record = {
             id: s.id,
             itemId: s.itemId,
@@ -421,9 +424,10 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
             animalId: s.animalId || 'black-cat',
             skinId: s.skinId || 'default',
             source: 'timer',
-            ...(status === 'early' ? { failReason: 'manual_giveup' } : {}),
+            ...(status === 'early' ? { failReason: failLeave ? 'left_app' : 'manual_giveup' } : {}),
           };
           state.focusSession = null;
+          state.lastFinished = record;
           const prefs = (state.data && state.data.preferences) || {};
           if (status === 'completed' && prefs.autoRest === true) {
             const restMs = (Number.isInteger(prefs.restMinutes) && prefs.restMinutes >= 1 && prefs.restMinutes <= 60 ? prefs.restMinutes : 5) * 60000;
@@ -842,6 +846,7 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
       advanceFocusMs(ms) { state.clockOffsetMs += ms; persist(); },
       advanceRestMs(ms) { state.clockOffsetMs += ms; persist(); },
       advanceLockMs(ms) { state.clockOffsetMs += ms; persist(); },
+      async triggerLeaveFail() { return catFocusHandlers.focusAction({ action: 'fail_leave' }); },
       dispatchAppEvent(eventName, payload) {
         for (const item of appListeners[eventName] || []) {
           item.callback(payload);
