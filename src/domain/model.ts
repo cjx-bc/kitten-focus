@@ -1,4 +1,23 @@
 export type Mode = 'countdown' | 'stopwatch'
+export const ANIMAL_IDS = [
+  'black-cat', 'yellow-chick', 'white-goose', 'orange-cat', 'pixel-bird', 'patch-bear',
+  'green-parrot', 'flying-pig', 'balloon-dog', 'light-deer', 'angel-cat', 'black-dragon',
+] as const
+export type AnimalId = (typeof ANIMAL_IDS)[number]
+export const WHITE_NOISE_IDS = ['off', 'rain', 'birds', 'stream', 'fire', 'waves'] as const
+export type WhiteNoiseId = (typeof WHITE_NOISE_IDS)[number]
+export type PetSkinMap = Partial<Record<AnimalId, string>>
+export interface PetData {
+  version: 1
+  selectedAnimalId: AnimalId | 'random'
+  selectedSkins?: PetSkinMap
+  lastSelectedItemId: string | null
+  retroCutoffAt: number | null
+}
+export const defaultPetData = (): PetData => ({
+  version: 1, selectedAnimalId: 'black-cat', selectedSkins: {},
+  lastSelectedItemId: null, retroCutoffAt: null,
+})
 export const THEME_COLORS = ['#ef4e36', '#e7a54a', '#7b9a80', '#698caa', '#a08bb0', '#85858b'] as const
 export type WhitelistConfiguration = { source: 'global' } | { source: 'custom'; packages: string[] }
 export interface Theme {
@@ -40,6 +59,11 @@ export interface FocusRecord {
   pausedMs: number
   segments: Segment[]
   status: 'completed' | 'early' | 'interrupted'
+  animalId?: AnimalId
+  skinId?: string
+  note?: string
+  source?: 'timer' | 'manual'
+  failReason?: 'manual_giveup' | 'left_app'
 }
 export type AppsSubKey = 'restrict' | 'temporaryAccess'
 export type StrictSubKey =
@@ -250,6 +274,8 @@ export interface TemporaryAccessResult {
   state: TemporaryAccessState
 }
 export interface ActiveFocus {
+  animalId?: AnimalId
+  skinId?: string
   id: string
   itemId: string | null
   themeId: string | null
@@ -277,6 +303,7 @@ export interface FocusSnapshot {
   record?: FocusRecord
 }
 export interface RestSession {
+  durationMs?: number
   record: FocusRecord
   startedAt: number
   endsAt: number
@@ -392,9 +419,18 @@ export interface Preferences {
   sound: boolean
   vibration: boolean
   activeSemesterId: string | null
+  restMinutes?: number
+  autoRest?: boolean
+  pomodoroLoop?: boolean
+  keepScreenOn?: boolean
+  leaveAppFail?: boolean
+  whiteNoise?: WhiteNoiseId
+  whiteNoiseVolume?: number
+  animation?: 'system' | 'on' | 'off'
 }
 export interface AppData {
   schemaVersion: 1
+  pet?: PetData
   lockConfigurations?: LockConfiguration[]
   themes: Theme[]
   items: FocusItem[]

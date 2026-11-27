@@ -1,11 +1,55 @@
-import type { AppData, ModulePref, ProtectionModuleKey, ProtectionModules } from './model'
-import { defaultProtection } from './model'
+import type { AppData, ModulePref, PetData, PetSkinMap, ProtectionModuleKey, ProtectionModules } from './model'
+import { ANIMAL_IDS, WHITE_NOISE_IDS, defaultProtection } from './model'
 import {
   APPS_SUB_KEYS,
   QUIET_SUB_KEYS,
   STRICT_SUB_KEYS,
 } from './protectionModules'
 import { validateEvent } from './calendar'
+
+const PET_FIELDS = ['version', 'selectedAnimalId', 'lastSelectedItemId', 'retroCutoffAt'] as const
+const BOOLEAN_PREFERENCES = ['autoRest', 'pomodoroLoop', 'keepScreenOn', 'leaveAppFail'] as const
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+
+const isChoice = (value: unknown, choices: readonly string[]) =>
+  typeof value === 'string' && choices.includes(value)
+
+const nonBlankString = (value: unknown) => typeof value === 'string' && value.trim().length > 0
+const validSkin = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && [...value].length <= 40
+
+const finiteInRange = (value: unknown, min: number, max: number) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+
+function validPet(pet: unknown): boolean {
+  if (!isObject(pet) ||
+    pet.version !== 1 ||
+    (pet.selectedAnimalId !== 'random' && !isChoice(pet.selectedAnimalId, ANIMAL_IDS)) ||
+    (pet.lastSelectedItemId !== null && !nonBlankString(pet.lastSelectedItemId)) ||
+    (pet.retroCutoffAt !== null && !finiteInRange(pet.retroCutoffAt, 0, Infinity))
+  ) return false
+  return pet.selectedSkins === undefined || (
+    isObject(pet.selectedSkins) &&
+    Object.entries(pet.selectedSkins).every(([animal, skin]) =>
+      isChoice(animal, ANIMAL_IDS) && validSkin(skin),
+    )
+  )
+}
+
+function cleanPet(pet: PetData): PetData {
+  const result = pick(pet, PET_FIELDS)
+  if (isObject(pet.selectedSkins)) {
+    const skins: PetSkinMap = {}
+    for (const animal of ANIMAL_IDS) {
+      const skin = pet.selectedSkins[animal]
+      if (validSkin(skin)) skins[animal] = skin
+    }
+    result.selectedSkins = skins
+  }
+  return result
+}
 
 const MODULE_ALLOWED_KEYS: Record<ProtectionModuleKey, readonly string[]> = {
   apps: APPS_SUB_KEYS,
@@ -86,9 +130,11 @@ export function makeBackup(data: AppData): string {
 }
 // A positive field list prevents new adapter journals or untrusted imported runtime
 // fields becoming portable business state. Adapter original-state journals stay native.
-function pick<T extends object>(value: T, keys: string[]): T {
+function pick<T extends object>(value: T, keys: readonly string[]): T {
+  const source = value as Record<string, unknown>
   return Object.fromEntries(
-    keys.filter((key) => key in value).map((key) => [key, (value as Record<string, unknown>)[key]]),
+    keys.filter((key) => Object.hasOwn(source, key) && source[key] !== undefined)
+      .map((key) => [key, source[key]]),
   ) as T
 }
 function businessData(data: AppData): AppData {
@@ -97,7 +143,7 @@ function businessData(data: AppData): AppData {
     themes: 'id name color order collapsed deleted',
     items: 'id themeId title note mode minutes order deleted',
     records:
-      'id itemId themeId title themeName color mode targetMs startedAt endedAt timeZone durationMs pausedMs status',
+      'id itemId themeId title themeName color mode targetMs startedAt endedAt timeZone durationMs pausedMs status animalId skinId note source failReason',
     events: 'id title start end allDay note repeat weekdays until itemId reminderMinutes',
     eventExceptions: 'eventId date cancelled title start end',
     semesters: 'id name startDate weeks',
@@ -132,6 +178,11 @@ function businessData(data: AppData): AppData {
     'sound',
     'vibration',
     'activeSemesterId',
+    'restMinutes',
+    ...BOOLEAN_PREFERENCES,
+    'whiteNoise',
+    'whiteNoiseVolume',
+    'animation',
   ])
   if (data.preferences.protection !== undefined) {
     const protection = {
@@ -150,6 +201,7 @@ function businessData(data: AppData): AppData {
     }
     result.preferences.protection = protection
   }
+  if (data.pet != null) result.pet = cleanPet(data.pet)
   // The confirmation Sheet may pass Vue proxies. The portable contract is JSON;
   // detach that representation without retaining reactive arrays or OS runtime.
   return JSON.parse(JSON.stringify(result)) as AppData
@@ -227,9 +279,16 @@ export function readBackup(text: string): Backup {
     !Number.isFinite(data.preferences.defaultMinutes) ||
     data.preferences.defaultMinutes <= 0 ||
     typeof data.preferences.sound !== 'boolean' ||
-    typeof data.preferences.vibration !== 'boolean'
+    typeof data.preferences.vibration !== 'boolean' ||
+    (data.preferences.restMinutes !== undefined &&
+      (!Number.isInteger(data.preferences.restMinutes) || !finiteInRange(data.preferences.restMinutes, 1, 60))) ||
+    BOOLEAN_PREFERENCES.some((key) => data.preferences[key] !== undefined && typeof data.preferences[key] !== 'boolean') ||
+    (data.preferences.whiteNoise !== undefined && !isChoice(data.preferences.whiteNoise, WHITE_NOISE_IDS)) ||
+    (data.preferences.whiteNoiseVolume !== undefined && !finiteInRange(data.preferences.whiteNoiseVolume, 0, 1)) ||
+    (data.preferences.animation !== undefined && !isChoice(data.preferences.animation, ['system', 'on', 'off']))
   )
     throw new Error('备份设置损坏')
+  if (data.pet !== undefined && !validPet(data.pet)) throw new Error('伙伴设置损坏')
   for (const group of [
     data.themes,
     data.items,
@@ -288,7 +347,12 @@ export function readBackup(text: string): Backup {
       typeof record.title !== 'string' ||
       typeof record.themeName !== 'string' ||
       typeof record.color !== 'string' ||
-      !['completed', 'early', 'interrupted'].includes(record.status)
+      !['completed', 'early', 'interrupted'].includes(record.status) ||
+      (record.animalId !== undefined && !isChoice(record.animalId, ANIMAL_IDS)) ||
+      (record.skinId !== undefined && !validSkin(record.skinId)) ||
+      (record.note !== undefined && (typeof record.note !== 'string' || [...record.note].length > 100)) ||
+      (record.source !== undefined && !isChoice(record.source, ['timer', 'manual'])) ||
+      (record.failReason !== undefined && !isChoice(record.failReason, ['manual_giveup', 'left_app']))
     )
       throw new Error('专注记录损坏')
     if (

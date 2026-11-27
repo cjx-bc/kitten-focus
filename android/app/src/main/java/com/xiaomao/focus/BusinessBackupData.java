@@ -4,13 +4,44 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Iterator;
+import java.util.Set;
+import java.util.regex.Pattern;
+
 /** Portable configuration and history only. Never copy adapter journals or OS grants. */
 final class BusinessBackupData {
+    private static final String RECORD_FIELDS =
+        "id itemId themeId title themeName color mode targetMs startedAt endedAt timeZone durationMs pausedMs status " +
+        "animalId skinId note source failReason";
+    private static final String PREFERENCE_FIELDS =
+        "defaultMinutes sound vibration activeSemesterId restMinutes autoRest pomodoroLoop keepScreenOn " +
+        "leaveAppFail whiteNoise whiteNoiseVolume animation";
+    private static final String PET_FIELDS = "version selectedAnimalId lastSelectedItemId retroCutoffAt";
+    private static final Set<String> ANIMAL_IDS = Set.of(
+        "black-cat", "yellow-chick", "white-goose", "orange-cat", "pixel-bird", "patch-bear",
+        "green-parrot", "flying-pig", "balloon-dog", "light-deer", "angel-cat", "black-dragon"
+    );
+    private static final Set<String> WHITE_NOISE_IDS = Set.of("off", "rain", "birds", "stream", "fire", "waves");
+    private static final Set<String> ANIMATIONS = Set.of("system", "on", "off");
+    private static final Set<String> RECORD_SOURCES = Set.of("timer", "manual");
+    private static final Set<String> FAIL_REASONS = Set.of("manual_giveup", "left_app");
+    private static final String[] BOOLEAN_PREFERENCES = {"autoRest", "pomodoroLoop", "keepScreenOn", "leaveAppFail"};
+    // Match the whitespace removed by TypeScript's String.trim(), including NBSP and BOM.
+    private static final Pattern NON_BLANK = Pattern.compile(
+        "[^\\x09-\\x0D\\x20\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]"
+    );
+
     static void validate(JSONObject data) throws JSONException {
         if (data == null || data.optInt("schemaVersion") != 1)
             throw new IllegalArgumentException("此恢复副本与当前版本不兼容");
         JSONObject preferences = data.optJSONObject("preferences");
         if (preferences == null) throw new IllegalArgumentException("备份设置损坏");
+        validateCompanionPreferences(preferences);
+        if (data.has("pet")) validatePet(data.opt("pet"));
+        if (data.has("records")) {
+            JSONArray records = data.getJSONArray("records");
+            for (int i = 0; i < records.length(); i++) validateRecordFields(records.getJSONObject(i));
+        }
         if (preferences.has("protection")) {
             JSONObject protection = preferences.getJSONObject("protection");
             for (String key : new String[]{"study", "strict", "interceptNotifications", "dnd"})
@@ -37,6 +68,82 @@ final class BusinessBackupData {
             }
         }
     }
+
+    private static boolean isChoice(Object value, Set<String> choices) {
+        return value instanceof String && choices.contains(value);
+    }
+
+    private static boolean nonBlankString(Object value) {
+        return value instanceof String && NON_BLANK.matcher((String) value).find();
+    }
+
+    private static boolean withinCodePoints(Object value, int max) {
+        if (!(value instanceof String)) return false;
+        String text = (String) value;
+        return text.codePointCount(0, text.length()) <= max;
+    }
+
+    private static boolean validSkin(Object value) {
+        return nonBlankString(value) && withinCodePoints(value, 40);
+    }
+
+    private static boolean finiteInRange(Object value, double min, double max) {
+        if (!(value instanceof Number)) return false;
+        double number = ((Number) value).doubleValue();
+        return Double.isFinite(number) && number >= min && number <= max;
+    }
+
+    private static void validateRecordFields(JSONObject record) {
+        if ((record.has("animalId") && !isChoice(record.opt("animalId"), ANIMAL_IDS)) ||
+            (record.has("skinId") && !validSkin(record.opt("skinId"))) ||
+            (record.has("note") && !withinCodePoints(record.opt("note"), 100)) ||
+            (record.has("source") && !isChoice(record.opt("source"), RECORD_SOURCES)) ||
+            (record.has("failReason") && !isChoice(record.opt("failReason"), FAIL_REASONS))) {
+            throw new IllegalArgumentException("专注记录损坏");
+        }
+    }
+
+    private static void validateCompanionPreferences(JSONObject preferences) {
+        Object restMinutes = preferences.opt("restMinutes");
+        if ((preferences.has("restMinutes") &&
+                (!finiteInRange(restMinutes, 1, 60) || ((Number) restMinutes).doubleValue() % 1 != 0)) ||
+            (preferences.has("whiteNoise") && !isChoice(preferences.opt("whiteNoise"), WHITE_NOISE_IDS)) ||
+            (preferences.has("whiteNoiseVolume") && !finiteInRange(preferences.opt("whiteNoiseVolume"), 0, 1)) ||
+            (preferences.has("animation") && !isChoice(preferences.opt("animation"), ANIMATIONS))) {
+            throw new IllegalArgumentException("备份设置损坏");
+        }
+        for (String key : BOOLEAN_PREFERENCES) {
+            if (preferences.has(key) && !(preferences.opt(key) instanceof Boolean)) {
+                throw new IllegalArgumentException("备份设置损坏");
+            }
+        }
+    }
+
+    private static void validatePet(Object value) {
+        if (!(value instanceof JSONObject)) throw new IllegalArgumentException("伙伴设置损坏");
+        JSONObject pet = (JSONObject) value;
+        Object selected = pet.opt("selectedAnimalId");
+        Object lastSelectedItemId = pet.opt("lastSelectedItemId");
+        Object retroCutoffAt = pet.opt("retroCutoffAt");
+        if (!finiteInRange(pet.opt("version"), 1, 1) ||
+            (!"random".equals(selected) && !isChoice(selected, ANIMAL_IDS)) ||
+            (lastSelectedItemId != JSONObject.NULL && !nonBlankString(lastSelectedItemId)) ||
+            (retroCutoffAt != JSONObject.NULL && !finiteInRange(retroCutoffAt, 0, Double.POSITIVE_INFINITY))) {
+            throw new IllegalArgumentException("伙伴设置损坏");
+        }
+        if (pet.has("selectedSkins")) {
+            JSONObject skins = pet.optJSONObject("selectedSkins");
+            if (skins == null) throw new IllegalArgumentException("伙伴设置损坏");
+            Iterator<String> keys = skins.keys();
+            while (keys.hasNext()) {
+                String animal = keys.next();
+                if (!ANIMAL_IDS.contains(animal) || !validSkin(skins.opt(animal))) {
+                    throw new IllegalArgumentException("伙伴设置损坏");
+                }
+            }
+        }
+    }
+
     private static void strings(JSONArray values) throws JSONException {
         for (int i = 0; i < values.length(); i++)
             if (!(values.get(i) instanceof String) || values.getString(i).trim().isEmpty())
@@ -107,13 +214,26 @@ final class BusinessBackupData {
     private static JSONObject whitelist(JSONObject value) throws JSONException {
         return pick(value, value.optString("source").equals("global") ? "source" : "source packages");
     }
+    private static JSONObject cleanPet(JSONObject pet) throws JSONException {
+        JSONObject clean = pick(pet, PET_FIELDS);
+        JSONObject skins = pet.optJSONObject("selectedSkins");
+        if (skins != null) {
+            JSONObject cleanSkins = new JSONObject();
+            for (String animal : ANIMAL_IDS) {
+                Object skin = skins.opt(animal);
+                if (validSkin(skin)) cleanSkins.put(animal, skin);
+            }
+            clean.put("selectedSkins", cleanSkins);
+        }
+        return clean;
+    }
     static JSONObject portable(JSONObject source) throws JSONException {
         if (source == null) throw new IllegalArgumentException("恢复副本缺少业务数据");
         JSONObject result = pick(source, "schemaVersion deletedRecordIds");
         String[][] groups = {
             {"themes", "id name color order collapsed deleted"},
             {"items", "id themeId title note mode minutes order deleted"},
-            {"records", "id itemId themeId title themeName color mode targetMs startedAt endedAt timeZone durationMs pausedMs status"},
+            {"records", RECORD_FIELDS},
             {"events", "id title start end allDay note repeat weekdays until itemId reminderMinutes"},
             {"eventExceptions", "eventId date cancelled title start end"},
             {"semesters", "id name startDate weeks"},
@@ -136,7 +256,7 @@ final class BusinessBackupData {
         }
         JSONObject preferences = source.optJSONObject("preferences");
         if (preferences != null) {
-            JSONObject clean = pick(preferences, "defaultMinutes sound vibration activeSemesterId");
+            JSONObject clean = pick(preferences, PREFERENCE_FIELDS);
             JSONObject protection = preferences.optJSONObject("protection");
             if (protection != null) {
                 JSONObject cleanProtection = pick(protection, "study strict interceptNotifications dnd globalWhitelist enhancements");
@@ -145,13 +265,16 @@ final class BusinessBackupData {
             }
             result.put("preferences", clean);
         }
+        if (source.has("pet") && !source.isNull("pet")) {
+            result.put("pet", cleanPet(source.getJSONObject("pet")));
+        }
         return result;
     }
     static JSONObject snapshot(JSONObject original) throws JSONException {
         JSONObject documents = original.getJSONObject("documents"), clean = new JSONObject();
         JSONObject data = documents.optJSONObject("data");
-        JSONArray records = rows(original.getJSONArray("records"), "id itemId themeId title themeName color mode targetMs startedAt endedAt timeZone durationMs pausedMs status");
         JSONArray sourceRecords = original.getJSONArray("records");
+        JSONArray records = rows(sourceRecords, RECORD_FIELDS);
         for (int i = 0; i < records.length(); i++) records.getJSONObject(i).put("segments", rows(sourceRecords.getJSONObject(i).optJSONArray("segments"), "start end"));
         if (data != null) clean.put("data", portable(data));
         // Lock history is durable history, never a runnable control session.

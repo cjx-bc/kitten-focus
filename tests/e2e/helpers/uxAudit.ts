@@ -109,6 +109,17 @@ export const GLOSSARY_AVOID_TERMS = [
   '金币',
   '小猫物品',
   '成长形态',
+  '等级',
+  '主宠',
+  '装备宠物',
+  '猫窝商店',
+  '家园等级',
+  '系统强锁',
+  '无障碍拦截',
+  '修改历史记录时长',
+  '待办备注',
+  '赛季通行证',
+  '排行榜头衔',
 ] as const
 
 export const PRIMARY_DIAGNOSTIC_TELEMETRY = [
