@@ -186,6 +186,58 @@ export function getSkinMeta(animalId: AnimalId, skinId = 'default'): SkinMeta {
   return list.find((s) => s.id === skinId) ?? list[0]!
 }
 
+export interface UnlockProgressStatus {
+  unlocked: boolean
+  current: number
+  target: number
+  progressText: string
+}
+
+export function getAnimalUnlockStatus(animal: AnimalMeta, projection: PetProjection): UnlockProgressStatus {
+  const target = animal.unlockThreshold
+  if (animal.unlockType === 'streak') {
+    const unlocked = projection.maxConsecutiveDays >= target
+    const current = Math.min(target, projection.maxConsecutiveDays)
+    return {
+      unlocked,
+      current,
+      target,
+      progressText: unlocked ? '已解锁' : `连续专注 ${current}/${target} 天`,
+    }
+  }
+  if (animal.unlockType === 'raised') {
+    const unlocked = projection.totalRaised >= target
+    const current = Math.min(target, projection.totalRaised)
+    return {
+      unlocked,
+      current,
+      target,
+      progressText: unlocked ? '已解锁' : `累计养出 ${current}/${target} 只`,
+    }
+  }
+  const unlocked = projection.peakAffection >= target
+  const current = Math.min(target, projection.peakAffection)
+  return {
+    unlocked,
+    current,
+    target,
+    progressText: unlocked ? '已解锁' : `好感需达到 ${target}`,
+  }
+}
+
+export function getSkinUnlockStatus(skin: SkinMeta, projection: PetProjection): UnlockProgressStatus {
+  const target = skin.unlockAt
+  const raised = projection.raisedByAnimal[skin.animalId] ?? 0
+  const unlocked = raised >= target
+  const current = Math.min(target, raised)
+  return {
+    unlocked,
+    current,
+    target,
+    progressText: unlocked ? '已解锁' : `累计养出 ${target} 只解锁（${current}/${target}）`,
+  }
+}
+
 export interface PetProjectionInput {
   records: readonly FocusRecord[]
   pet?: PetData | null

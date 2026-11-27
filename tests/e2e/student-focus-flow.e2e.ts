@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import path from 'node:path'
 import { startStaticServer, type StaticServer } from './helpers/staticServer'
 import { CdpPage, type CatFocusStubOptions } from './helpers/cdpBrowser'
-import { auditModals, auditForbiddenStrings } from './helpers/uxAudit'
+import { auditModals, auditScreenBudget, auditForbiddenStrings, auditBrandSpec } from './helpers/uxAudit'
 
 describe('Student Focus Flow & Core Task Navigation (UF1, UF2, UF3, UF4)', () => {
   let server: StaticServer
@@ -520,5 +520,178 @@ describe('Student Focus Flow & Core Task Navigation (UF1, UF2, UF3, UF4)', () =>
     expect(await p.evaluate(() => document.body.innerText)).toContain('再次专注')
 
     p.assertNoErrors('strict countdown, stopwatch bypass and auto rest')
+  })
+
+  it('supports PetPickerSheet roster/skins single-layer flow, coat switching, random mode, balloon-dog failTitle, and UX budgets (#33)', async () => {
+    const records: Array<Record<string, unknown>> = []
+    const day0 = Date.parse('2026-11-10T08:00:00+08:00')
+    for (let i = 0; i < 10; i++) {
+      const start = day0 + i * 2_000_000
+      const dur = 25 * 60_000
+      records.push({
+        id: `bc-${i}`,
+        itemId: null,
+        themeId: null,
+        title: '高数练习',
+        themeName: '自由专注',
+        color: '#222222',
+        mode: 'countdown',
+        targetMs: dur,
+        startedAt: start,
+        endedAt: start + dur,
+        timeZone: 'Asia/Shanghai',
+        durationMs: dur,
+        pausedMs: 0,
+        segments: [{ start, end: start + dur }],
+        status: 'completed',
+        animalId: 'black-cat',
+        skinId: 'default',
+        source: 'timer',
+      })
+    }
+    // Add 4 non-consecutive days (Nov 12, 14, 16, 18) with 3 * 180m = 108/day => 432 + 50 = 482 affection (>= 460 balloon-dog, < 600 light-deer; streak = 1 < 7)
+    for (const [idx, dayStr] of ['2026-11-12', '2026-11-14', '2026-11-16', '2026-11-18'].entries()) {
+      const dayStart = Date.parse(`${dayStr}T08:00:00+08:00`)
+      for (let s = 0; s < 3; s++) {
+        const start = dayStart + s * 11_000_000
+        const dur = 180 * 60_000
+        records.push({
+          id: `wg-${idx}-${s}`,
+          itemId: null,
+          themeId: null,
+          title: '英语阅读',
+          themeName: '自由专注',
+          color: '#222222',
+          mode: 'countdown',
+          targetMs: dur,
+          startedAt: start,
+          endedAt: start + dur,
+          timeZone: 'Asia/Shanghai',
+          durationMs: dur,
+          pausedMs: 0,
+          segments: [{ start, end: start + dur }],
+          status: 'completed',
+          animalId: 'white-goose',
+          skinId: 'default',
+          source: 'timer',
+        })
+      }
+    }
+
+    const p = await openPage({
+      supported: true,
+      authorized: true,
+      connected: true,
+      initialData: {
+        schemaVersion: 1,
+        pet: {
+          version: 1,
+          selectedAnimalId: 'black-cat',
+          selectedSkins: {},
+          lastSelectedItemId: null,
+          retroCutoffAt: null,
+        },
+        themes: [],
+        items: [],
+        records,
+        deletedRecordIds: [],
+        events: [],
+        eventExceptions: [],
+        semesters: [],
+        courses: [],
+        courseExceptions: [],
+        preferences: { defaultMinutes: 25, sound: true, vibration: true, activeSemesterId: null },
+      },
+    })
+
+    // 1. Tapping pet stage bounces & opens 0 modals; tapping [换伙伴] pill opens PetPickerSheet
+    await p.clickByRoleOrText({ name: '轻点小黑猫互动' })
+    await p.waitFor(() => (document.querySelector('.pet-bubble')?.textContent ?? '').trim().length > 0)
+    expect(await p.evaluate(() => document.querySelectorAll('dialog[open]').length)).toBe(0)
+
+    await p.clickByRoleOrText({ selector: '.companion-pill', text: '换伙伴' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1, { label: 'PetPickerSheet open' })
+
+    // Audit roster view UX budgets, brand spec, modals, and forbidden strings
+    expect((await auditModals(p)).violations).toEqual([])
+    expect((await auditScreenBudget(p)).violations).toEqual([])
+    expect((await auditForbiddenStrings(p, { isPrimaryScreen: false })).violations).toEqual([])
+    expect((await auditBrandSpec(p, { checkPageMargins: false, checkCards: true, checkTimers: true })).violations).toEqual([])
+
+    // Verify locked progress for light-deer & angel-cat in roster
+    const rosterText = await p.evaluate(() => document.querySelector('dialog[open]')?.textContent ?? '')
+    expect(rosterText).toContain('好感需达到 600')
+    expect(rosterText).toContain('连续专注 1/7 天')
+
+    // 2. Switch to skins view inside the SAME <dialog>, check budgets & switch black-cat coat to 奶牛黑白斑 (cow)
+    await p.clickByRoleOrText({ text: '切换小黑猫毛色', withinOpenDialog: true })
+    await p.waitFor(() => (document.querySelector('dialog[open]')?.textContent ?? '').includes('奶牛黑白斑'))
+    expect((await auditModals(p)).violations).toEqual([])
+    expect((await auditScreenBudget(p)).violations).toEqual([])
+    expect((await auditBrandSpec(p, { checkPageMargins: false, checkCards: true, checkTimers: true })).violations).toEqual([])
+
+    const skinsText = await p.evaluate(() => document.querySelector('dialog[open]')?.textContent ?? '')
+    expect(skinsText).toContain('累计养出 30 只解锁（10/30）')
+
+    await p.clickByRoleOrText({ text: '奶牛黑白斑', withinOpenDialog: true })
+    await p.waitFor(() =>
+      document.querySelector('dialog[open] svg[data-animal-id="black-cat"]')?.getAttribute('data-skin-id') === 'cow',
+    )
+
+    // Go back to roster via header back button, select balloon-dog, close picker
+    await p.clickByRoleOrText({ name: '返回伙伴图鉴', withinOpenDialog: true })
+    await p.waitFor(() => (document.querySelector('dialog[open]')?.textContent ?? '').includes('随机出场'))
+    await p.clickByRoleOrText({ text: '气球小狗', withinOpenDialog: true })
+    await p.clickByRoleOrText({ text: '完成', withinOpenDialog: true })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
+
+    expect(await p.evaluate(() => document.querySelector('.companion-pill')?.textContent ?? '')).toContain('气球小狗 · 换伙伴')
+
+    // 3. Start focus with balloon-dog, advance >10s, give up -> verify exact failTitle "完蛋！你的气球小狗漏气挂了"
+    await p.clickByRoleOrText({ text: '开始专注' })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('专注进行中'))
+    expect(
+      await p.evaluate(() => document.querySelector('svg[data-animal-id]')?.getAttribute('data-animal-id')),
+    ).toBe('balloon-dog')
+
+    await p.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(12000)
+    })
+    await p.waitFor(() => !!document.querySelector('[aria-label="放弃专注"]'))
+    await p.clickByRoleOrText({ name: '放弃专注' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    await p.clickByRoleOrText({ text: '结束专注', withinOpenDialog: true })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('完蛋！你的气球小狗漏气挂了'))
+    await p.clickByRoleOrText({ text: '返回首页' })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('开始专注'))
+
+    // 4. Enable 随机出场 -> start focus -> verify drawn animalId is from unlocked pool and persisted on ActiveFocus + FocusRecord
+    await p.clickByRoleOrText({ selector: '.companion-pill', text: '换伙伴' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    await p.clickByRoleOrText({ text: '随机出场', selector: 'dialog[open] label.switch', withinOpenDialog: true })
+    await p.clickByRoleOrText({ text: '完成', withinOpenDialog: true })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
+    expect(await p.evaluate(() => document.querySelector('.companion-pill')?.textContent ?? '')).toContain('随机出场 · 换伙伴')
+
+    await p.clickByRoleOrText({ text: '开始专注' })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('专注进行中'))
+    const activePet = await p.evaluate(() => {
+      const stub = (window as unknown as { __catFocusStub: { getState: () => { focusSession: { animalId?: string; skinId?: string } } } }).__catFocusStub
+      return stub.getState().focusSession
+    })
+    const expectedUnlocked = [
+      'black-cat', 'yellow-chick', 'white-goose', 'orange-cat', 'pixel-bird',
+      'patch-bear', 'green-parrot', 'flying-pig', 'balloon-dog', 'black-dragon',
+    ]
+    expect(expectedUnlocked).toContain(activePet.animalId)
+    if (activePet.animalId === 'black-cat') {
+      expect(activePet.skinId).toBe('cow')
+    }
+
+    // Cancel within 10s so clean exit
+    await p.clickByRoleOrText({ text: '取消', exact: true })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('开始专注'))
+
+    p.assertNoErrors('PetPickerSheet roster, skins, random mode, and balloon-dog failTitle')
   })
 })

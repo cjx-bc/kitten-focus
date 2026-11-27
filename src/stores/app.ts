@@ -395,6 +395,13 @@ export const useApp = defineStore('app', () => {
       d.pet = pet
     })
   }
+  async function selectSkin(animalId: AnimalId, skinId: string) {
+    await mutate((d) => {
+      const pet = d.pet ?? defaultPetData()
+      pet.selectedSkins = { ...(pet.selectedSkins ?? {}), [animalId]: skinId }
+      d.pet = pet
+    })
+  }
   async function startRest() {
     return sessionOperation(async () => {
       if (lock.value.session) throw new Error('请先结束当前锁机')
@@ -778,6 +785,7 @@ export const useApp = defineStore('app', () => {
     updateRecordNote,
     selectStandbyItem,
     selectAnimal,
+    selectSkin,
     startRest,
     exitRest,
     mutate,

@@ -3,6 +3,9 @@ import type { FocusRecord, PetData } from '../src/domain/model'
 import {
   ANIMAL_CATALOG,
   SKIN_CATALOG,
+  getAnimalMeta,
+  getAnimalUnlockStatus,
+  getSkinUnlockStatus,
   projectPetDomain,
   resolveSessionPet,
 } from '../src/domain/pet'
@@ -290,5 +293,141 @@ describe('pet domain projection', () => {
         () => 0.75,
       ),
     ).toEqual({ animalId: 'yellow-chick', skinId: 'default' })
+  })
+
+  it('unlocks all 10 affection tiers at exact thresholds, never re-locks on drop, and requires surpassing peakAffection to advance', () => {
+    // Gain 35 affection on day 1 -> unlocks black-cat(0), yellow-chick(15), white-goose(35)
+    // Then 2 early finishes -> affection drops to 25, peakAffection stays 35 -> white-goose stays unlocked
+    // Then gain +15 -> affection 40, peakAffection 40 -> orange-cat(65) remains locked until affection reaches 65
+    const base = Date.parse('2026-11-10T09:00:00+08:00')
+    const partialRecords: FocusRecord[] = [
+      makeRecord({ id: 'g1', startedAt: base, durationMs: 175 * 60_000 }), // +35 affection
+      makeRecord({ id: 'e1', startedAt: base + 12_000_000, durationMs: 60_000, status: 'early' }), // -5 => 30
+      makeRecord({ id: 'e2', startedAt: base + 13_000_000, durationMs: 60_000, status: 'early' }), // -5 => 25
+      makeRecord({ id: 'g2', startedAt: base + 14_000_000, durationMs: 75 * 60_000 }), // +15 => 40 (peak 40)
+    ]
+    const midProj = projectPetDomain({ records: partialRecords, timeZone: 'Asia/Shanghai', now: base + 20_000_000 })
+    expect(midProj.affection).toBe(40)
+    expect(midProj.peakAffection).toBe(40)
+    expect(midProj.unlockedAnimals).toEqual(['black-cat', 'yellow-chick', 'white-goose'])
+
+    // Now push across 600 affection over 6 distinct days (5 * 120/day = 600) -> all 10 tiers unlocked
+    const fullRecords: FocusRecord[] = []
+    for (let d = 0; d < 6; d++) {
+      const dayBase = Date.parse(`2026-11-${10 + d}T08:00:00+08:00`)
+      // 4 sessions * 150m = 4 * 30 = 120/day (non-consecutive gap on day 5 to avoid streak=7)
+      const offsetDay = d === 5 ? Date.parse('2026-11-20T08:00:00+08:00') : dayBase
+      for (let s = 0; s < 4; s++) {
+        fullRecords.push(makeRecord({ id: `f-${d}-${s}`, startedAt: offsetDay + s * 10_000_000, durationMs: 150 * 60_000 }))
+      }
+    }
+    // Add early finishes after reaching 600 to drop current affection below 600
+    fullRecords.push(
+      makeRecord({ id: 'drop-1', startedAt: Date.parse('2026-11-21T09:00:00+08:00'), durationMs: 60_000, status: 'early' }),
+      makeRecord({ id: 'drop-2', startedAt: Date.parse('2026-11-21T10:00:00+08:00'), durationMs: 60_000, status: 'early' }),
+    )
+    const highProj = projectPetDomain({ records: fullRecords, timeZone: 'Asia/Shanghai', now: Date.parse('2026-11-21T12:00:00+08:00') })
+    expect(highProj.peakAffection).toBe(720)
+    expect(highProj.affection).toBe(710)
+    for (const tierAnimal of ANIMAL_CATALOG.filter((a) => a.unlockType === 'affection')) {
+      expect(highProj.unlockedAnimals).toContain(tierAnimal.id)
+    }
+  })
+
+  it('computes unlock progress text for tier, streak, raised milestones, and species skins while excluding manual records', () => {
+    const records: FocusRecord[] = [
+      // 4 consecutive days of timer focus for black-cat (1 litter/day = 4 raised)
+      ...Array.from({ length: 4 }, (_, i) =>
+        makeRecord({
+          id: `t-${i}`,
+          startedAt: Date.parse(`2026-11-${20 + i}T09:00:00+08:00`),
+          durationMs: 25 * 60_000,
+          animalId: 'black-cat',
+        }),
+      ),
+      // 3 manual days + huge duration should NOT advance streak, totalRaised, or black-cat/yellow-chick skin counts
+      ...Array.from({ length: 3 }, (_, i) =>
+        makeRecord({
+          id: `m-${i}`,
+          startedAt: Date.parse(`2026-11-${24 + i}T09:00:00+08:00`),
+          durationMs: 200 * 60_000,
+          source: 'manual',
+          animalId: 'black-cat',
+        }),
+      ),
+    ]
+    const proj = projectPetDomain({
+      records,
+      timeZone: 'Asia/Shanghai',
+      now: Date.parse('2026-11-26T12:00:00+08:00'),
+    })
+
+    expect(proj.unlockedAnimals).toEqual(['black-cat', 'yellow-chick'])
+    expect(proj.unlockedSkins['black-cat']).toEqual(['default'])
+    expect(getAnimalUnlockStatus(getAnimalMeta('white-goose'), proj)).toEqual({
+      unlocked: false,
+      current: 20,
+      target: 35,
+      progressText: '好感需达到 35',
+    })
+    expect(getAnimalUnlockStatus(getAnimalMeta('angel-cat'), proj)).toEqual({
+      unlocked: false,
+      current: 4,
+      target: 7,
+      progressText: '连续专注 4/7 天',
+    })
+    expect(getAnimalUnlockStatus(getAnimalMeta('black-dragon'), proj)).toEqual({
+      unlocked: false,
+      current: 4,
+      target: 50,
+      progressText: '累计养出 4/50 只',
+    })
+    expect(getSkinUnlockStatus(SKIN_CATALOG['black-cat'][1]!, proj)).toEqual({
+      unlocked: false,
+      current: 4,
+      target: 10,
+      progressText: '累计养出 10 只解锁（4/10）',
+    })
+    expect(getSkinUnlockStatus(SKIN_CATALOG['yellow-chick'][2]!, proj)).toEqual({
+      unlocked: false,
+      current: 0,
+      target: 30,
+      progressText: '累计养出 30 只解锁（0/30）',
+    })
+  })
+
+  it('draws random session pets strictly from unlocked pool with selected unlocked skin and preserves exact failTitles', () => {
+    const records: FocusRecord[] = []
+    const base = Date.parse('2026-11-23T08:00:00+08:00')
+    for (let i = 0; i < 10; i++) {
+      records.push(
+        makeRecord({
+          id: `bc-${i}`,
+          startedAt: base + i * 2_000_000,
+          durationMs: 25 * 60_000,
+          animalId: 'black-cat',
+        }),
+      )
+    }
+    const proj = projectPetDomain({ records, timeZone: 'Asia/Shanghai', now: base + 30_000_000 })
+    // 10 * 5 = 50 affection -> unlocked: black-cat, yellow-chick, white-goose; black-cat raised=10 -> cow unlocked
+    expect(proj.unlockedAnimals).toEqual(['black-cat', 'yellow-chick', 'white-goose'])
+
+    const pet: PetData = {
+      version: 1,
+      selectedAnimalId: 'random',
+      selectedSkins: { 'black-cat': 'cow', 'yellow-chick': 'snow' },
+      lastSelectedItemId: null,
+      retroCutoffAt: null,
+    }
+    const sampled = new Set<string>()
+    for (const r of [0, 0.34, 0.67, 0.99]) {
+      const picked = resolveSessionPet(pet, proj, () => r)
+      sampled.add(`${picked.animalId}:${picked.skinId}`)
+      expect(proj.unlockedAnimals).toContain(picked.animalId)
+    }
+    expect(sampled).toEqual(new Set(['black-cat:cow', 'yellow-chick:default', 'white-goose:default']))
+    expect(getAnimalMeta('balloon-dog').failTitle).toBe('完蛋！你的气球小狗漏气挂了')
+    expect(getAnimalMeta('green-parrot').failTitle).toBe('完蛋！你的小鹦鹉挂了')
   })
 })
