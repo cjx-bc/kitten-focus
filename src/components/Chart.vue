@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { init, use, type ECharts, type EChartsCoreOption } from 'echarts/core'
-import { BarChart, PieChart, LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { BarChart, PieChart, LineChart, CustomChart } from 'echarts/charts'
+import {
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  MarkLineComponent,
+} from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 use([
   BarChart,
   PieChart,
   LineChart,
+  CustomChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
+  MarkLineComponent,
   CanvasRenderer,
 ])
 const props = defineProps<{ option: EChartsCoreOption; label: string; height?: number }>(),

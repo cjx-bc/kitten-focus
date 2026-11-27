@@ -348,6 +348,194 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
     p.assertNoErrors('Statistics periods, midnight split, 15s record & record delete')
   })
 
+  it('verifies Statistics v2 earlyCount, duration/count toggle, mean-line trend chart, and 365 single-canvas heatmap scrub & keyboard inspection (CF-09)', async () => {
+    const now = new Date()
+    const todayStart1 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0, 0)
+    const todayEnd1 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 25, 0, 0)
+    const todayStart2 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 11, 0, 0, 0)
+    const todayEnd2 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 11, 15, 0, 0)
+    const yesterdayEarlyStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 15, 0, 0, 0)
+    const yesterdayEarlyEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 15, 10, 0, 0)
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
+
+    const pad2 = (n: number) => String(n).padStart(2, '0')
+    const toDateKey = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+    const todayKey = toDateKey(todayStart1)
+    const yesterdayKey = toDateKey(yesterdayEarlyStart)
+
+    const p = await openPage({
+      supported: true,
+      authorized: true,
+      connected: true,
+      initialData: {
+        schemaVersion: 1,
+        themes: [
+          { id: 't1', name: '数学', color: '#ef4e36', order: 0, collapsed: false },
+          { id: 't2', name: '英语', color: '#698caa', order: 1, collapsed: false },
+        ],
+        items: [
+          { id: 'i1', themeId: 't1', title: '高数刷题', note: '', mode: 'countdown', minutes: 25, order: 0 },
+          { id: 'i2', themeId: 't2', title: '背单词', note: '', mode: 'countdown', minutes: 25, order: 1 },
+        ],
+        records: [
+          {
+            id: 'r-today-1',
+            itemId: 'i1',
+            themeId: 't1',
+            title: '高数刷题',
+            themeName: '数学',
+            color: '#ef4e36',
+            mode: 'countdown',
+            targetMs: 25 * 60000,
+            startedAt: todayStart1.getTime(),
+            endedAt: todayEnd1.getTime(),
+            timeZone: tz,
+            durationMs: 25 * 60000,
+            pausedMs: 0,
+            segments: [{ start: todayStart1.getTime(), end: todayEnd1.getTime() }],
+            status: 'completed',
+          },
+          {
+            id: 'r-today-2',
+            itemId: 'i2',
+            themeId: 't2',
+            title: '背单词',
+            themeName: '英语',
+            color: '#698caa',
+            mode: 'countdown',
+            targetMs: 25 * 60000,
+            startedAt: todayStart2.getTime(),
+            endedAt: todayEnd2.getTime(),
+            timeZone: tz,
+            durationMs: 15 * 60000,
+            pausedMs: 0,
+            segments: [{ start: todayStart2.getTime(), end: todayEnd2.getTime() }],
+            status: 'early',
+          },
+          {
+            id: 'r-yest-early',
+            itemId: 'i2',
+            themeId: 't2',
+            title: '背单词',
+            themeName: '英语',
+            color: '#698caa',
+            mode: 'countdown',
+            targetMs: 25 * 60000,
+            startedAt: yesterdayEarlyStart.getTime(),
+            endedAt: yesterdayEarlyEnd.getTime(),
+            timeZone: tz,
+            durationMs: 10 * 60000,
+            pausedMs: 0,
+            segments: [{ start: yesterdayEarlyStart.getTime(), end: yesterdayEarlyEnd.getTime() }],
+            status: 'early',
+          },
+        ],
+        deletedRecordIds: [],
+        events: [],
+        eventExceptions: [],
+        semesters: [],
+        courses: [],
+        courseExceptions: [],
+        preferences: { defaultMinutes: 25, sound: true, vibration: true, activeSemesterId: null },
+      },
+    })
+
+    await p.navigateHash('#/statistics')
+    await p.waitFor(() => window.location.hash.includes('/statistics'))
+
+    // Overview includes 提前结束次数 (1 today) & non-zero mean summary
+    const dayOverviewText = await p.evaluate(() => document.body.innerText)
+    expect(dayOverviewText).toContain('提前结束次数')
+    expect(dayOverviewText).toContain('40分钟')
+    expect(dayOverviewText).toContain('非零均值 20分钟')
+
+    // Toggle 按时长 <-> 按次数: trend and distribution switch cleanly
+    await p.clickByRoleOrText({ text: '按次数', exact: true, selector: '.metric-tabs button' })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('专注次数趋势'))
+    const countModeText = await p.evaluate(() => document.body.innerText)
+    expect(countModeText).toContain('次数分布')
+    expect(countModeText).toContain('1 次')
+    expect(countModeText).toContain('50.0%')
+    expect(countModeText).toContain('非零均值 1 次')
+
+    await p.clickByRoleOrText({ text: '按时长', exact: true, selector: '.metric-tabs button' })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('专注时长趋势'))
+
+    // Switch to 年视图 -> verify single-canvas 365-day heatmap (no hundreds of button cells, >= 48px tall)
+    await p.clickByRoleOrText({ text: '年', exact: true, selector: '.period-tabs button' })
+    await p.waitFor(() => !!document.querySelector('.heatmap-canvas'))
+
+    const heatmapMeta = await p.evaluate(() => {
+      const canvas = document.querySelector('.heatmap-canvas') as HTMLCanvasElement | null
+      const stage = document.querySelector('.heatmap-stage')
+      const readout = document.querySelector('.heatmap-footer')
+      if (!canvas || !stage || !readout) return null
+      const r = canvas.getBoundingClientRect()
+      return {
+        width: r.width,
+        height: r.height,
+        buttonCountInsideStage: stage.querySelectorAll('button').length,
+        date: readout.getAttribute('data-heatmap-date'),
+        count: readout.getAttribute('data-heatmap-count'),
+        ms: readout.getAttribute('data-heatmap-ms'),
+        rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+      }
+    })
+    expect(heatmapMeta).not.toBeNull()
+    expect(heatmapMeta!.height).toBeGreaterThanOrEqual(48)
+    expect(heatmapMeta!.width).toBeGreaterThanOrEqual(200)
+    expect(heatmapMeta!.buttonCountInsideStage).toBe(0)
+    expect(heatmapMeta!.date).toBe(todayKey)
+    expect(heatmapMeta!.count).toBe('2')
+    expect(heatmapMeta!.ms).toBe(String(40 * 60000))
+
+    // Keyboard ArrowLeft steps to yesterday
+    await p.evaluate(() => {
+      const canvas = document.querySelector('.heatmap-canvas') as HTMLCanvasElement
+      canvas.focus()
+    })
+    await p.pressKey('ArrowLeft')
+    await p.waitFor(
+      (targetKey: unknown) =>
+        document.querySelector('.heatmap-footer')?.getAttribute('data-heatmap-date') === String(targetKey),
+      { args: [yesterdayKey], label: 'heatmap keyboard ArrowLeft to yesterday' },
+    )
+    const afterArrowLeft = await p.evaluate(() => ({
+      date: document.querySelector('.heatmap-footer')?.getAttribute('data-heatmap-date'),
+      count: document.querySelector('.heatmap-footer')?.getAttribute('data-heatmap-count'),
+      ms: document.querySelector('.heatmap-footer')?.getAttribute('data-heatmap-ms'),
+    }))
+    expect(afterArrowLeft).toEqual({
+      date: yesterdayKey,
+      count: '1',
+      ms: String(10 * 60000),
+    })
+
+    // Pointer drag scrub across the canvas selects an earlier date and updates readout
+    const box = await p.evaluate(() => {
+      const canvas = document.querySelector('.heatmap-canvas') as HTMLCanvasElement
+      canvas.scrollIntoView({ block: 'center' })
+      const r = canvas.getBoundingClientRect()
+      return { left: r.left, top: r.top, width: r.width, height: r.height }
+    })
+    const startX = Math.round(box.left + box.width * 0.85)
+    const midY = Math.round(box.top + box.height * 0.5)
+    const endX = Math.round(box.left + box.width * 0.25)
+    await p.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: startX, y: midY })
+    await p.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: startX, y: midY, button: 'left', clickCount: 1 })
+    await p.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: endX, y: midY, button: 'left' })
+    await p.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: endX, y: midY, button: 'left', clickCount: 1 })
+    await new Promise((r) => setTimeout(r, 120))
+
+    const afterScrubDate = await p.evaluate(() =>
+      document.querySelector('.heatmap-footer')?.getAttribute('data-heatmap-date'),
+    )
+    expect(afterScrubDate).toBeTruthy()
+    expect(afterScrubDate! < yesterdayKey).toBe(true)
+
+    p.assertNoErrors('Statistics v2 CF-09')
+  })
+
   it('renders Cat tab placeholder strictly as 小猫还未入驻 (UF1)', async () => {
     const p = await openPage()
     await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '农场' })
