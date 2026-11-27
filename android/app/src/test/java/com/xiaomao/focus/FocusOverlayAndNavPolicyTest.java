@@ -133,4 +133,16 @@ public class FocusOverlayAndNavPolicyTest {
         assertFalse(FocusProtection.isAccessibilityEnabledInSettings(true, "com.example.other/.Service", pkg, cls));
         assertFalse(FocusProtection.isAccessibilityEnabledInSettings(true, null, pkg, cls));
     }
+
+    @Test
+    public void suppressesOverlayOnSafeRoutesIncludingCatCalendarAndStatistics() {
+        assertTrue(FocusBlockOverlay.isSafeRoute("/cat"));
+        assertTrue(FocusBlockOverlay.isSafeRoute("/calendar"));
+        assertTrue(FocusBlockOverlay.isSafeRoute("/statistics"));
+        assertTrue(FocusBlockOverlay.isSafeRoute("/tasks"));
+        assertTrue(FocusBlockOverlay.isSafeRoute("/settings"));
+        assertFalse(FocusBlockOverlay.isSafeRoute("/focus"));
+        assertFalse(FocusBlockOverlay.isSafeRoute("/lock"));
+        assertEquals(Mode.NONE, FocusBlockOverlay.resolveOverlayMode(false, true, false, false));
+    }
 }

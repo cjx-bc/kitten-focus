@@ -11,7 +11,7 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
   async function openPage(catFocusStub?: boolean | CatFocusStubOptions): Promise<CdpPage> {
     await page?.close()
     page = await CdpPage.launch({ width: 390, height: 844, catFocusStub })
-    await page.goto(`${server.url}/#/tasks`, true)
+    await page.goto(`${server.url}/#/focus`, true)
     page.clearErrors()
     return page
   }
@@ -116,7 +116,7 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
       },
     })
 
-    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '日历' })
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '时间轴' })
     await p.waitFor(() => window.location.hash.includes('/calendar'))
 
     // Expand month grid -> verify 42 day cells
@@ -167,13 +167,16 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
     expect(await p.evaluate(() => document.body.innerText)).toContain('极限刷题')
 
     // End focus early -> verify 极限刷题 appears in Calendar 实际 timeline
-    await new Promise((r) => setTimeout(r, 200))
-    await p.clickByRoleOrText({ name: '结束专注' })
+    await p.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(12000)
+    })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('左滑放弃'))
+    await p.clickByRoleOrText({ name: '放弃专注' })
     await p.clickByRoleOrText({ text: '结束专注', withinOpenDialog: true })
-    await p.waitFor(() => /提前结束|本次专注已结束/.test(document.body.innerText ?? ''))
-    await p.clickByRoleOrText({ text: '返回待办' })
-    await p.waitFor(() => window.location.hash.includes('/tasks'))
-    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '日历' })
+    await p.waitFor(() => /挂了|提前结束/.test(document.body.innerText ?? ''))
+    await p.clickByRoleOrText({ text: '返回首页' })
+    await p.waitFor(() => window.location.hash.includes('/focus'))
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '时间轴' })
     await p.waitFor(() => window.location.hash.includes('/calendar'))
     await p.clickByRoleOrText({ text: '实际', selector: '.mini-switch button' })
     expect(await p.evaluate(() => document.body.innerText)).toContain('极限刷题')
@@ -183,7 +186,7 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
 
   it('supports Calendar Timetable semester creation, Monday validation, course creation, and single-week adjustment (UF6)', async () => {
     const p = await openPage()
-    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '日历' })
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '时间轴' })
     await p.waitFor(() => window.location.hash.includes('/calendar'))
     await switchToTimetable(p)
 
@@ -347,7 +350,7 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
 
   it('renders Cat tab placeholder strictly as 小猫还未入驻 (UF1)', async () => {
     const p = await openPage()
-    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '小猫' })
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '农场' })
     await p.waitFor(() => window.location.hash.includes('/cat'))
     const catText = await p.evaluate(() => (document.querySelector('main')?.innerText ?? '').trim())
     expect(catText).toBe('小猫还未入驻')

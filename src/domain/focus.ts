@@ -1,4 +1,5 @@
 import type { ActiveFocus, FocusRecord, FocusSnapshot } from './model'
+export const REGRET_WINDOW_MS = 10_000
 export interface Clock {
   epoch: number
   mono: number
@@ -13,12 +14,21 @@ export function elapsed(session: ActiveFocus, clock: Clock) {
 export function settle(
   session: ActiveFocus,
   clock: Clock,
-  action: 'read' | 'pause' | 'resume' | 'finish' = 'read',
+  action: 'read' | 'pause' | 'resume' | 'finish' | 'cancel' = 'read',
 ): FocusSnapshot {
   const s = structuredClone(session)
   if (s.bootId !== clock.boot || clock.mono < s.anchorMono) return complete(s, clock, 'interrupted', true)
   const value = elapsed(s, clock)
   if (s.mode === 'countdown' && value >= s.targetMs) return complete(s, clock, 'completed')
+  if (action === 'cancel') {
+    if (s.strictMode && s.mode === 'countdown') {
+      throw new Error('严格倒计时不能暂停、取消或提前结束')
+    }
+    if (value >= REGRET_WINDOW_MS) {
+      throw new Error('已超过 10 秒无责取消时间，请左滑放弃')
+    }
+    return { session: null, elapsedMs: 0 }
+  }
   if (action === 'finish') return complete(s, clock, s.mode === 'countdown' ? 'early' : 'completed')
   if (action === 'pause' && s.state === 'running') {
     closeSegment(s, clock)
@@ -71,6 +81,10 @@ function complete(
     pausedMs: s.pausedMs,
     segments: s.segments,
     status,
+    animalId: s.animalId ?? 'black-cat',
+    skinId: s.skinId ?? 'default',
+    source: 'timer',
+    ...(status === 'early' ? { failReason: 'manual_giveup' as const } : {}),
   }
   return { session: null, elapsedMs: s.elapsedMs, ...(s.elapsedMs > 0 ? { record } : {}) }
 }

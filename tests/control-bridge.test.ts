@@ -64,8 +64,13 @@ it('rejects saved task-card hiding on the browser before creating a session', as
   expect((await repository.load()).preferences.protection?.enhancements).toEqual(['recentTasksHidden'])
 })
 
-it('observes an expired countdown without settling it or creating a rest or record', async () => {
+it('observes an expired countdown without settling it or creating a rest or record, and gates autoRest', async () => {
   const { focusDriver, controlDriver, repository } = await import('../src/platform/bridge')
+  const { emptyData } = await import('../src/domain/model')
+  const autoRestData = emptyData()
+  autoRestData.preferences.autoRest = true
+  await repository.save(autoRestData)
+
   await focusDriver.start(session())
   vi.advanceTimersByTime(90000)
 
@@ -81,14 +86,38 @@ it('observes an expired countdown without settling it or creating a rest or reco
   }
 
   const settled = await focusDriver.action('read')
-  expect(settled.record).toMatchObject({ id: 'focus-one', status: 'completed', durationMs: 60000 })
+  expect(settled.record).toMatchObject({ id: 'focus-one', status: 'completed', durationMs: 60000, source: 'timer' })
   expect((await controlDriver.observe()).rest.remainingMs).toBe(270000)
   expect((await repository.load()).records).toHaveLength(1)
 })
 
-it('keeps paused focus ownership and excludes paused time before passing ownership to rest', async () => {
+it('does not auto-create rest when autoRest is disabled (default) and supports 10s cancel', async () => {
+  const { focusDriver, controlDriver, repository } = await import('../src/platform/bridge')
+  await focusDriver.start(session())
+  vi.advanceTimersByTime(5000)
+  const cancelled = await focusDriver.action('cancel')
+  expect(cancelled).toEqual({ session: null, elapsedMs: 0 })
+  expect((await controlDriver.observe()).owner).toBeNull()
+  expect((await repository.load()).records).toEqual([])
+
+  await focusDriver.start({ ...session(), id: 'focus-two' })
+  vi.advanceTimersByTime(10000)
+  await expect(focusDriver.action('cancel')).rejects.toThrow('已超过 10 秒无责取消时间')
+  vi.advanceTimersByTime(50000)
+  const completed = await focusDriver.action('read')
+  expect(completed.record?.status).toBe('completed')
+  expect((await controlDriver.observe()).owner).toBeNull()
+  expect((await controlDriver.observe()).rest.session).toBeNull()
+})
+
+it('keeps paused focus ownership and excludes paused time before passing ownership to rest when autoRest=true', async () => {
   const { focusDriver, restDriver, controlDriver, repository } =
     await import('../src/platform/bridge')
+  const { emptyData } = await import('../src/domain/model')
+  const autoRestData = emptyData()
+  autoRestData.preferences.autoRest = true
+  await repository.save(autoRestData)
+
   await focusDriver.start(session('stopwatch'))
   vi.advanceTimersByTime(12000)
   await focusDriver.action('pause')

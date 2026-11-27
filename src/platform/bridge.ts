@@ -24,7 +24,7 @@ import type {
 import { emptyData, effectiveWhitelist } from '../domain/model'
 import { isMasterFocusLockActive, resolveEffectiveProtection } from '../domain/protectionModules'
 import { elapsed, settle } from '../domain/focus'
-import { makeRest, readRest, REST_DURATION_MS } from '../domain/rest'
+import { makeRest, readRest, resolveRestDurationMs, REST_DURATION_MS } from '../domain/rest'
 
 export type ProtectionSettingsTarget = 'usageStats' | 'overlay' | 'accessibility'
 
@@ -46,7 +46,7 @@ interface NativeBridge {
     session: ActiveFocus
     strictModeConfirmed?: boolean
   }): Promise<FocusSnapshot>
-  focusAction(options: { action: 'read' | 'pause' | 'resume' | 'finish' }): Promise<FocusSnapshot>
+  focusAction(options: { action: 'read' | 'pause' | 'resume' | 'finish' | 'cancel' }): Promise<FocusSnapshot>
   startRest(options: { recordId: string }): Promise<RestSnapshot>
   restAction(options: { action: 'read' | 'exit' }): Promise<RestSnapshot>
   grantTemporaryAccess(options: TemporaryAccessRequest): Promise<TemporaryAccessResult>
@@ -189,7 +189,7 @@ export const focusDriver = {
     await db.put('kv', browserSession, 'active')
     return { session: browserSession, elapsedMs: 0 }
   },
-  async action(action: 'read' | 'pause' | 'resume' | 'finish'): Promise<FocusSnapshot> {
+  async action(action: 'read' | 'pause' | 'resume' | 'finish' | 'cancel'): Promise<FocusSnapshot> {
     if (native) return plugin.focusAction({ action })
     const db = await webReadFocus()
     if (!browserSession) return { session: null, elapsedMs: 0 }
@@ -202,9 +202,15 @@ export const focusDriver = {
       throw new Error('严格倒计时不能暂停、取消或提前结束')
     const result = settle(browserSession, clock(), action)
     const tx = db.transaction('kv', 'readwrite')
+    if (action === 'cancel' && !result.session && !result.record) {
+      await tx.store.delete('active')
+      await tx.done
+      browserSession = null
+      return { session: null, elapsedMs: 0 }
+    }
     await tx.store.put(result.session, 'active')
+    const data: AppData = (await tx.store.get('data')) || emptyData()
     if (result.record) {
-      const data: AppData = (await tx.store.get('data')) || emptyData()
       if (
         !data.deletedRecordIds.includes(result.record.id) &&
         !data.records.some((r) => r.id === result.record!.id)
@@ -213,8 +219,9 @@ export const focusDriver = {
         await tx.store.put(data, 'data')
       }
     }
-    if (result.record?.status === 'completed') {
-      const rest = makeRest(result.record)
+    if (result.record?.status === 'completed' && data.preferences?.autoRest === true) {
+      const restDurationMs = resolveRestDurationMs(data.preferences.restMinutes)
+      const rest = makeRest(result.record, result.record.endedAt, restDurationMs)
       await tx.store.put(readRest(rest, Date.now()).session, 'rest')
     }
     await tx.done
@@ -239,7 +246,9 @@ export const restDriver = {
     const existing = await restDriver.read()
     if (existing.session?.record.id === record.id) return existing
     if (existing.session?.state === 'running') throw new Error('已有一段休息正在进行')
-    const session = makeRest(record, Date.now())
+    const data: AppData = (await db.get('kv', 'data')) || emptyData()
+    const restDurationMs = resolveRestDurationMs(data.preferences?.restMinutes)
+    const session = makeRest(record, Date.now(), restDurationMs)
     await db.put('kv', session, 'rest')
     return { session, remainingMs: session.endsAt - session.startedAt }
   },
@@ -260,9 +269,10 @@ export const controlDriver = {
     const rest: RestSession | null = (await db.get('kv', 'rest')) || null
     const interrupted = !!session && (session.bootId !== now.boot || now.mono < session.anchorMono)
     const elapsedMs = session ? (interrupted ? session.elapsedMs : elapsed(session, now)) : 0
+    const restDurationMs = rest?.durationMs && rest.durationMs > 0 ? rest.durationMs : REST_DURATION_MS
     const remainingMs =
       rest?.state === 'running'
-        ? Math.max(0, Math.min(REST_DURATION_MS, rest.endsAt - now.epoch))
+        ? Math.max(0, Math.min(restDurationMs, rest.endsAt - now.epoch))
         : 0
     return {
       owner: session ? 'focus' : rest?.state === 'running' ? 'rest' : null,

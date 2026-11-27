@@ -9,15 +9,15 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
 
-final class LocalStore extends SQLiteOpenHelper {
+final class LocalStore extends SQLiteOpenHelper implements FocusEngine.Store {
     private static LocalStore instance;
     static synchronized LocalStore get(Context context) { if(instance == null) instance = new LocalStore(context.getApplicationContext()); return instance; }
     private LocalStore(Context context) { this(context, "xiaomao-focus.db"); }
     LocalStore(Context context, String databaseName) { super(context, databaseName, null, 1); }
     @Override public void onCreate(SQLiteDatabase db) { db.execSQL("CREATE TABLE documents (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"); db.execSQL("CREATE TABLE focus_records (id TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"); }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) { }
-    synchronized JSONObject read(String key) throws JSONException { try(Cursor cursor=getReadableDatabase().rawQuery("SELECT value FROM documents WHERE key=?",new String[]{key})) { return cursor.moveToFirst()?new JSONObject(cursor.getString(0)):null; } }
-    synchronized void write(String key, JSONObject value) { if(value==null){getWritableDatabase().delete("documents","key=?",new String[]{key});return;}ContentValues row=new ContentValues();row.put("key",key);row.put("value",value.toString());getWritableDatabase().insertWithOnConflict("documents",null,row,SQLiteDatabase.CONFLICT_REPLACE); }
+    @Override public synchronized JSONObject read(String key) throws JSONException { try(Cursor cursor=getReadableDatabase().rawQuery("SELECT value FROM documents WHERE key=?",new String[]{key})) { return cursor.moveToFirst()?new JSONObject(cursor.getString(0)):null; } }
+    @Override public synchronized void write(String key, JSONObject value) { if(value==null){getWritableDatabase().delete("documents","key=?",new String[]{key});return;}ContentValues row=new ContentValues();row.put("key",key);row.put("value",value.toString());getWritableDatabase().insertWithOnConflict("documents",null,row,SQLiteDatabase.CONFLICT_REPLACE); }
     synchronized JSONObject loadData() throws JSONException {
         JSONObject data=read("data"); if(data==null)return null;
         JSONArray records=new JSONArray(),deleted=data.optJSONArray("deletedRecordIds");
@@ -44,7 +44,7 @@ final class LocalStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
     }
-    synchronized void finish(JSONObject record, JSONObject rest) {SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{if(record!=null&&record.optLong("durationMs")>0){upsertRecord(record);write("lastFinished",record);}write("active",null);write("rest",rest);db.setTransactionSuccessful();}finally{db.endTransaction();}}
+    @Override public synchronized void finish(JSONObject record, JSONObject rest) {SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{if(record!=null&&record.optLong("durationMs")>0){upsertRecord(record);write("lastFinished",record);}write("active",null);write("rest",rest);db.setTransactionSuccessful();}finally{db.endTransaction();}}
 
     synchronized JSONObject snapshot() throws JSONException {
         SQLiteDatabase db = getWritableDatabase();

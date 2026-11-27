@@ -144,8 +144,27 @@ beforeEach(() => {
     focus: { session: null, elapsedMs: 0 },
     rest: { session: null, remainingMs: 0 },
     lock: { session: null, remainingMs: 0, records: [] },
+    petProjection: {
+      affection: 0,
+      peakAffection: 0,
+      currentStreakDays: 0,
+      maxConsecutiveDays: 0,
+      totalRaised: 0,
+      raisedByAnimal: { 'black-cat': 0 },
+      dailyGainToday: 0,
+      dailyGains: {},
+      recordEffects: new Map(),
+      unlockedAnimals: ['black-cat'],
+      unlockedSkins: { 'black-cat': ['default'] },
+      weekFarmSlice: () => ({ weekStartDate: '2026-11-23', weekEndDate: '2026-11-29', weekTotalCount: 0, totalDurationMs: 0, instances: [] }),
+      weeklyFourColorMatrix: () => [],
+    },
     lastResult: undefined,
     start: vi.fn(async () => {}),
+    dismissResult: vi.fn(),
+    updateRecordNote: vi.fn(async () => {}),
+    selectStandbyItem: vi.fn(async () => {}),
+    selectAnimal: vi.fn(async () => {}),
     startLock: vi.fn(async () => {}),
     finishLock: vi.fn(async () => {}),
     deleteRecord: vi.fn(async (id: string) => {
@@ -587,25 +606,25 @@ describe('UI audit fixes', () => {
       startedAt: 1, endedAt: 300001, timeZone: 'UTC', segments: [],
     }
     const earlyResult = await mountSSR(FocusView)
-    expect(earlyResult.html).toContain('data-status="early"')
-    expect(earlyResult.html).not.toContain('lucide-check')
-    expect(earlyResult.html).toContain('休息 5 分钟')
-    expect(earlyResult.html).toContain('再来一轮')
-    expect(earlyResult.html).toContain('返回待办')
+    expect(earlyResult.html).toContain('完蛋！你的小黑猫挂了')
+    expect(earlyResult.html).toContain('好感 -5')
+    expect(earlyResult.html).toContain('返回首页')
+    expect(earlyResult.html).toContain('重新开始')
+    expect(earlyResult.html).not.toContain('休息 5 分钟')
 
     mocks.app.lastResult = { ...mocks.app.lastResult, id: 'r-done', durationMs: 1500000, status: 'completed' }
     const completedResult = await mountSSR(FocusView)
-    expect(completedResult.html).toContain('data-status="completed"')
-    expect(completedResult.html).toContain('lucide-check')
+    expect(completedResult.html).toContain('本次专注正常结束')
     expect(completedResult.html).toContain('休息 5 分钟')
     expect(completedResult.html).toContain('再次开始')
+    expect(completedResult.html).toContain('返回首页')
 
     mocks.app.lastResult = { ...mocks.app.lastResult, id: 'r-int', durationMs: 60000, status: 'interrupted' }
     const interruptedResult = await mountSSR(FocusView)
-    expect(interruptedResult.html).toContain('data-status="interrupted"')
-    expect(interruptedResult.html).not.toContain('lucide-check')
+    expect(interruptedResult.html).toContain('专注已中断')
     expect(interruptedResult.html).not.toContain('休息 5 分钟')
-    expect(interruptedResult.html).toContain('再次开始')
+    expect(interruptedResult.html).toContain('重新开始')
+    expect(interruptedResult.html).toContain('返回首页')
   })
 
   it('CalendarView defaults new today events to next half-hour, stacks datetime inputs, and uses 今天 jump button', async () => {
