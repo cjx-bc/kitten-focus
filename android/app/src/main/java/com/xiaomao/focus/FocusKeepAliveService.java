@@ -90,6 +90,7 @@ public final class FocusKeepAliveService extends Service {
         FocusBlockOverlay.dismiss();
         if (context == null) return;
         Context app = context.getApplicationContext();
+        WhiteNoisePlayer.getInstance(app).stop();
         try {
             app.stopService(new Intent(app, FocusKeepAliveService.class));
         } catch (Exception ignored) {
@@ -108,7 +109,9 @@ public final class FocusKeepAliveService extends Service {
             ? Reminders.buildFocusNotification(this, active, currentElapsed(active))
             : Reminders.buildFallbackKeepAliveNotification(this);
 
-        int fgsType = Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE : 0;
+        int fgsType = Build.VERSION.SDK_INT >= 34
+            ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            : 0;
         try {
             ServiceCompat.startForeground(this, Reminders.FOCUS_ID, notification, fgsType);
         } catch (RuntimeException failure) {
@@ -122,6 +125,7 @@ public final class FocusKeepAliveService extends Service {
             running = false;
             UsageAppMonitor.stop();
             FocusBlockOverlay.dismiss();
+            WhiteNoisePlayer.getInstance(this).stop();
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
             stopSelf(startId);
             return START_NOT_STICKY;
@@ -129,6 +133,7 @@ public final class FocusKeepAliveService extends Service {
 
         running = true;
         UsageAppMonitor.start(this);
+        WhiteNoisePlayer.getInstance(this).syncFromStore(this);
         Reminders.scheduleKeepAliveHeartbeat(this);
         watchdogActive = true;
         watchdogHandler.removeCallbacks(watchdogTick);
@@ -165,6 +170,7 @@ public final class FocusKeepAliveService extends Service {
         watchdogExecutor.shutdownNow();
         UsageAppMonitor.stop();
         FocusBlockOverlay.dismiss();
+        WhiteNoisePlayer.getInstance(this).stop();
         super.onDestroy();
     }
 

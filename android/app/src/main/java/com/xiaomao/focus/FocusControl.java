@@ -180,6 +180,9 @@ final class FocusControl {
         recentTasks.synchronize(active);
         launcher.synchronize(active);
         wallpaper.synchronize(active);
+        JSONObject data = store.read("data");
+        JSONObject preferences = data == null ? null : data.optJSONObject("preferences");
+        WhiteNoisePlayer.getInstance(context).sync(active, preferences);
     }
 
     JSONObject startFocus(JSONObject session) throws JSONException { return startFocus(session, false); }

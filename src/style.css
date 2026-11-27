@@ -149,7 +149,7 @@ textarea {
   padding: 12px 14px;
   outline: none;
 }
-input:not([type='checkbox']):not([type='radio']):not([type='color']):focus,
+input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):focus,
 select:focus,
 textarea:focus {
   background: var(--white);
@@ -164,6 +164,17 @@ input[type='checkbox'] {
 input[type='color'] {
   padding: 4px;
   width: 48px;
+}
+input[type='range'] {
+  width: 100%;
+  min-height: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
 }
 textarea {
   min-height: 88px;

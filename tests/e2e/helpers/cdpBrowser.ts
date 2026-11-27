@@ -143,6 +143,7 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
     }
 
     const appListeners = { appStateChange: [], backButton: [] };
+    const catFocusListeners = {};
     let cbSeq = 1;
 
     function clone(v) {
@@ -739,7 +740,12 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
       async deactivateDeviceAdmin() {
         return { supported: !!state.cfg.supported, active: false, preferenceEnabled: false, state: 'off', reason: '' };
       },
-      async removeListener() {},
+      async syncWhiteNoise() { return { ok: true }; },
+      async removeListener({ eventName, callbackId } = {}) {
+        if (eventName && catFocusListeners[eventName] && callbackId) {
+          catFocusListeners[eventName] = catFocusListeners[eventName].filter((item) => item.id !== callbackId);
+        }
+      },
     };
 
     const appUpdateHandlers = {
@@ -817,6 +823,15 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
           }
           return Promise.resolve(id);
         }
+        if (pluginName === 'CatFocus' && methodName === 'addListener') {
+          const id = String(cbSeq++);
+          const eventName = options && options.eventName;
+          if (eventName) {
+            catFocusListeners[eventName] = catFocusListeners[eventName] || [];
+            catFocusListeners[eventName].push({ id, callback });
+          }
+          return Promise.resolve(id);
+        }
         return Promise.resolve(String(cbSeq++));
       },
     };
@@ -829,6 +844,11 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
       advanceLockMs(ms) { state.clockOffsetMs += ms; persist(); },
       dispatchAppEvent(eventName, payload) {
         for (const item of appListeners[eventName] || []) {
+          item.callback(payload);
+        }
+      },
+      dispatchCatFocusEvent(eventName, payload) {
+        for (const item of catFocusListeners[eventName] || []) {
           item.callback(payload);
         }
       },

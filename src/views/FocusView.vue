@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
-import type { FocusItem, Mode } from '../domain/model'
+import type { FocusItem, Mode, WhiteNoiseId } from '../domain/model'
 import { timer, duration } from '../domain/dates'
 import { REGRET_WINDOW_MS } from '../domain/focus'
 import { getAnimalMeta, SKIN_CATALOG } from '../domain/pet'
@@ -10,6 +10,13 @@ import { resolveRestDurationMs } from '../domain/rest'
 import { studyCapsuleDisplay } from '../domain/protectionDisplay'
 import { isStudySessionLocked } from '../navigation/mainEntry'
 import { protectionDriver } from '../platform/bridge'
+import {
+  WHITE_NOISE_TRACKS,
+  clampWhiteNoiseVolume,
+  normalizeWhiteNoiseId,
+  setWhiteNoiseLiveVolume,
+  syncWhiteNoisePlayback,
+} from '../platform/whiteNoise'
 import type { ProtectionStatus } from '../domain/model'
 import Icon from '../components/Icon.vue'
 import PetGraphic from '../components/PetGraphic.vue'
@@ -23,7 +30,7 @@ import {
   type StartErrorKind,
 } from '../domain/startRecovery'
 
-type FocusSheet = 'tasks' | 'pet' | 'safety' | 'endConfirm' | 'startError' | null
+type FocusSheet = 'tasks' | 'pet' | 'whiteNoise' | 'safety' | 'endConfirm' | 'startError' | null
 
 const PET_BUBBLES = ['今天也要加油！', '喵～陪你专注', '稳住节奏！', '写完这轮就休息～'] as const
 const INTERRUPT_CHIPS = ['回消息', '刷视频', '临时有事', '走神了'] as const
@@ -128,6 +135,7 @@ onBeforeUnmount(() => {
   protectionRevision++
   clearTimeout(bounceTimer)
   clearTimeout(bubbleTimer)
+  clearTimeout(whiteNoiseSaveTimer)
   document.removeEventListener('visibilitychange', onVisibilityRefresh)
   window.removeEventListener('protection-recovered', onVisibilityRefresh)
 })
@@ -177,11 +185,97 @@ watch(
 const focusSheetTitle = computed(() => {
   if (focusSheet.value === 'tasks') return '选择专注事项'
   if (focusSheet.value === 'pet') return '伙伴图鉴'
+  if (focusSheet.value === 'whiteNoise') return '白噪音'
   if (focusSheet.value === 'safety') return '专注辅助与安全出口'
   if (focusSheet.value === 'endConfirm') return '结束本次专注？'
   if (focusSheet.value === 'startError') return '无法开始专注'
   return ''
 })
+
+// White noise preferences & live volume control
+const whiteNoiseTrack = computed<WhiteNoiseId>(() =>
+  normalizeWhiteNoiseId(app.data.preferences.whiteNoise),
+)
+const storedWhiteNoiseVolume = computed(() =>
+  clampWhiteNoiseVolume(app.data.preferences.whiteNoiseVolume),
+)
+const whiteNoiseVolumeDraft = ref<number | null>(null)
+let whiteNoiseSaveTimer: ReturnType<typeof setTimeout> | undefined
+
+watch(storedWhiteNoiseVolume, (next) => {
+  if (whiteNoiseVolumeDraft.value !== null && Math.abs(whiteNoiseVolumeDraft.value - next) < 0.005) {
+    whiteNoiseVolumeDraft.value = null
+  }
+})
+
+const whiteNoiseVolume = computed(() => whiteNoiseVolumeDraft.value ?? storedWhiteNoiseVolume.value)
+const whiteNoisePercent = computed(() => Math.round(whiteNoiseVolume.value * 100))
+
+async function selectWhiteNoise(trackId: WhiteNoiseId) {
+  if (busy.value) return
+  try {
+    await app.mutate((d) => {
+      d.preferences.whiteNoise = trackId
+      if (d.preferences.whiteNoiseVolume === undefined) {
+        d.preferences.whiteNoiseVolume = clampWhiteNoiseVolume(whiteNoiseVolumeDraft.value ?? undefined)
+      }
+    })
+    await syncWhiteNoisePlayback(
+      {
+        track: trackId,
+        volume: clampWhiteNoiseVolume(app.data.preferences.whiteNoiseVolume),
+        hasActiveFocus: Boolean(app.focus.session),
+        sessionState: app.focus.session?.state ?? null,
+      },
+      true,
+    )
+  } catch (e) {
+    app.notify(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function flushWhiteNoiseVolume() {
+  clearTimeout(whiteNoiseSaveTimer)
+  whiteNoiseSaveTimer = undefined
+  const draft = whiteNoiseVolumeDraft.value
+  if (draft === null) return
+  const clamped = Math.round(clampWhiteNoiseVolume(draft) * 100) / 100
+  whiteNoiseVolumeDraft.value = null
+  if (Math.abs(clamped - storedWhiteNoiseVolume.value) < 0.005 && app.data.preferences.whiteNoiseVolume !== undefined) {
+    return
+  }
+  try {
+    await app.mutate((d) => {
+      d.preferences.whiteNoiseVolume = clamped
+    })
+    await syncWhiteNoisePlayback(
+      {
+        track: whiteNoiseTrack.value,
+        volume: clamped,
+        hasActiveFocus: Boolean(app.focus.session),
+        sessionState: app.focus.session?.state ?? null,
+      },
+      true,
+    )
+  } catch (e) {
+    app.notify(e instanceof Error ? e.message : String(e))
+  }
+}
+
+function onWhiteNoiseVolumeInput(e: Event) {
+  const pct = Number((e.target as HTMLInputElement).value)
+  const vol = clampWhiteNoiseVolume(Number.isFinite(pct) ? pct / 100 : undefined)
+  whiteNoiseVolumeDraft.value = vol
+  setWhiteNoiseLiveVolume(vol)
+  clearTimeout(whiteNoiseSaveTimer)
+  whiteNoiseSaveTimer = setTimeout(() => {
+    void flushWhiteNoiseVolume()
+  }, 80)
+}
+
+function onWhiteNoiseVolumeChange() {
+  void flushWhiteNoiseVolume()
+}
 
 const safetyRoutes = [
   { path: '/emergency', label: '紧急与必要交互（拨号/急救/输入法）' },
@@ -192,6 +286,9 @@ const safetyRoutes = [
 
 function closeFocusSheet() {
   if (busy.value) return
+  if (focusSheet.value === 'whiteNoise') {
+    void flushWhiteNoiseVolume()
+  }
   focusSheet.value = null
   pendingFinishSessionId.value = null
   startError.value = null
@@ -665,16 +762,29 @@ async function rest() {
       <span class="focus-header-title">{{
         session.themeId && session.themeName ? session.themeName : '小猫专注'
       }}</span>
-      <button
-        type="button"
-        class="icon-button"
-        aria-label="专注辅助与安全出口"
-        aria-haspopup="dialog"
-        :aria-expanded="focusSheet === 'safety'"
-        @click="focusSheet = 'safety'"
-      >
-        <Icon name="more" />
-      </button>
+      <div class="header-tools" data-decision-group>
+        <button
+          type="button"
+          class="icon-button soft white-noise-trigger"
+          :class="{ active: whiteNoiseTrack !== 'off' }"
+          aria-label="白噪音"
+          aria-haspopup="dialog"
+          :aria-expanded="focusSheet === 'whiteNoise'"
+          @click="focusSheet = 'whiteNoise'"
+        >
+          <Icon name="music" :size="20" />
+        </button>
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="专注辅助与安全出口"
+          aria-haspopup="dialog"
+          :aria-expanded="focusSheet === 'safety'"
+          @click="focusSheet = 'safety'"
+        >
+          <Icon name="more" />
+        </button>
+      </div>
     </header>
 
     <!-- Standby Header -->
@@ -689,21 +799,33 @@ async function rest() {
         <span class="task-pill-label">{{ selectedItem ? selectedItem.title : '自由专注' }}</span>
         <Icon name="down" :size="15" />
       </button>
-      <button
-        type="button"
-        class="study-capsule"
-        :data-tone="studyCapsule.tone"
-        data-decision-group
-        :aria-label="studyCapsuleAriaLabel"
-        aria-haspopup="dialog"
-        :aria-expanded="studyOpen"
-        :disabled="busy"
-        @click="openStudyFromCapsule"
-      >
-        <Icon name="shield" :size="15" class="study-shield" />
-        <span class="study-label">{{ studyCapsule.text }}</span>
-        <Icon name="right" :size="14" class="study-chevron" />
-      </button>
+      <div class="header-tools" data-decision-group>
+        <button
+          type="button"
+          class="study-capsule"
+          :data-tone="studyCapsule.tone"
+          :aria-label="studyCapsuleAriaLabel"
+          aria-haspopup="dialog"
+          :aria-expanded="studyOpen"
+          :disabled="busy"
+          @click="openStudyFromCapsule"
+        >
+          <Icon name="shield" :size="15" class="study-shield" />
+          <span class="study-label">{{ studyCapsule.text }}</span>
+          <Icon name="right" :size="14" class="study-chevron" />
+        </button>
+        <button
+          type="button"
+          class="icon-button soft white-noise-trigger"
+          :class="{ active: whiteNoiseTrack !== 'off' }"
+          aria-label="白噪音"
+          aria-haspopup="dialog"
+          :aria-expanded="focusSheet === 'whiteNoise'"
+          @click="focusSheet = 'whiteNoise'"
+        >
+          <Icon name="music" :size="20" />
+        </button>
+      </div>
     </header>
 
     <!-- Running / Paused Body -->
@@ -1102,6 +1224,42 @@ async function rest() {
         <button type="button" class="primary wide" @click="closeFocusSheet">完成</button>
       </div>
 
+      <div v-else-if="focusSheet === 'whiteNoise'" class="stack">
+        <div class="white-noise-grid" data-decision-group role="radiogroup" aria-label="白噪音曲目">
+          <button
+            v-for="track in WHITE_NOISE_TRACKS"
+            :key="track.id"
+            type="button"
+            class="chip white-noise-chip"
+            :class="{ active: whiteNoiseTrack === track.id }"
+            role="radio"
+            :aria-checked="whiteNoiseTrack === track.id"
+            @click="selectWhiteNoise(track.id)"
+          >
+            {{ track.label }}
+          </button>
+        </div>
+        <div class="card white-noise-volume-card" data-decision-group>
+          <div class="white-noise-volume-head">
+            <label for="white-noise-volume">音量</label>
+            <span class="number white-noise-percent">{{ whiteNoisePercent }}%</span>
+          </div>
+          <input
+            id="white-noise-volume"
+            class="white-noise-slider"
+            data-tab-swipe-ignore
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            aria-label="白噪音音量"
+            :value="whiteNoisePercent"
+            @input="onWhiteNoiseVolumeInput"
+            @change="onWhiteNoiseVolumeChange"
+          />
+        </div>
+      </div>
+
       <div v-else-if="focusSheet === 'safety'" class="safety-sheet">
         <p class="notice" role="status">
           当前状态：{{ session ? (studyLocked ? '学霸模式保护中' : '普通专注中') : '未在专注中' }}
@@ -1191,15 +1349,31 @@ async function rest() {
   font-size: 13px;
 }
 .focus-header-title {
+  flex: 1;
   min-width: 0;
+  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.header-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.white-noise-trigger {
+  color: var(--muted-surface);
+}
+.white-noise-trigger.active {
+  background: var(--ink);
+  color: var(--white);
+}
 .task-pill {
   min-height: 48px;
-  max-width: 55%;
-  padding: 10px 14px;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 10px 12px;
   border-radius: 100px;
   background: var(--surface);
   color: var(--ink);
@@ -1207,7 +1381,7 @@ async function rest() {
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .task-pill-label {
   overflow: hidden;
@@ -1216,7 +1390,7 @@ async function rest() {
 }
 .study-capsule {
   min-height: 48px;
-  padding: 10px 14px;
+  padding: 10px 12px;
   border-radius: 100px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1225,8 +1399,9 @@ async function rest() {
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .study-capsule[data-tone='enabled'] {
   background: var(--ink);
@@ -1639,5 +1814,46 @@ async function rest() {
 }
 .text-button {
   min-height: 48px;
+}
+.white-noise-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.white-noise-chip {
+  width: 100%;
+  min-height: 48px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.white-noise-chip.active {
+  color: var(--white);
+}
+.white-noise-volume-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px 10px;
+}
+.white-noise-volume-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.white-noise-volume-head label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.white-noise-percent {
+  font-size: 15px;
+  color: var(--muted-surface);
+}
+.white-noise-slider {
+  width: 100%;
+  min-height: 48px;
+  height: 48px;
+  margin: 0;
 }
 </style>

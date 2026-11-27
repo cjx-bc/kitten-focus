@@ -194,6 +194,16 @@ onMounted(async () => {
         onSessionChanged: () => {
           void app.tick()
         },
+        onWhiteNoisePaused: () => {
+          if (app.data.preferences.whiteNoise && app.data.preferences.whiteNoise !== 'off') {
+            void app
+              .mutate((d) => {
+                d.preferences.whiteNoise = 'off'
+              })
+              .catch(() => {})
+          }
+          app.notify('音频输出已断开，白噪音已自动暂停')
+        },
       })
       await CapacitorApp.addListener('appStateChange', (state) => {
         if (state.isActive) {
