@@ -35,6 +35,7 @@ import {
 import { notificationDriver } from '../platform/notifications'
 import { stopWhiteNoisePlayback, syncWhiteNoisePlayback } from '../platform/whiteNoise'
 import { makeBackup, readBackup } from '../domain/backup'
+import { buildManualFocusRecord } from '../domain/manualBackfill'
 import { validateEvent } from '../domain/calendar'
 import { dateKey, weekday } from '../domain/dates'
 import { waitForDialogClose } from '../components/sheetClose'
@@ -389,6 +390,23 @@ export const useApp = defineStore('app', () => {
     if (lastResult.value?.id === recordId) {
       lastResult.value = { ...lastResult.value, note }
     }
+  }
+  async function addManualRecord(input: {
+    itemId: string | null
+    date: string
+    startTime: string
+    endTime: string
+    note?: string
+  }) {
+    const record = buildManualFocusRecord({
+      ...input,
+      items: data.value.items,
+      themes: data.value.themes,
+    })
+    await mutate((d) => {
+      d.records.push(record)
+    })
+    return record
   }
   async function selectStandbyItem(itemId: string | null) {
     await mutate((d) => {
@@ -797,6 +815,7 @@ export const useApp = defineStore('app', () => {
     action,
     dismissResult,
     updateRecordNote,
+    addManualRecord,
     selectStandbyItem,
     selectAnimal,
     selectSkin,

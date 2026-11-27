@@ -12,6 +12,7 @@ import {
   intervalBuckets,
   localDate,
   localInput,
+  localTime,
   readableDate,
   weekday,
   weekdayName,
@@ -19,6 +20,9 @@ import {
   zoneDate,
   zoneTime,
 } from '../domain/dates'
+import { statistics } from '../domain/statistics'
+import { renderWeeklyGridPngDataUrl } from '../domain/weeklyGridPng'
+import { exportPngFile } from '../platform/exportPng'
 import {
   classifyStartError,
   getUnreadyProtectionIds,
@@ -26,6 +30,7 @@ import {
   type StartErrorKind,
 } from '../domain/startRecovery'
 import Icon from '../components/Icon.vue'
+import PetGraphic from '../components/PetGraphic.vue'
 import Sheet from '../components/Sheet.vue'
 import { waitForDialogClose } from '../components/sheetClose'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
@@ -38,11 +43,19 @@ type CalendarSheet =
   | 'course'
   | 'adjust'
   | 'startError'
+  | 'manual'
+  | 'weeklyGrid'
   | null
+
+const CALENDAR_TABS = [
+  { id: 'timeline', label: '时间轴' },
+  { id: 'schedule', label: '日程' },
+  { id: 'timetable', label: '课表' },
+] as const
 
 const app = useApp(),
   router = useRouter(),
-  tab = ref<'schedule' | 'timetable'>('schedule'),
+  tab = ref<'timeline' | 'schedule' | 'timetable'>('timeline'),
   view = ref<'plan' | 'actual'>('plan'),
   day = ref(dateKey()),
   monthOpen = ref(false)
@@ -59,7 +72,25 @@ const sheet = ref<CalendarSheet>(null),
   courseBackToDetail = ref(false),
   semesterBackToMenu = ref(false),
   startError = ref<{ message: string; kind: StartErrorKind } | null>(null),
-  pendingStartItem = ref<FocusItem | null>(null)
+  pendingStartItem = ref<FocusItem | null>(null),
+  editingNoteRecordId = ref<string | null>(null),
+  noteDraft = ref(''),
+  noteError = ref(''),
+  noteBusy = ref(false)
+
+const manualForm = reactive<{
+  itemId: string | null
+  date: string
+  startTime: string
+  endTime: string
+  note: string
+}>({
+  itemId: null,
+  date: dateKey(),
+  startTime: '09:00',
+  endTime: '09:25',
+  note: '',
+})
 
 const eventForm = reactive<CalendarEvent>({
   id: '',
@@ -112,13 +143,37 @@ const dayItems = computed(() => occurrences(app.data, day.value, day.value)),
 const actualRecords = computed(() =>
   app.data.records
     .filter((r) =>
-      r.segments.some(
-        (s) =>
-          zoneDate(s.start, r.timeZone) <= day.value && zoneDate(s.end, r.timeZone) >= day.value,
-      ),
+      r.segments.length
+        ? r.segments.some(
+            (s) =>
+              zoneDate(s.start, r.timeZone) <= day.value && zoneDate(s.end, r.timeZone) >= day.value,
+          )
+        : zoneDate(r.startedAt, r.timeZone) === day.value,
     )
     .sort((a, b) => a.startedAt - b.startedAt),
 )
+const reducedMotionPref = computed(() => app.data.preferences.animation === 'off')
+const recordDateSet = computed(() => {
+  const set = new Set<string>()
+  for (const r of app.data.records) {
+    if (r.segments.length) {
+      for (const s of r.segments) {
+        const startD = zoneDate(s.start, r.timeZone)
+        const endD = zoneDate(s.end, r.timeZone)
+        set.add(startD)
+        if (endD !== startD) set.add(endD)
+      }
+    } else {
+      set.add(zoneDate(r.startedAt, r.timeZone))
+    }
+  }
+  return set
+})
+const timelineDayTotalMs = computed(() =>
+  actualRecords.value.reduce((sum, r) => sum + (actualDuration(r) || r.durationMs), 0),
+)
+const weeklyMatrix = computed(() => app.petProjection.weeklyFourColorMatrix(week.value[0]!))
+const weeklyStats = computed(() => statistics(app.data.records, week.value[0]!, week.value[6]!))
 const allDay = computed(() => dayItems.value.filter((o) => o.allDay)),
   timed = computed(() => dayItems.value.filter((o) => !o.allDay))
 const monthTitle = computed(
@@ -166,6 +221,10 @@ const sheetTitle = computed(() => {
       return '仅本次调课'
     case 'startError':
       return '无法开始专注'
+    case 'manual':
+      return '手动补录'
+    case 'weeklyGrid':
+      return '一周四色分布图'
     default:
       return ''
   }
@@ -554,6 +613,114 @@ function actualDuration(r: FocusRecord) {
   )
 }
 
+function recordDisplayDuration(r: FocusRecord) {
+  return actualDuration(r) || r.durationMs
+}
+
+function recordCardKind(r: FocusRecord): 'manual' | 'early' | 'completed' {
+  if (r.source === 'manual') return 'manual'
+  if (r.status === 'early') return 'early'
+  return 'completed'
+}
+
+function recordEarlyReason(r: FocusRecord): string {
+  const note = r.note?.trim()
+  if (note) return note
+  if (r.failReason === 'left_app') return '离开专注超时'
+  if (r.failReason === 'manual_giveup') return '主动放弃专注'
+  return '提前结束'
+}
+
+function startEditNote(r: FocusRecord) {
+  editingNoteRecordId.value = r.id
+  noteDraft.value = r.note ?? ''
+  noteError.value = ''
+}
+
+function cancelEditNote() {
+  editingNoteRecordId.value = null
+  noteDraft.value = ''
+  noteError.value = ''
+}
+
+async function saveRecordNote(recordId: string) {
+  if (noteBusy.value) return
+  const next = noteDraft.value.trim()
+  if ([...next].length > 100) {
+    noteError.value = '复盘小结最多 100 字'
+    return
+  }
+  noteBusy.value = true
+  noteError.value = ''
+  try {
+    await app.updateRecordNote(recordId, next)
+    editingNoteRecordId.value = null
+    noteDraft.value = ''
+  } catch (e) {
+    noteError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    noteBusy.value = false
+  }
+}
+
+function openManualBackfill() {
+  const today = dateKey()
+  manualForm.itemId = null
+  manualForm.date = day.value
+  if (day.value === today) {
+    const endMs = Date.now() - 60_000
+    const midnightMs = new Date(`${today}T00:00:00`).getTime()
+    const safeEnd = Math.max(midnightMs + 60_000, endMs)
+    const safeStart = Math.max(midnightMs, safeEnd - 25 * 60_000)
+    manualForm.startTime = localTime(safeStart)
+    manualForm.endTime = localTime(safeEnd)
+  } else {
+    manualForm.startTime = '09:00'
+    manualForm.endTime = '09:25'
+  }
+  manualForm.note = ''
+  clearError()
+  sheet.value = 'manual'
+}
+
+async function submitManualBackfill() {
+  await execute(async () => {
+    await app.addManualRecord({
+      itemId: manualForm.itemId,
+      date: manualForm.date,
+      startTime: manualForm.startTime,
+      endTime: manualForm.endTime,
+      note: manualForm.note,
+    })
+    day.value = manualForm.date
+  })
+}
+
+function openWeeklyGrid() {
+  clearError()
+  sheet.value = 'weeklyGrid'
+}
+
+async function exportWeeklyGrid() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const dataUrl = renderWeeklyGridPngDataUrl({
+      weekDates: week.value,
+      matrix: weeklyMatrix.value,
+      totalMs: weeklyStats.value.totalMs,
+      sessionCount: weeklyStats.value.count,
+    })
+    await exportPngFile(dataUrl, `xiaomao-week-${week.value[0]}.png`)
+    app.notify('已保存一周分布图')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
 function timeLabel(o: Occurrence) {
   return `${o.start.slice(0, 10) === day.value ? o.start.slice(11, 16) : '前一天'} — ${o.end.slice(0, 10) === day.value ? o.end.slice(11, 16) : '次日 ' + o.end.slice(11, 16)}`
 }
@@ -576,74 +743,334 @@ function coursePosition(o: Occurrence) {
 </script>
 <template>
   <div class="page calendar-page">
-    <header v-if="tab === 'schedule'" class="page-header">
-      <h1>日历</h1>
-      <div class="actions">
+    <header v-if="tab === 'timeline'" class="page-header timeline-top-header">
+      <h1>时间轴</h1>
+      <div class="segmented calendar-tabs" aria-label="视图切换">
         <button
+          v-for="item in CALENDAR_TABS"
+          :key="item.id"
           type="button"
-          class="today-jump"
-          :class="{ highlight: day !== dateKey() }"
-          aria-label="回到今天"
-          @click="day = dateKey()"
+          :class="{ active: tab === item.id }"
+          :aria-pressed="tab === item.id"
+          @click="tab = item.id"
         >
-          今天
-        </button>
-        <button
-          type="button"
-          class="icon-button"
-          aria-label="日历视图与设置"
-          aria-haspopup="dialog"
-          :aria-expanded="sheet === 'menu'"
-          @click="openMenu"
-        >
-          <Icon name="more" />
+          {{ item.label }}
         </button>
       </div>
     </header>
-    <header v-else class="page-header timetable-header">
-      <button type="button" class="detail-back timetable-back" @click="tab = 'schedule'">
-        <Icon name="left" :size="16" /><span>日程</span>
-      </button>
-      <div v-if="currentSemester" class="week-stepper">
-        <button type="button" class="icon-button" aria-label="上一教学周" @click="changeWeek(-1)">
-          <Icon name="left" :size="18" />
-        </button>
-        <span class="week-stepper-label">
-          {{
-            currentWeek >= 1 && currentWeek <= currentSemester.weeks
-              ? '第 ' + currentWeek + ' 周'
-              : '学期范围外'
-          }}
-        </span>
-        <button type="button" class="icon-button" aria-label="下一教学周" @click="changeWeek(1)">
-          <Icon name="right" :size="18" />
+    <header v-else-if="tab === 'schedule'" class="page-header calendar-mode-header">
+      <div class="header-top-row">
+        <h1>日历</h1>
+        <div class="actions">
+          <button
+            type="button"
+            class="today-jump"
+            :class="{ highlight: day !== dateKey() }"
+            aria-label="回到今天"
+            @click="day = dateKey()"
+          >
+            今天
+          </button>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="日历视图与设置"
+            aria-haspopup="dialog"
+            :aria-expanded="sheet === 'menu'"
+            @click="openMenu"
+          >
+            <Icon name="more" />
+          </button>
+        </div>
+      </div>
+      <div class="segmented calendar-tabs" aria-label="视图切换">
+        <button
+          v-for="item in CALENDAR_TABS"
+          :key="item.id"
+          type="button"
+          :class="{ active: tab === item.id }"
+          :aria-pressed="tab === item.id"
+          @click="tab = item.id"
+        >
+          {{ item.label }}
         </button>
       </div>
-      <h1 v-else class="timetable-empty-title">课表</h1>
-      <div class="actions">
-        <button
-          type="button"
-          class="icon-button"
-          :class="timetableHasEmptyPrimary ? 'soft' : 'primary'"
-          aria-label="添加课程"
-          @click="openCourse()"
-        >
-          <Icon name="plus" />
+    </header>
+    <header v-else class="page-header calendar-mode-header">
+      <div class="header-top-row timetable-header">
+        <button type="button" class="detail-back timetable-back" @click="tab = 'schedule'">
+          <Icon name="left" :size="16" /><span>日程</span>
         </button>
+        <div v-if="currentSemester" class="week-stepper" data-decision-group>
+          <button type="button" class="icon-button" aria-label="上一教学周" @click="changeWeek(-1)">
+            <Icon name="left" :size="18" />
+          </button>
+          <span class="week-stepper-label">
+            {{
+              currentWeek >= 1 && currentWeek <= currentSemester.weeks
+                ? '第 ' + currentWeek + ' 周'
+                : '学期范围外'
+            }}
+          </span>
+          <button type="button" class="icon-button" aria-label="下一教学周" @click="changeWeek(1)">
+            <Icon name="right" :size="18" />
+          </button>
+        </div>
+        <h1 v-else class="timetable-empty-title">课表</h1>
+        <div class="actions">
+          <button
+            type="button"
+            class="icon-button"
+            :class="timetableHasEmptyPrimary ? 'soft' : 'primary'"
+            aria-label="添加课程"
+            @click="openCourse()"
+          >
+            <Icon name="plus" />
+          </button>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="日历视图与设置"
+            aria-haspopup="dialog"
+            :aria-expanded="sheet === 'menu'"
+            @click="openMenu"
+          >
+            <Icon name="more" />
+          </button>
+        </div>
+      </div>
+      <div class="segmented calendar-tabs" aria-label="视图切换">
         <button
+          v-for="item in CALENDAR_TABS"
+          :key="item.id"
           type="button"
-          class="icon-button"
-          aria-label="日历视图与设置"
-          aria-haspopup="dialog"
-          :aria-expanded="sheet === 'menu'"
-          @click="openMenu"
+          :class="{ active: tab === item.id }"
+          :aria-pressed="tab === item.id"
+          @click="tab = item.id"
         >
-          <Icon name="more" />
+          {{ item.label }}
         </button>
       </div>
     </header>
 
-    <template v-if="tab === 'schedule'">
+    <template v-if="tab === 'timeline'">
+      <div class="week-strip">
+        <button
+          v-for="date in week"
+          :key="date"
+          type="button"
+          :class="{ selected: date === day, today: date === dateKey() }"
+          :aria-pressed="date === day"
+          :aria-current="date === dateKey() ? 'date' : undefined"
+          @click="day = date"
+        >
+          <span>{{ weekdayName(date) }}</span>
+          <strong class="number">{{ Number(date.slice(8)) }}</strong>
+          <i :class="{ present: recordDateSet.has(date) }" />
+        </button>
+      </div>
+
+      <div class="timeline-header timeline-mode-bar">
+        <div class="timeline-date-heading">
+          <h2>
+            {{ readableDate(day) }} <span>{{ weekdayName(day) }}</span>
+          </h2>
+          <div class="timeline-date-nav" data-decision-group>
+            <button type="button" class="icon-button" aria-label="上一周" @click="changeWeek(-1)">
+              <Icon name="left" :size="18" />
+            </button>
+            <button
+              type="button"
+              class="today-jump"
+              :class="{ highlight: day !== dateKey() }"
+              aria-label="回到今天"
+              @click="day = dateKey()"
+            >
+              今天
+            </button>
+            <button type="button" class="icon-button" aria-label="下一周" @click="changeWeek(1)">
+              <Icon name="right" :size="18" />
+            </button>
+          </div>
+        </div>
+
+        <div class="timeline-toolbar">
+          <span class="timeline-day-summary">
+            {{
+              actualRecords.length
+                ? `${actualRecords.length} 条记录 · ${duration(timelineDayTotalMs)}`
+                : '暂无专注记录'
+            }}
+          </span>
+          <div class="timeline-toolbar-actions">
+            <button
+              type="button"
+              class="icon-button soft"
+              aria-label="手动补录"
+              aria-haspopup="dialog"
+              :aria-expanded="sheet === 'manual'"
+              @click="openManualBackfill()"
+            >
+              <Icon name="plus" />
+            </button>
+            <button
+              type="button"
+              class="weekly-grid-btn"
+              aria-haspopup="dialog"
+              :aria-expanded="sheet === 'weeklyGrid'"
+              @click="openWeeklyGrid()"
+            >
+              <span>一周分布图</span>
+              <Icon name="right" :size="16" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="actualRecords.length" class="timeline">
+        <div
+          v-for="record in actualRecords"
+          :key="record.id"
+          class="timeline-entry"
+          :data-record-id="record.id"
+          :data-record-kind="recordCardKind(record)"
+        >
+          <div
+            class="timeline-dot"
+            :class="{
+              'dot-early': recordCardKind(record) === 'early',
+              'dot-manual': recordCardKind(record) === 'manual',
+              'dot-focus': recordCardKind(record) === 'completed',
+            }"
+          />
+          <div class="timeline-time">
+            {{ zoneTime(record.startedAt, record.timeZone) }} —
+            {{ zoneTime(record.endedAt, record.timeZone) }}
+            <small>{{ duration(recordDisplayDuration(record)) }}</small>
+          </div>
+          <div
+            class="timeline-card"
+            :class="{
+              'timeline-early-card': recordCardKind(record) === 'early',
+              'timeline-manual-card': recordCardKind(record) === 'manual',
+              'timeline-focus-card': recordCardKind(record) === 'completed',
+            }"
+          >
+            <div class="timeline-card-row">
+              <div class="timeline-card-visual">
+                <svg
+                  v-if="recordCardKind(record) === 'early'"
+                  width="44"
+                  height="44"
+                  viewBox="0 0 48 48"
+                  class="ghost-svg"
+                  data-ghost-icon="true"
+                  role="img"
+                  aria-label="提前结束小幽灵"
+                >
+                  <path
+                    d="M12 38 V22 C12 14.5 17.4 9 24 9 C30.6 9 36 14.5 36 22 V38 L31.5 34.5 L27.5 38.5 L24 35 L20.5 38.5 L16.5 34.5 Z"
+                    fill="#FFF1EF"
+                    stroke="#EF4E36"
+                    stroke-width="2.2"
+                    stroke-linejoin="round"
+                  />
+                  <circle cx="19.5" cy="22" r="2.2" fill="#222222" />
+                  <circle cx="28.5" cy="22" r="2.2" fill="#222222" />
+                  <path
+                    d="M21 28 Q24 25.5 27 28"
+                    fill="none"
+                    stroke="#EF4E36"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <div v-else-if="recordCardKind(record) === 'manual'" class="manual-badge-icon" aria-hidden="true">
+                  <Icon name="clock" :size="20" />
+                </div>
+                <PetGraphic
+                  v-else
+                  :animal-id="record.animalId ?? 'black-cat'"
+                  :skin-id="record.skinId ?? 'default'"
+                  :stage="record.status === 'completed' ? 3 : 'standby'"
+                  :size="44"
+                  :reduced-motion="reducedMotionPref"
+                />
+              </div>
+
+              <div class="timeline-card-body">
+                <div class="timeline-card-head">
+                  <h3>{{ record.title }}</h3>
+                  <span v-if="recordCardKind(record) === 'manual'" class="manual-tag">手动补录</span>
+                </div>
+                <p v-if="recordCardKind(record) === 'early'" class="card-meta early-meta">
+                  提前结束 · {{ recordEarlyReason(record) }}
+                </p>
+                <p v-else-if="recordCardKind(record) === 'manual'" class="card-meta">
+                  {{ record.themeName }} · 手动补录
+                </p>
+                <p v-else class="card-meta">
+                  {{ record.themeName }} · {{ record.status === 'completed' ? '正常结束' : '中断' }}
+                </p>
+                <p v-if="record.note && recordCardKind(record) !== 'early'" class="timeline-note">
+                  {{ record.note }}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                class="text-button timeline-edit-btn"
+                :aria-label="'编辑复盘小结 ' + record.title"
+                @click="startEditNote(record)"
+              >
+                编辑
+              </button>
+            </div>
+
+            <div v-if="editingNoteRecordId === record.id" class="timeline-note-editor">
+              <label class="sr-only" :for="'timeline-note-' + record.id">复盘小结</label>
+              <input
+                :id="'timeline-note-' + record.id"
+                v-model="noteDraft"
+                type="text"
+                :aria-label="recordCardKind(record) === 'early' ? '打断原因' : '复盘小结'"
+                :placeholder="
+                  recordCardKind(record) === 'early'
+                    ? '写一句打断原因（最多 100 字）'
+                    : '写一句复盘小结（最多 100 字）'
+                "
+                @keydown.enter.prevent="saveRecordNote(record.id)"
+              />
+              <div class="note-editor-footer">
+                <span class="note-counter number">{{ [...noteDraft].length }}/100</span>
+                <div class="note-editor-actions">
+                  <button type="button" class="text-button" :disabled="noteBusy" @click="cancelEditNote">
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary"
+                    :disabled="noteBusy"
+                    @click="saveRecordNote(record.id)"
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+              <p v-if="noteError" class="form-error" role="alert">{{ noteError }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="empty calendar-empty">
+        <div class="empty-mark"><Icon name="clock" :size="31" /></div>
+        <h2>这一天还没有专注记录</h2>
+        <p>去专注一次，或点右上角 + 手动补录遗漏时段。</p>
+        <button type="button" class="primary" @click="router.push('/focus')">去专注</button>
+      </div>
+    </template>
+
+    <template v-else-if="tab === 'schedule'">
       <div class="week-strip">
         <button
           v-for="date in week"
@@ -695,7 +1122,7 @@ function coursePosition(o: Occurrence) {
         <h2>
           {{ readableDate(day) }} <span>{{ weekdayName(day) }}</span>
         </h2>
-        <div class="timeline-controls">
+        <div class="timeline-controls" data-decision-group>
           <button
             type="button"
             class="icon-button"
@@ -1382,6 +1809,98 @@ function coursePosition(o: Occurrence) {
           </button>
         </template>
       </div>
+
+      <form v-else-if="sheet === 'manual'" @submit.prevent="submitManualBackfill">
+        <label>
+          专注事项
+          <select v-model="manualForm.itemId" aria-label="专注事项">
+            <option :value="null">自由专注</option>
+            <option v-for="item in app.items" :key="item.id" :value="item.id">
+              {{ app.themes.find((t) => t.id === item.themeId)?.name }} · {{ item.title }}
+            </option>
+          </select>
+        </label>
+        <label>
+          日期
+          <input v-model="manualForm.date" type="date" aria-label="补录日期" required />
+        </label>
+        <div class="two-cols">
+          <label>
+            开始时间
+            <input v-model="manualForm.startTime" type="time" aria-label="开始时间" required />
+          </label>
+          <label>
+            结束时间
+            <input v-model="manualForm.endTime" type="time" aria-label="结束时间" required />
+          </label>
+        </div>
+        <label>
+          复盘小结（选填）
+          <input
+            v-model="manualForm.note"
+            type="text"
+            aria-label="复盘小结"
+            placeholder="可选，最多 100 字"
+          />
+          <span class="field-help">{{ [...manualForm.note].length }}/100 · 手动补录仅计入时间轴与统计时长</span>
+        </label>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <button class="primary wide" :disabled="busy">保存补录</button>
+      </form>
+
+      <div v-else-if="sheet === 'weeklyGrid'" class="stack weekly-grid-sheet">
+        <div class="weekly-grid-meta">
+          <p class="weekly-grid-range">{{ readableDate(week[0]!) }} — {{ readableDate(week[6]!) }}</p>
+          <p class="weekly-grid-summary">
+            本周累计 {{ duration(weeklyStats.totalMs) }} · {{ weeklyStats.count }} 次专注
+          </p>
+        </div>
+        <div class="weekly-grid-card">
+          <div class="weekly-grid-matrix" role="region" aria-label="一周 00:00 至 23:00 四色分布矩阵">
+            <div class="weekly-grid-corner" aria-hidden="true" />
+            <div v-for="(d, idx) in week" :key="d" class="weekly-grid-weekday">
+              {{ weekdays[idx]!.slice(1) }}
+            </div>
+            <template v-for="hour in 24" :key="hour - 1">
+              <div class="weekly-grid-hour">
+                {{ (hour - 1) % 4 === 0 || hour - 1 === 23 ? String(hour - 1).padStart(2, '0') : '' }}
+              </div>
+              <div
+                v-for="(d, dayIdx) in week"
+                :key="d + '-' + (hour - 1)"
+                class="weekly-grid-cell"
+                :class="'cell-' + (weeklyMatrix[dayIdx]?.[hour - 1]?.state ?? 'empty')"
+                :data-state="weeklyMatrix[dayIdx]?.[hour - 1]?.state ?? 'empty'"
+                :data-date="d"
+                :data-hour="hour - 1"
+                :title="`${d} ${String(hour - 1).padStart(2, '0')}:00`"
+              />
+            </template>
+          </div>
+          <div class="weekly-grid-legend" aria-label="四色图例">
+            <div class="legend-item">
+              <span class="legend-swatch swatch-focus" aria-hidden="true" />
+              <span>专注</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-swatch swatch-pause" aria-hidden="true" />
+              <span>暂停</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-swatch swatch-early" aria-hidden="true" />
+              <span>提前结束</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-swatch swatch-manual" aria-hidden="true" />
+              <span>手动补录</span>
+            </div>
+          </div>
+        </div>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <button type="button" class="primary wide" :disabled="busy" @click="exportWeeklyGrid">
+          保存 PNG
+        </button>
+      </div>
     </Sheet>
 
     <StudyModeSheet
@@ -1968,5 +2487,273 @@ function coursePosition(o: Occurrence) {
   padding: 8px;
   min-height: 48px;
   font-size: 13px;
+}
+.timeline-top-header {
+  flex-wrap: nowrap;
+}
+.calendar-mode-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+.header-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.calendar-tabs {
+  flex-shrink: 0;
+  padding: 3px;
+  gap: 2px;
+}
+.calendar-tabs button {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 11px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.timeline-mode-bar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.timeline-date-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.timeline-date-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.timeline-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.timeline-day-summary {
+  font-size: 13px;
+  color: var(--muted);
+}
+.timeline-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.weekly-grid-btn {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 14px;
+  border-radius: 100px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.timeline-dot.dot-early {
+  border-color: var(--accent);
+}
+.timeline-dot.dot-focus {
+  border-color: var(--ink);
+}
+.timeline-dot.dot-manual {
+  border-color: var(--muted);
+}
+.timeline-focus-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+.timeline-early-card {
+  background: var(--white);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+.timeline-manual-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.timeline-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.timeline-card-visual {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+}
+.manual-badge-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: var(--white);
+  color: var(--muted-surface);
+  display: grid;
+  place-items: center;
+}
+.timeline-card-body {
+  flex: 1;
+  min-width: 0;
+}
+.timeline-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.manual-tag {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: var(--white);
+  color: var(--muted-surface);
+  border: 1px solid var(--line);
+}
+.timeline-card p.card-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted-surface);
+}
+.timeline-card p.early-meta {
+  color: #c13a25;
+}
+.timeline-card p.timeline-note {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.timeline-edit-btn {
+  flex-shrink: 0;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--muted-surface);
+}
+.timeline-early-card .timeline-edit-btn {
+  color: var(--muted);
+}
+.timeline-note-editor {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+.note-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.note-counter {
+  font-size: 12px;
+  color: var(--muted-surface);
+}
+.note-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.weekly-grid-meta {
+  display: grid;
+  gap: 4px;
+}
+.weekly-grid-range {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.weekly-grid-summary {
+  font-size: 13px;
+  color: var(--muted);
+}
+.weekly-grid-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+}
+.weekly-grid-matrix {
+  display: grid;
+  grid-template-columns: 36px repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  align-items: center;
+}
+.weekly-grid-weekday {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-surface);
+  padding-bottom: 4px;
+}
+.weekly-grid-hour {
+  font-size: 12px;
+  font-family: Nunito, sans-serif;
+  color: var(--muted-surface);
+  text-align: right;
+  padding-right: 6px;
+  line-height: 1;
+}
+.weekly-grid-cell {
+  height: 14px;
+  border-radius: 4px;
+  background: var(--white);
+  border: 1px solid var(--line);
+}
+.weekly-grid-cell.cell-focus,
+.swatch-focus {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.weekly-grid-cell.cell-pause,
+.swatch-pause {
+  background: repeating-linear-gradient(135deg, #737378 0 2px, #eaeaea 2px 5px);
+  border-color: #d7d7db;
+}
+.weekly-grid-cell.cell-early,
+.swatch-early {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.weekly-grid-cell.cell-manual,
+.swatch-manual {
+  background: #d1d1d6;
+  border-color: #c5c5cc;
+}
+.weekly-grid-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 4px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-surface);
+}
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  flex-shrink: 0;
 }
 </style>
