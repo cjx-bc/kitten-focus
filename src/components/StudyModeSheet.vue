@@ -191,6 +191,21 @@ const missingPermissions = computed(() =>
   requiredPermissions.value.filter((item) => item.supported && !item.ready),
 )
 
+const onlyAccessibilityDisconnected = computed(() => {
+  const p = status.value
+  return (
+    p?.supported === true &&
+    p.usageStatsGranted &&
+    p.overlayGranted &&
+    missingPermissions.value.length > 0 &&
+    missingPermissions.value.every(
+      (item) => item.id === 'accessibility' && item.authorized && !item.connected,
+    )
+  )
+})
+const accessibilityRecoveryNotice =
+  '日常「使用情况访问 + 悬浮窗」已就绪，应用限制可正常使用；当前仅严格防退出所需的无障碍连接已断开，先关再开即可恢复。'
+
 const appsMissingPermissions = computed(() =>
   missingPermissions.value.filter((item) =>
     item.usedBy.some((reason) => reason.startsWith('应用限制')),
@@ -1075,7 +1090,7 @@ async function importWallpaperOriginal(lockSource: boolean) {
         <label class="switch">
           <span>
             精确防关闭
-            <small>需开启无障碍 · 仅拦截小猫强退/卸载入口（侧载包在部分系统划卡会撤回无障碍）</small>
+            <small>需开启无障碍 · 仅拦截小猫强退/卸载入口（部分系统单卡上滑会断开无障碍连接，需关闭再重开）</small>
           </span>
           <input
             type="checkbox"
@@ -1370,7 +1385,10 @@ async function importWallpaperOriginal(lockSource: boolean) {
     <div v-else-if="view === 'permissions'" class="study-stack">
       <p class="detail-desc">仅列出当前已开启功能所需要的系统授权。</p>
 
-      <p v-if="status && !status.supported" class="notice">
+      <p v-if="onlyAccessibilityDisconnected" class="notice" role="status">
+        {{ accessibilityRecoveryNotice }}
+      </p>
+      <p v-else-if="status && !status.supported" class="notice">
         本机不支持系统应用与通知控制（仅 Android 本机版本可用）。
       </p>
       <p v-else-if="requiredPermissions.length === 0" class="notice">
@@ -1566,7 +1584,7 @@ async function importWallpaperOriginal(lockSource: boolean) {
           </span>
         </div>
         <p class="field-help">
-          {{ keepAliveGuide?.recentLockHint || '打开最近任务并锁定小猫专注卡片，防止一键清理滑掉。' }}
+          {{ keepAliveGuide?.recentLockHint || '打开最近任务并锁定小猫专注卡片（防一键清除；日常退出请按 Home 或返回键，勿手动单独上滑）。' }}
         </p>
         <label class="keepalive-check">
           <input type="checkbox" :checked="recentLockChecked" @change="toggleRecentLockChecked" />
@@ -1584,7 +1602,10 @@ async function importWallpaperOriginal(lockSource: boolean) {
         学霸模式的应用限制、免打扰与系统防退出仅支持 Android 本机版本。
       </p>
       <template v-else>
-        <p class="detail-desc">
+        <p v-if="onlyAccessibilityDisconnected" class="notice" role="status">
+          {{ accessibilityRecoveryNotice }}
+        </p>
+        <p v-else class="detail-desc">
           已保存当前设置。完成以下授权后，学霸模式即可在专注期间正常生效。
         </p>
 

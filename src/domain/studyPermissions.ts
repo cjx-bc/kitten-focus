@@ -142,6 +142,7 @@ export function collectRequiredPermissions(
   if (accessUsers.length > 0) {
     const supported = Boolean(p?.supported)
     const ready = supported && a11yReady
+    const disconnected = a11yAuth && !a11yConn
     const statusText = !p
       ? '检查中'
       : !supported
@@ -149,20 +150,26 @@ export function collectRequiredPermissions(
         : !a11yAuth
           ? '未授权 · 未生效'
           : !a11yConn
-            ? '已授权 · 等待服务连接'
+            ? '开关仍在 · 需重开'
             : '已就绪'
+    const reopenInstructions = '系统保留了无障碍开关，但后台划卡断开了连接；点下方进入无障碍将「小猫专注」关闭再重开即可恢复'
+    const purpose = disconnected
+      ? p?.usageStatsGranted && p?.overlayGranted
+        ? `${reopenInstructions}。当前「使用情况访问 + 悬浮窗」已就绪，日常应用限制可正常使用。`
+        : `${reopenInstructions}（日常应用限制推荐开启永不掉权的「使用情况访问 + 悬浮窗」）。`
+      : '用于限制桌面/最近任务与精确防关闭；日常应用限制不需要无障碍，不读取其他应用正文。'
     list.push({
       id: 'accessibility',
       title: '无障碍服务',
       level: 'required',
       usedBy: accessUsers,
-      purpose: '用于限制桌面/最近任务与精确防关闭；日常应用限制不需要无障碍，不读取其他应用正文。',
+      purpose,
       supported,
       authorized: a11yAuth,
       connected: a11yConn,
       ready,
       statusText,
-      actionLabel: a11yAuth && !a11yConn ? '检查服务连接' : '前往系统设置',
+      actionLabel: disconnected ? '前往重开无障碍' : '前往系统设置',
     })
   }
 

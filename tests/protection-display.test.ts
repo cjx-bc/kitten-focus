@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { capabilityToggleDisabled, studyCapsuleDisplay, studyDisplay } from '../src/domain/protectionDisplay'
 import { defaultProtection, type ProtectionStatus } from '../src/domain/model'
-import { toggleMasterStudy, toggleProtectionModule } from '../src/domain/protectionModules'
+import { setProtectionSubItem, toggleMasterStudy, toggleProtectionModule } from '../src/domain/protectionModules'
 
 const ready: ProtectionStatus = {
   supported: true, authorized: true, connected: true, active: false,
@@ -61,5 +61,21 @@ describe('protection UI states', () => {
       tone: 'enabled',
       masterOn: true,
     })
+  })
+
+  it('keeps everyday restrictions available after a swipe and requires accessibility for strictSettingsGuard alone', () => {
+    const disconnected = { ...ready, accessibilityAuthorized: true }
+    const basicStudy = toggleMasterStudy(defaultProtection(), true)
+    expect(studyCapsuleDisplay(basicStudy, disconnected).text).toBe('学霸模式 · 开')
+
+    let strictStudy = toggleProtectionModule(basicStudy, 'strict', true)
+    strictStudy = setProtectionSubItem(strictStudy, 'strict', 'navigation', false)
+    strictStudy = setProtectionSubItem(strictStudy, 'strict', 'antiClose', false)
+    expect(studyCapsuleDisplay(strictStudy, disconnected).text).toBe('学霸模式 · 开')
+
+    strictStudy = setProtectionSubItem(strictStudy, 'strict', 'strictSettings', true)
+    expect(studyCapsuleDisplay(strictStudy, disconnected).text).toBe('学霸模式 · 待授权')
+    expect(studyCapsuleDisplay(strictStudy, { ...disconnected, accessibilityConnected: true }).text)
+      .toBe('学霸模式 · 开')
   })
 })

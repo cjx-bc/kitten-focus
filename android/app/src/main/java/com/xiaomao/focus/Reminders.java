@@ -37,6 +37,8 @@ final class Reminders {
     static final int KEEP_ALIVE_HEARTBEAT_ID=47;
     static final String KEEP_ALIVE_HEARTBEAT_ACTION="com.xiaomao.focus.KEEP_ALIVE_HEARTBEAT";
     static final int ACCESSIBILITY_REVOKED_ID=48;
+    static final String ACCESSIBILITY_REVOKED_TITLE = "无障碍保护已被系统关闭";
+    static final String ACCESSIBILITY_REVOKED_TEXT = "可能被手机管家/安全中心自动关闭；请先在安全中心设为信任或白名单，再重开无障碍";
     static final long KEEP_ALIVE_HEARTBEAT_MS=180_000L;
     static final String FOCUS_FINISHED_TITLE="本次专注正常结束";
     private static final int MAX_SCHEDULED_REMINDERS=450;
@@ -98,7 +100,13 @@ final class Reminders {
     static void showAccessibilityRevoked(Context c){
         if(c==null||!notificationsAllowed(c))return;
         channel(c,"focus-alert","专注保护提醒",true,true,false);
-        post(c,ACCESSIBILITY_REVOKED_ID,builder(c,"focus-alert").setContentIntent(returnToFocus(c)).setContentTitle("无障碍保护已被系统关闭").setContentText("点击返回小猫专注查看状态或重新开启").setAutoCancel(true).build());
+        post(c, ACCESSIBILITY_REVOKED_ID, builder(c, "focus-alert")
+            .setContentIntent(returnToFocus(c))
+            .setContentTitle(ACCESSIBILITY_REVOKED_TITLE)
+            .setContentText(ACCESSIBILITY_REVOKED_TEXT)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(ACCESSIBILITY_REVOKED_TEXT))
+            .setAutoCancel(true)
+            .build());
     }
     static void showFinished(Context c,JSONObject s){if(!notificationsAllowed(c))return;boolean sound=true,vibration=true;try{JSONObject data=LocalStore.get(c).read("data");if(data!=null){JSONObject preferences=data.optJSONObject("preferences");if(preferences!=null){sound=preferences.optBoolean("sound",true);vibration=preferences.optBoolean("vibration",true);}}}catch(Exception ignored){}String id="focus-done-"+sound+"-"+vibration;channel(c,id,"专注结束提醒",sound,vibration,false);post(c,41,builder(c,id).setContentTitle(FOCUS_FINISHED_TITLE).setContentText(s.optString("title")+" · 认真投入的时间已经记录").setAutoCancel(true).build());}
     static void showLockFinished(Context c,JSONObject session) {

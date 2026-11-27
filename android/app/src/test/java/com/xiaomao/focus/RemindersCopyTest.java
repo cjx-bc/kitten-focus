@@ -2,6 +2,7 @@ package com.xiaomao.focus;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -12,5 +13,20 @@ public class RemindersCopyTest {
         assertFalse(Reminders.FOCUS_FINISHED_TITLE.contains("已完成"));
         assertFalse(Reminders.FOCUS_FINISHED_TITLE.contains("番茄钟"));
         assertFalse(Reminders.FOCUS_FINISHED_TITLE.contains("待办完成"));
+    }
+
+    @Test
+    public void accessibilityRevokedNoticeExplainsHowToRestoreProtection() {
+        String title = Reminders.ACCESSIBILITY_REVOKED_TITLE;
+        String body = Reminders.ACCESSIBILITY_REVOKED_TEXT;
+        assertEquals("无障碍保护已被系统关闭", title);
+        assertTrue(body.contains("手机管家/安全中心"));
+        assertTrue(body.contains("请先在安全中心设为信任或白名单，再重开无障碍"));
+
+        String[] avoidedTerms = { "已完成", "番茄钟", "待办完成", "系统冻结", "设备所有者模式" };
+        for (String term : avoidedTerms) {
+            assertFalse(title.contains(term));
+            assertFalse(body.contains(term));
+        }
     }
 }

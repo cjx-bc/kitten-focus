@@ -289,7 +289,7 @@ final class FocusProtection {
             : current && !effective ? "本轮应用限制已失效，请检查使用情况访问、悬浮窗或无障碍权限"
             : !granted ? "尚未授予使用情况访问或悬浮窗权限"
             : !connected ? (a11yAuth && !a11yConn && !usageOverlayReady
-                ? "无障碍授权已保留，但系统服务未连接（可能被系统后台清理，请关闭后重开无障碍或开启使用情况访问与悬浮窗）"
+                ? "无障碍开关仍保留，但后台清理断开了服务连接：请进入系统无障碍将「小猫专注」关闭再重开，或改开「使用情况访问 + 悬浮窗」免掉权"
                 : "已开启部分权限，请确认使用情况访问与悬浮窗权限已就绪")
             : current ? "lock".equals(observation.optString("owner")) ? "本轮锁机保护中；有效白名单已固定" : "本轮有效白名单已固定；暂停计时仍限制应用"
             : preferred ? (AppUsageGuard.ENGINE_ACCESSIBILITY.equals(engine)

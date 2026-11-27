@@ -37,4 +37,23 @@ public class FocusNotificationListenerRebindTest {
         assertFalse(FocusNotificationListener.shouldRequestRebind(35, true, true, t0 + FocusNotificationListener.REBIND_COOLDOWN_MS, 0L));
         assertFalse(FocusNotificationListener.shouldRequestRebind(35, false, false, t0 + FocusNotificationListener.REBIND_COOLDOWN_MS, 0L));
     }
+
+    @Test
+    public void componentToggleRequiresSupportedSdkAuthorizationAndDisconnection() {
+        long now = 5_000L;
+        assertFalse(FocusNotificationListener.shouldToggleComponentRebind(23, true, false, now, 0L));
+        assertFalse(FocusNotificationListener.shouldToggleComponentRebind(24, false, false, now, 0L));
+        assertFalse(FocusNotificationListener.shouldToggleComponentRebind(24, true, true, now, 0L));
+        assertTrue(FocusNotificationListener.shouldToggleComponentRebind(24, true, false, now, 0L));
+        assertTrue(FocusNotificationListener.shouldToggleComponentRebind(37, true, false, now, -1L));
+    }
+
+    @Test
+    public void componentToggleRequiresThirtySecondsSinceLastAttempt() {
+        long lastToggle = 5_000L;
+        assertFalse(FocusNotificationListener.shouldToggleComponentRebind(37, true, false, lastToggle, lastToggle));
+        assertFalse(FocusNotificationListener.shouldToggleComponentRebind(37, true, false, lastToggle + 29_999L, lastToggle));
+        assertTrue(FocusNotificationListener.shouldToggleComponentRebind(37, true, false, lastToggle + 30_000L, lastToggle));
+        assertTrue(FocusNotificationListener.shouldToggleComponentRebind(37, true, false, lastToggle + 30_001L, lastToggle));
+    }
 }

@@ -25,7 +25,8 @@ export function studyCapsuleDisplay(
   const needsApps = effective.study
   const needsStrictAccessibility =
     effective.enhancements.includes('navigationHomeRecents') ||
-    effective.enhancements.includes('preciseAntiClose')
+    effective.enhancements.includes('preciseAntiClose') ||
+    effective.enhancements.includes('strictSettingsGuard')
 
   if (
     status?.supported === true &&

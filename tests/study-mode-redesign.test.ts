@@ -19,6 +19,7 @@ import {
 import { collectRequiredPermissions } from '../src/domain/studyPermissions'
 import { makeBackup, readBackup } from '../src/domain/backup'
 import { installMainEntryGuard, isStudySessionLocked, resolveStudyFocusEntry } from '../src/navigation/mainEntry'
+import { protectionDriver } from '../src/platform/bridge'
 
 const mocks = vi.hoisted(() => ({
   app: null as any,
@@ -117,9 +118,16 @@ import LockView from '../src/views/LockView.vue'
 import SettingsView from '../src/views/SettingsView.vue'
 import StudyModeSheet from '../src/components/StudyModeSheet.vue'
 
-async function mountSSR(component: Component, props = {}) {
+async function mountSSR(component: Component, props = {}, prepare?: (state: any) => Promise<void>) {
   const vnode = h(component, props)
   const app = createSSRApp({ render: () => vnode })
+  if (prepare) {
+    app.mixin({
+      async serverPrefetch() {
+        if (this.$.vnode === vnode) await prepare(this.$.setupState)
+      },
+    })
+  }
   app.component(
     'RouterLink',
     defineComponent({
@@ -497,6 +505,54 @@ describe('P1 & P3: redesigned StudyModeSheet, LockView move, and permission cent
     const sheet = await mountSSR(StudyModeSheet, { open: true })
     await sheet.state.refresh()
     expect(sheet.state.missingPermissions.length).toBeGreaterThan(0)
+  })
+
+  it.each([false, true])('explains how to reopen disconnected accessibility with usage access and overlay ready=%s', async (dualEngineReady) => {
+    const p = toggleProtectionModule(
+      toggleMasterStudy(defaultProtection(), true, { quietDefault: false }),
+      'strict',
+      true,
+    )
+    mocks.app.data.preferences.protection = p
+    setDevicePermissions({ accessibility: true, accessibilityConnected: false })
+    const protection = {
+      ...await mocks.protection(),
+      connected: dualEngineReady,
+      usageStatsGranted: dualEngineReady,
+      overlayGranted: dualEngineReady,
+      accessibilityAuthorized: true,
+      accessibilityConnected: false,
+    }
+    mocks.protection.mockResolvedValue(protection)
+
+    const accessibility = collectRequiredPermissions(p, { protection }).find((item) => item.id === 'accessibility')
+    const dailyRestrictions = dualEngineReady ? '日常应用限制可正常使用' : '日常应用限制推荐开启'
+    expect(accessibility).toMatchObject({
+      authorized: true,
+      connected: false,
+      ready: false,
+      statusText: '开关仍在 · 需重开',
+      actionLabel: '前往重开无障碍',
+      purpose: expect.stringContaining(dailyRestrictions),
+    })
+    expect(accessibility?.purpose).toContain('将「小猫专注」关闭再重开即可恢复')
+
+    for (const view of ['permissions', 'permissionGuide'] as const) {
+      const { html, state } = await mountSSR(
+        StudyModeSheet,
+        { open: true, initialView: view },
+        (state) => state.refresh(),
+      )
+      expect(html).toContain('开关仍在 · 需重开')
+      expect(html).toContain('前往重开无障碍')
+      expect(html).toContain(dailyRestrictions)
+      expect(html.includes('当前仅严格防退出所需的无障碍连接已断开')).toBe(dualEngineReady)
+      expect(html.match(/<dialog\b/g)).toHaveLength(1)
+
+      await state.authorizePermission('accessibility', view === 'permissionGuide')
+      expect(protectionDriver.openSettings).toHaveBeenLastCalledWith('accessibility')
+    }
+    expect(protectionDriver.openSettings).toHaveBeenCalledTimes(2)
   })
 })
 
