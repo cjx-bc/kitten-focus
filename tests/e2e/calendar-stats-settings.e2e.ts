@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import path from 'node:path'
 import { startStaticServer, type StaticServer } from './helpers/staticServer'
 import { CdpPage, type CatFocusStubOptions } from './helpers/cdpBrowser'
-import { auditModals } from './helpers/uxAudit'
+import { auditBrandSpec, auditInputSchemeA, auditModals, auditScreenBudget } from './helpers/uxAudit'
 
 describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7, UF8)', () => {
   let server: StaticServer
@@ -118,6 +118,8 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
 
     await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '时间轴' })
     await p.waitFor(() => window.location.hash.includes('/calendar'))
+    await p.clickByRoleOrText({ text: '日程', selector: '.calendar-tabs button' })
+    await p.waitFor(() => !!document.querySelector('.mini-switch'))
 
     // Expand month grid -> verify 42 day cells
     await toggleMonthGrid(p)
@@ -178,16 +180,262 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
     await p.waitFor(() => window.location.hash.includes('/focus'))
     await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '时间轴' })
     await p.waitFor(() => window.location.hash.includes('/calendar'))
+    await p.clickByRoleOrText({ text: '日程', selector: '.calendar-tabs button' })
+    await p.waitFor(() => !!document.querySelector('.mini-switch'))
     await p.clickByRoleOrText({ text: '实际', selector: '.mini-switch button' })
     expect(await p.evaluate(() => document.body.innerText)).toContain('极限刷题')
 
     p.assertNoErrors('Calendar schedule, conflict & linked task focus')
   })
 
+  it('defaults to Timeline with animal/ghost cards, inline note editing, anti-cheat manual backfill, lossless view switching, and 4-color weekly PNG export (CF-08)', async () => {
+    const now = new Date()
+    const pad2 = (n: number) => String(n).padStart(2, '0')
+    const todayDate = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
+
+    // Place seeded records safely in the past relative to current time, or use yesterday if early morning
+    const useToday = now.getHours() >= 4
+    const targetDay = useToday
+      ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+    const targetDateStr = `${targetDay.getFullYear()}-${pad2(targetDay.getMonth() + 1)}-${pad2(targetDay.getDate())}`
+
+    const rec1Start = new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate(), 0, 5, 0).getTime()
+    const rec1Seg1End = rec1Start + 30 * 60_000 // 00:05-00:35 (30m focus in hour 0)
+    const rec1Seg2Start = rec1Seg1End + 70 * 60_000 // 00:35-01:45 (25m pause in hour 0, 45m pause in hour 1)
+    const rec1End = rec1Seg2Start + 10 * 60_000 // 01:45-01:55 (10m focus in hour 1 -> pause dominates hour 1)
+    const rec2Start = new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate(), 2, 0, 0).getTime()
+    const rec2End = rec2Start + 12 * 60_000 // 02:00-02:12 (12m early in hour 2)
+
+    const p = await openPage({
+      supported: true,
+      authorized: true,
+      connected: true,
+      initialData: {
+        schemaVersion: 1,
+        themes: [{ id: 't1', name: '高数', color: '#ef4e36', order: 0, collapsed: false }],
+        items: [{ id: 'i1', themeId: 't1', title: '极限刷题', note: '', mode: 'countdown', minutes: 25, order: 0 }],
+        records: [
+          {
+            id: 'r-ok',
+            itemId: 'i1',
+            themeId: 't1',
+            title: '极限刷题',
+            themeName: '高数',
+            color: '#ef4e36',
+            mode: 'countdown',
+            targetMs: 25 * 60_000,
+            startedAt: rec1Start,
+            endedAt: rec1End,
+            timeZone: tz,
+            durationMs: 40 * 60_000,
+            pausedMs: 70 * 60_000,
+            segments: [
+              { start: rec1Start, end: rec1Seg1End },
+              { start: rec1Seg2Start, end: rec1End },
+            ],
+            status: 'completed',
+            animalId: 'yellow-chick',
+            skinId: 'chestnut',
+            source: 'timer',
+            note: '原复盘小结',
+          },
+          {
+            id: 'r-early',
+            itemId: 'i1',
+            themeId: 't1',
+            title: '极限刷题',
+            themeName: '高数',
+            color: '#ef4e36',
+            mode: 'countdown',
+            targetMs: 25 * 60_000,
+            startedAt: rec2Start,
+            endedAt: rec2End,
+            timeZone: tz,
+            durationMs: 12 * 60_000,
+            pausedMs: 0,
+            segments: [{ start: rec2Start, end: rec2End }],
+            status: 'early',
+            animalId: 'black-cat',
+            skinId: 'default',
+            source: 'timer',
+            failReason: 'manual_giveup',
+          },
+        ],
+        deletedRecordIds: [],
+        events: [],
+        eventExceptions: [],
+        semesters: [],
+        courses: [],
+        courseExceptions: [],
+        preferences: { defaultMinutes: 25, sound: true, vibration: true, activeSemesterId: null },
+      },
+    })
+
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '时间轴' })
+    await p.waitFor(() => window.location.hash.includes('/calendar'))
+
+    // Default tab is 时间轴
+    const activeTabText = await p.evaluate(
+      () => document.querySelector('.calendar-tabs button.active')?.textContent?.trim() ?? '',
+    )
+    expect(activeTabText).toBe('时间轴')
+
+    const selectTargetDay = async () => {
+      if (targetDateStr !== todayDate) {
+        if (targetDay.getDay() === 0) {
+          await p.clickByRoleOrText({ name: '上一周' })
+        }
+        await p.clickByRoleOrText({ text: String(targetDay.getDate()), exact: true, selector: '.week-strip button strong' })
+      }
+    }
+    await selectTargetDay()
+
+    // Verify completed animal+skin card and early ghost + full #EF4E36 border (not border-left stripe)
+    const cardsCheck = await p.evaluate(() => {
+      const okSvg = document.querySelector('[data-record-id="r-ok"] svg.pet-svg')
+      const earlyCard = document.querySelector('[data-record-id="r-early"] .timeline-early-card') as HTMLElement | null
+      const ghost = document.querySelector('[data-record-id="r-early"] [data-ghost-icon="true"]')
+      if (!okSvg || !earlyCard || !ghost) return null
+      const cs = getComputedStyle(earlyCard)
+      return {
+        animalId: okSvg.getAttribute('data-animal-id'),
+        skinId: okSvg.getAttribute('data-skin-id'),
+        borderTop: `${cs.borderTopWidth} ${cs.borderTopColor}`,
+        borderLeft: `${cs.borderLeftWidth} ${cs.borderLeftColor}`,
+        borderRight: `${cs.borderRightWidth} ${cs.borderRightColor}`,
+        borderBottom: `${cs.borderBottomWidth} ${cs.borderBottomColor}`,
+      }
+    })
+    expect(cardsCheck).toEqual({
+      animalId: 'yellow-chick',
+      skinId: 'chestnut',
+      borderTop: '1px rgb(239, 78, 54)',
+      borderLeft: '1px rgb(239, 78, 54)',
+      borderRight: '1px rgb(239, 78, 54)',
+      borderBottom: '1px rgb(239, 78, 54)',
+    })
+
+    // Edit 复盘小结 inline and verify persistence across reload
+    await p.clickByRoleOrText({ selector: '[data-record-id="r-ok"] .timeline-edit-btn' })
+    await p.waitFor(() => !!document.querySelector('[data-record-id="r-ok"] .timeline-note-editor input'))
+    await p.fillByLabel('复盘小结', '完成高数第三章复盘')
+    await p.clickByRoleOrText({ text: '保存', selector: '[data-record-id="r-ok"] .timeline-note-editor button' })
+    await p.waitFor(() => !document.querySelector('[data-record-id="r-ok"] .timeline-note-editor'))
+    expect(await p.evaluate(() => document.body.innerText)).toContain('完成高数第三章复盘')
+
+    await p.reload(true)
+    await selectTargetDay()
+    expect(await p.evaluate(() => document.body.innerText)).toContain('完成高数第三章复盘')
+
+    // Lossless switch: 时间轴 -> 日程 -> 课表 -> 时间轴
+    await p.clickByRoleOrText({ text: '日程', selector: '.calendar-tabs button' })
+    expect(await p.evaluate(() => document.body.innerText)).toContain('今天，留一点时间给自己')
+    await p.clickByRoleOrText({ text: '课表', selector: '.calendar-tabs button' })
+    expect(await p.evaluate(() => document.body.innerText)).toContain('开始一个新的学期')
+    await p.clickByRoleOrText({ text: '时间轴', selector: '.calendar-tabs button' })
+    expect(await p.evaluate(() => document.body.innerText)).toContain('完成高数第三章复盘')
+
+    // Manual backfill: reject inverted times & future date, then save valid backfill (30m)
+    await p.clickByRoleOrText({ name: '手动补录' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    expect((await auditModals(p)).violations).toEqual([])
+    expect((await auditInputSchemeA(p)).violations).toEqual([])
+
+    await p.fillByLabel('补录日期', targetDateStr, { withinOpenDialog: true })
+    await p.fillByLabel('开始时间', '02:50', { withinOpenDialog: true })
+    await p.fillByLabel('结束时间', '02:30', { withinOpenDialog: true })
+    await p.clickByRoleOrText({ text: '保存补录', withinOpenDialog: true })
+    await p.waitFor(() => (document.querySelector('dialog[open]')?.textContent ?? '').includes('结束时间必须晚于开始时间'))
+
+    await p.fillByLabel('补录日期', '2099-01-01', { withinOpenDialog: true })
+    await p.fillByLabel('开始时间', '09:00', { withinOpenDialog: true })
+    await p.fillByLabel('结束时间', '09:30', { withinOpenDialog: true })
+    await p.clickByRoleOrText({ text: '保存补录', withinOpenDialog: true })
+    await p.waitFor(() => (document.querySelector('dialog[open]')?.textContent ?? '').includes('不能晚于当前时刻'))
+
+    await p.fillByLabel('补录日期', targetDateStr, { withinOpenDialog: true })
+    await p.fillByLabel('开始时间', '03:00', { withinOpenDialog: true })
+    await p.fillByLabel('结束时间', '03:30', { withinOpenDialog: true })
+    await p.fillByLabel('复盘小结', '图书馆忘开计时补录', { withinOpenDialog: true })
+    await p.clickByRoleOrText({ text: '保存补录', withinOpenDialog: true })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
+
+    const timelineAfterManual = await p.evaluate(() => document.body.innerText ?? '')
+    expect(timelineAfterManual).toContain('手动补录')
+    expect(timelineAfterManual).toContain('图书馆忘开计时补录')
+
+    // Weekly 4-color distribution preview & PNG export
+    await p.clickByRoleOrText({ text: '一周分布图' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    expect((await auditModals(p)).violations).toEqual([])
+    expect((await auditScreenBudget(p)).violations).toEqual([])
+    expect((await auditBrandSpec(p, { checkPageMargins: false })).violations).toEqual([])
+
+    const gridStates = await p.evaluate(() => {
+      const cells = [...document.querySelectorAll('.weekly-grid-cell')]
+      return {
+        total: cells.length,
+        hasFocus: cells.some((c) => c.getAttribute('data-state') === 'focus'),
+        hasPause: cells.some((c) => c.getAttribute('data-state') === 'pause'),
+        hasEarly: cells.some((c) => c.getAttribute('data-state') === 'early'),
+        hasManual: cells.some((c) => c.getAttribute('data-state') === 'manual'),
+      }
+    })
+    expect(gridStates).toEqual({
+      total: 168,
+      hasFocus: true,
+      hasPause: true,
+      hasEarly: true,
+      hasManual: true,
+    })
+
+    await p.evaluate(() => {
+      ;(window as unknown as { __capturedPng?: { href: string; download: string } }).__capturedPng = undefined
+      const origClick = HTMLAnchorElement.prototype.click
+      HTMLAnchorElement.prototype.click = function () {
+        ;(window as unknown as { __capturedPng?: { href: string; download: string } }).__capturedPng = {
+          href: this.href,
+          download: this.download,
+        }
+        return origClick.call(this)
+      }
+    })
+    await p.clickByRoleOrText({ text: '保存 PNG', withinOpenDialog: true })
+    await p.waitFor(() => !!(window as unknown as { __capturedPng?: { href: string } }).__capturedPng)
+    const captured = await p.evaluate(
+      () => (window as unknown as { __capturedPng?: { href: string; download: string } }).__capturedPng,
+    )
+    expect(captured?.download).toMatch(/^xiaomao-week-\d{4}-\d{2}-\d{2}\.png$/)
+    expect(captured?.href.startsWith('data:image/png;base64,')).toBe(true)
+    await p.pressKey('Escape')
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
+
+    // Statistics counts manual duration: 40m + 12m + 30m = 82m (1小时22分)
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '统计' })
+    await p.waitFor(() => window.location.hash.includes('/statistics'))
+    await p.clickByRoleOrText({ text: '周', exact: true, selector: '.period-tabs button' })
+    expect(await p.evaluate(() => document.body.innerText)).toContain('1小时22分')
+
+    // Zero-affection isolation: 40m timer = 8 affection minus 5 early = 3 affection; peakAffection stays 8 (yellow-chick locked at 15)
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '专注' })
+    await p.waitFor(() => window.location.hash.includes('/focus'))
+    await p.clickByRoleOrText({ text: '换伙伴' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    const petPickerText = await p.evaluate(() => document.querySelector('dialog[open]')?.textContent ?? '')
+    expect(petPickerText).toContain('好感需达到 15')
+    await p.pressKey('Escape')
+
+    p.assertNoErrors('CF-08 Timeline, manual backfill, lossless switch & weekly PNG')
+  })
+
   it('supports Calendar Timetable semester creation, Monday validation, course creation, and single-week adjustment (UF6)', async () => {
     const p = await openPage()
     await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '时间轴' })
     await p.waitFor(() => window.location.hash.includes('/calendar'))
+    await p.clickByRoleOrText({ text: '日程', selector: '.calendar-tabs button' })
+    await p.waitFor(() => !!document.querySelector('.mini-switch'))
     await switchToTimetable(p)
 
     // Open semester setup

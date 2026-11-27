@@ -241,8 +241,17 @@ describe('Comprehensive UX Budgets & brand-spec.md Visual Gate (UF10, Tier 2 & T
     expect(themeInputs.violations).toEqual([])
     await page.pressKey('Escape')
 
-    // Test Calendar 添加日程 sheet
+    // Test Calendar 手动补录 sheet (default Timeline) and 添加日程 sheet (Schedule)
     await page.goto(`${server.url}/#/calendar`, true)
+    await page.clickByRoleOrText({ name: '手动补录' })
+    await page.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    const manualInputs = await auditInputSchemeA(page)
+    expect(manualInputs.testedCount).toBeGreaterThanOrEqual(4)
+    expect(manualInputs.violations).toEqual([])
+    await page.pressKey('Escape')
+    await page.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
+
+    await page.clickByRoleOrText({ text: '日程', selector: '.calendar-tabs button' })
     await page.clickByRoleOrText({ name: '添加日程' })
     await page.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
     const eventInputs = await auditInputSchemeA(page)
