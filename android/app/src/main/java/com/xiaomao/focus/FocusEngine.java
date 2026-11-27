@@ -169,10 +169,21 @@ final class FocusEngine {
         long value = interrupted ? s.optLong("elapsedMs") : elapsed(s, now);
         boolean reached = s.optString("mode").equals("countdown") && value >= s.optLong("targetMs");
         long completedAgo = reached ? (expiredAfterReboot ? Math.max(0L, epoch - s.optLong("deadlineEpoch")) : Math.max(0, now - s.optLong("anchorMono") - Math.max(0, s.optLong("targetMs") - s.optLong("elapsedMs")))) : 0;
-        if (interrupted || reached || action.equals("finish")) {
+        boolean failLeave = "fail_leave".equals(action);
+        if (failLeave && !interrupted && !reached) {
+            if (!"running".equals(s.optString("state"))) {
+                return snapshot(s, value, null);
+            }
+            if (value < REGRET_WINDOW_MS) {
+                store.write("active", null);
+                effects.cancelFocus();
+                return snapshot(null, 0, null);
+            }
+        }
+        if (interrupted || reached || action.equals("finish") || failLeave) {
             if (!interrupted && !expiredAfterReboot && s.optString("state").equals("running")) checkpoint(s, now, epoch);
             if (!interrupted && s.optString("state").equals("paused")) s.put("pausedMs", s.optLong("pausedMs") + Math.max(0, now - s.optLong("anchorMono")));
-            String status = interrupted ? "interrupted" : reached || s.optString("mode").equals("stopwatch") ? "completed" : "early";
+            String status = interrupted ? "interrupted" : reached ? "completed" : failLeave ? "early" : s.optString("mode").equals("stopwatch") ? "completed" : "early";
             JSONArray segments = s.getJSONArray("segments");
             long ended = interrupted || reached ? (segments.length() > 0 ? segments.getJSONObject(segments.length() - 1).optLong("end") : s.optLong("startedAt")) : epoch;
             JSONObject record = new JSONObject();
@@ -181,7 +192,7 @@ final class FocusEngine {
             record.put("animalId", s.has("animalId") && !s.isNull("animalId") ? s.getString("animalId") : "black-cat");
             record.put("skinId", s.has("skinId") && !s.isNull("skinId") ? s.getString("skinId") : "default");
             record.put("source", "timer");
-            if ("early".equals(status)) record.put("failReason", "manual_giveup");
+            if ("early".equals(status)) record.put("failReason", failLeave ? "left_app" : "manual_giveup");
             record.put("endedAt", ended);
             record.put("durationMs", s.optLong("elapsedMs"));
             record.put("status", status);

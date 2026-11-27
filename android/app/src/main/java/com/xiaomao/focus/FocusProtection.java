@@ -362,6 +362,11 @@ final class FocusProtection {
             return pkg != null && pkg.equals(settingsPackage) && SystemClock.elapsedRealtime() < settingsUntil;
         }
     }
+    static boolean isSettingsAuthorizationInFlight() {
+        synchronized (SETTINGS_LOCK) {
+            return !settingsPackage.isEmpty() && SystemClock.elapsedRealtime() < settingsUntil;
+        }
+    }
 
     /** Uses only observeControl(), never the lifecycle read/settlement command. */
     static boolean shouldBlock(Context context, JSONObject observation, String packageName, String className) {

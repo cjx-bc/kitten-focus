@@ -66,6 +66,12 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onStart() {
+        super.onStart();
+        LeaveAppWatcher.onActivityForegrounded(this);
+    }
+
+    @Override
     public void onPause() {
         resumed = false;
         FocusBlockOverlay.onMainActivityLeftForeground(this);
@@ -77,10 +83,19 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
         resumed = true;
         activeInstance = this;
+        LeaveAppWatcher.onActivityForegrounded(this);
         FocusAccessibilityService.cancelPullbackPulse();
         FocusBlockOverlay.onMainActivityFocused(this);
         FocusNotificationListener.rebindIfAuthorized(this);
         applyImmersiveFocusIfNeeded();
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        if (!isChangingConfigurations()) {
+            LeaveAppWatcher.onActivityStopped(this);
+        }
     }
 
     private void animateSplashExit(SplashScreenViewProvider splashScreenView) {

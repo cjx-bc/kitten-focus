@@ -163,13 +163,16 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisible)
 })
 
-async function preference(key: 'sound' | 'vibration', event: Event) {
+async function preference(key: 'sound' | 'vibration' | 'leaveAppFail', event: Event) {
   const target = event.target as HTMLInputElement
   const value = target.checked
   try {
     await app.mutate((d) => (d.preferences[key] = value))
   } catch (e) {
-    target.checked = app.data.preferences[key]
+    target.checked =
+      key === 'leaveAppFail'
+        ? app.data.preferences.leaveAppFail !== false
+        : Boolean(app.data.preferences[key])
     app.notify(e instanceof Error ? e.message : String(e))
   }
 }
@@ -364,6 +367,20 @@ async function openBatteryOptimization() {
           {{ app.lock.session ? '进行中' : '配置与记录' }}<Icon name="right" :size="16" />
         </span>
       </RouterLink>
+      <label class="settings-row switch">
+        <span class="row settings-row-lead">
+          <Icon name="cat" :size="20" />
+          <span class="settings-row-copy">
+            <span>轻看护</span>
+            <small>熄屏锁屏与通话不受影响</small>
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          :checked="app.data.preferences.leaveAppFail !== false"
+          @change="preference('leaveAppFail', $event)"
+        />
+      </label>
       <button type="button" class="settings-row" @click="openSheet('sound')">
         <span class="row"><Icon name="bell" :size="20" />提醒与声音</span>
         <Icon name="right" :size="16" />

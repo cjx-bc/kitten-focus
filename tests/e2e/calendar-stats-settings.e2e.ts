@@ -369,8 +369,34 @@ describe('Calendar, Statistics, Cat Placeholder & Settings/Backup (UF1, UF6, UF7
     await p.clickByRoleOrText({ text: '保存设置', withinOpenDialog: true })
     await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
 
+    // Verify 轻看护 switch defaults to true, shows 1-line exemption help, and persists toggle
+    const leaveSwitchBefore = await p.evaluate(() => {
+      const text = document.body.innerText ?? ''
+      const row = [...document.querySelectorAll('.settings-row.switch')].find((el) =>
+        (el.textContent ?? '').includes('轻看护'),
+      )
+      const input = row?.querySelector('input[type="checkbox"]') as HTMLInputElement | null
+      return { hasTitle: text.includes('轻看护'), hasHelp: text.includes('熄屏锁屏与通话不受影响'), checked: input?.checked ?? false }
+    })
+    expect(leaveSwitchBefore).toEqual({ hasTitle: true, hasHelp: true, checked: true })
+
+    await p.evaluate(() => {
+      const row = [...document.querySelectorAll('.settings-row.switch')].find((el) =>
+        (el.textContent ?? '').includes('轻看护'),
+      )
+      const input = row?.querySelector('input[type="checkbox"]') as HTMLInputElement | null
+      input?.click()
+    })
+
     await p.reload(true)
     expect(await p.evaluate(() => document.body.innerText)).toContain('45 分钟')
+    const leaveCheckedAfterReload = await p.evaluate(() => {
+      const row = [...document.querySelectorAll('.settings-row.switch')].find((el) =>
+        (el.textContent ?? '').includes('轻看护'),
+      )
+      return (row?.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked
+    })
+    expect(leaveCheckedAfterReload).toBe(false)
 
     // Reject corrupt JSON backup without opening restore confirmation or overwriting
     const openedBackupSheet = await openBackupSheetIfPresent(p)

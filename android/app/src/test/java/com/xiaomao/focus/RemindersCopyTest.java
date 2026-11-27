@@ -29,4 +29,16 @@ public class RemindersCopyTest {
             assertFalse(body.contains(term));
         }
     }
+
+    @Test
+    public void leaveWarningCopyMatchesSpecAndAvoidsGlossaryViolations() {
+        assertEquals("快回来！再不回专注小动物就要挂了", Reminders.LEAVE_WARN_TITLE);
+        assertTrue(Reminders.LEAVE_WARN_TEXT.contains("10 秒"));
+
+        String[] avoidedTerms = { "已完成", "番茄钟", "待办完成", "系统冻结", "设备所有者模式", "失败" };
+        for (String term : avoidedTerms) {
+            assertFalse(Reminders.LEAVE_WARN_TITLE.contains(term));
+            assertFalse(Reminders.LEAVE_WARN_TEXT.contains(term));
+        }
+    }
 }

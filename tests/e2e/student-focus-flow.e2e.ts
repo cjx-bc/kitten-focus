@@ -169,6 +169,23 @@ describe('Student Focus Flow & Core Task Navigation (UF1, UF2, UF3, UF4)', () =>
     expect(savedNotes[0]?.status).toBe('early')
     expect(savedNotes[0]?.note).toBe('走神了')
 
+    // Start focus and simulate native 10s leave-app timeout (failReason: 'left_app') -> left_app failure subtitle
+    await p.clickByRoleOrText({ text: '开始专注' })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('专注进行中'))
+    await p.evaluate(async () => {
+      const stub = (window as unknown as {
+        __catFocusStub: { advanceFocusMs: (ms: number) => void; triggerLeaveFail: () => Promise<void> }
+      }).__catFocusStub
+      stub.advanceFocusMs(12000)
+      await stub.triggerLeaveFail()
+    })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('离开专注太久，没能救回来'), {
+      label: 'left_app failure subtitle',
+    })
+    expect(await p.evaluate(() => document.body.innerText)).toContain('完蛋！你的小黑猫挂了')
+    await p.clickByRoleOrText({ text: '返回首页' })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('开始专注'))
+
     p.assertNoErrors('pet tap, 10s regret cancel, and left-swipe give-up')
   })
 

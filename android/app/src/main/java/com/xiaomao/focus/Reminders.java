@@ -37,8 +37,11 @@ final class Reminders {
     static final int KEEP_ALIVE_HEARTBEAT_ID=47;
     static final String KEEP_ALIVE_HEARTBEAT_ACTION="com.xiaomao.focus.KEEP_ALIVE_HEARTBEAT";
     static final int ACCESSIBILITY_REVOKED_ID=48;
+    static final int LEAVE_WARN_ID=49;
     static final String ACCESSIBILITY_REVOKED_TITLE = "无障碍保护已被系统关闭";
     static final String ACCESSIBILITY_REVOKED_TEXT = "可能被手机管家/安全中心自动关闭；请先在安全中心设为信任或白名单，再重开无障碍";
+    static final String LEAVE_WARN_TITLE = "快回来！再不回专注小动物就要挂了";
+    static final String LEAVE_WARN_TEXT = "10 秒内回到小猫专注即可继续当前专注";
     static final long KEEP_ALIVE_HEARTBEAT_MS=180_000L;
     static final String FOCUS_FINISHED_TITLE="本次专注正常结束";
     private static final int MAX_SCHEDULED_REMINDERS=450;
@@ -87,8 +90,9 @@ final class Reminders {
     }
     private static void schedule(Context c,int type,long due,PendingIntent intent){AlarmManager manager=c.getSystemService(AlarmManager.class);try{if(exactAllowed(c)){manager.setExactAndAllowWhileIdle(type,due,intent);return;}}catch(SecurityException ignored){}try{manager.setAndAllowWhileIdle(type,due,intent);}catch(SecurityException ignored){}}
     static void cancelFocusAlarm(Context c){c.getSystemService(AlarmManager.class).cancel(focusIntent(c));}
-    static void cancelFocus(Context c){FocusKeepAliveService.stop(c);cancelKeepAlive(c);cancelFocusAlarm(c);NotificationManagerCompat.from(c).cancel(FOCUS_ID);}
-    private static void channel(Context c,String id,String title,boolean sound,boolean vibration,boolean low){if(Build.VERSION.SDK_INT>=26){NotificationChannel channel=new NotificationChannel(id,title,low?NotificationManager.IMPORTANCE_LOW:NotificationManager.IMPORTANCE_DEFAULT);channel.enableVibration(vibration);if(!sound)channel.setSound(null,null);else channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());c.getSystemService(NotificationManager.class).createNotificationChannel(channel);}}
+    static void cancelFocus(Context c){FocusKeepAliveService.stop(c);cancelKeepAlive(c);cancelFocusAlarm(c);cancelLeaveWarning(c);NotificationManagerCompat.from(c).cancel(FOCUS_ID);}
+    private static void channel(Context c,String id,String title,boolean sound,boolean vibration,boolean low){channelWithImportance(c,id,title,sound,vibration,low?NotificationManager.IMPORTANCE_LOW:NotificationManager.IMPORTANCE_DEFAULT);}
+    private static void channelWithImportance(Context c,String id,String title,boolean sound,boolean vibration,int importance){if(Build.VERSION.SDK_INT>=26){NotificationChannel channel=new NotificationChannel(id,title,importance);channel.enableVibration(vibration);if(!sound)channel.setSound(null,null);else channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());c.getSystemService(NotificationManager.class).createNotificationChannel(channel);}}
     private static NotificationCompat.Builder builder(Context c,String channel){return new NotificationCompat.Builder(c,channel).setSmallIcon(R.drawable.ic_stat_focus).setContentIntent(open(c)).setColor(0xff222222);}
     static Notification buildFocusNotification(Context c,JSONObject s,long elapsed){channel(c,"focus-status","专注状态",false,false,true);boolean paused=s.optString("state").equals("paused"),countdown=s.optString("mode").equals("countdown");NotificationCompat.Builder notification=builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle(s.optString("title","专注中")).setContentText(paused?"已暂停 · 点击返回专注":countdown?"倒计时专注进行中":"正计时专注进行中").setOngoing(true).setOnlyAlertOnce(true).setSilent(true);
         if(LockEngine.owns(s)) notification.setContentText(s.optBoolean("strictMode")?"严格锁机进行中 · 到期自动结束":"普通锁机进行中 · 点击返回锁机");
@@ -97,6 +101,25 @@ final class Reminders {
         return notification.build();}
     static Notification buildFallbackKeepAliveNotification(Context c){channel(c,"focus-status","专注状态",false,false,true);return builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle("小猫专注").setContentText("正在同步专注状态").setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build();}
     static void showFocus(Context c,JSONObject s,long elapsed){FocusKeepAliveService.ensureStarted(c);if(!notificationsAllowed(c))return;post(c,FOCUS_ID,buildFocusNotification(c,s,elapsed));}
+    static void showLeaveWarning(Context c){
+        if(c==null||!notificationsAllowed(c))return;
+        boolean sound=true,vibration=true;
+        try{JSONObject data=LocalStore.get(c).read("data");if(data!=null){JSONObject preferences=data.optJSONObject("preferences");if(preferences!=null){sound=preferences.optBoolean("sound",true);vibration=preferences.optBoolean("vibration",true);}}}catch(Exception ignored){}
+        String id="focus-leave-warn-"+sound+"-"+vibration;
+        channelWithImportance(c,id,"轻看护离开提醒",sound,vibration,NotificationManager.IMPORTANCE_HIGH);
+        post(c,LEAVE_WARN_ID,builder(c,id)
+            .setContentIntent(returnToFocus(c))
+            .setContentTitle(LEAVE_WARN_TITLE)
+            .setContentText(LEAVE_WARN_TEXT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .build());
+    }
+    static void cancelLeaveWarning(Context c){
+        if(c==null)return;
+        try{NotificationManagerCompat.from(c).cancel(LEAVE_WARN_ID);}catch(Exception ignored){}
+    }
     static void showAccessibilityRevoked(Context c){
         if(c==null||!notificationsAllowed(c))return;
         channel(c,"focus-alert","专注保护提醒",true,true,false);
