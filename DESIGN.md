@@ -225,6 +225,7 @@ Geometry pairs soft rectangular containers with pill controls:
 ### Signature Components
 - **Monochrome Cat Splash**: Pure `#ffffff` native launch screen with monochrome cat-head wink and `专注此刻，陪小猫一起长大` tagline, fading cleanly into the web shell without a second splash screen.
 - **Calm Permission & Release Cards**: Soft Mist containers pairing plain subtitles with neutral slate/charcoal state labels, background download hiding (`收起，后台继续下载`), and Option A per-version dismissal.
+- **v2 Companion Critters & Unified Native Overlay (`docs/cat-companion-plan.md`, 0.3.x+)**: All 12 focus critters inherit the `AppMark` silhouette grammar (`#222222` ink body or `#ffffff` with `2.5px #222222` stroke, pure-white circular eye rings, and at most 1–2 muted accent fills drawn from `THEME_COLORS` via CSS variables for zero-cost coat swaps); Android's native `FocusBlockOverlay` shares the exact same Pure Paper / Soft Mist / Ink Charcoal tokens and bundled `Nunito` numerals (plus P1 `#111113` / `#1c1c1e` dark-mode parity) so Vue views and native protection overlays read as one seamless surface.
 
 ## Do's and Don'ts
 
