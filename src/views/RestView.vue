@@ -4,6 +4,7 @@ import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import { duration, timer } from '../domain/dates'
 import { resolveRestDurationMs } from '../domain/rest'
+import { playLightCompletionFeedback } from '../platform/feedback'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
 import { waitForDialogClose } from '../components/sheetClose'
@@ -23,6 +24,7 @@ const busy = ref(false),
   sheet = ref<RestSheet>(null),
   leaving = ref(false),
   studyOpen = ref(false),
+  loopTriggeredRecordId = ref<string | null>(null),
   startError = ref<{ message: string; kind: StartErrorKind } | null>(null)
 const session = computed(() => app.rest.session)
 const running = computed(() => session.value?.state === 'running')
@@ -141,6 +143,21 @@ watch(
   () => app.rest.session,
   (value) => {
     if (!value && !busy.value && !leaving.value) void router.replace('/focus')
+  },
+)
+watch(
+  () => session.value?.state,
+  (nextState, prevState) => {
+    if (prevState !== 'running' || nextState !== 'completed') return
+    const rec = session.value?.record
+    if (!rec || loopTriggeredRecordId.value === rec.id) return
+    if (app.data.preferences.pomodoroLoop !== true) return
+    loopTriggeredRecordId.value = rec.id
+    playLightCompletionFeedback({
+      sound: app.data.preferences.sound,
+      vibration: app.data.preferences.vibration,
+    })
+    void again()
   },
 )
 onMounted(() => {

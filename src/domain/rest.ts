@@ -1,6 +1,7 @@
 import type { FocusRecord, RestSession, RestSnapshot } from './model'
 
 export const REST_DURATION_MS = 5 * 60 * 1000
+export const REST_MINUTE_OPTIONS = [5, 10, 15, 20] as const
 
 export function resolveRestDurationMs(restMinutes?: number): number {
   if (typeof restMinutes === 'number' && Number.isInteger(restMinutes) && restMinutes >= 1 && restMinutes <= 60) {

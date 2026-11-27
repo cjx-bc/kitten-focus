@@ -30,6 +30,9 @@ import java.util.Set;
 
 final class Reminders {
     static final int FOCUS_ID=40;static final String FOCUS_ACTION="com.xiaomao.focus.FOCUS_DUE";
+    static final String FOCUS_ACTION_PAUSE="com.xiaomao.focus.FOCUS_ACTION_PAUSE";
+    static final String FOCUS_ACTION_RESUME="com.xiaomao.focus.FOCUS_ACTION_RESUME";
+    static final String FOCUS_ACTION_FINISH="com.xiaomao.focus.FOCUS_ACTION_FINISH";
     static final int REST_ID=43;
     static final String REST_ACTION="com.xiaomao.focus.REST_DUE";
     static final int KEEP_ALIVE_REVIVE_ID=46;
@@ -72,6 +75,22 @@ final class Reminders {
     private static PendingIntent open(Context c){return PendingIntent.getActivity(c,0,new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
     private static PendingIntent returnToFocus(Context c){return PendingIntent.getActivity(c,FOCUS_ID,new Intent(c,MainActivity.class).putExtra("returnToFocus",true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
     private static PendingIntent recovery(Context c){return PendingIntent.getActivity(c,44,new Intent(c,MainActivity.class).putExtra("openRecovery",true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    private static PendingIntent focusControlIntent(Context c,int requestCode,String action){return PendingIntent.getBroadcast(c,requestCode,new Intent(c,ReminderReceiver.class).setAction(action),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    static boolean shouldShowFocusControls(JSONObject session){
+        if(session==null||LockEngine.owns(session))return false;
+        boolean strictCountdown=session.optBoolean("strictMode")&&"countdown".equals(session.optString("mode"));
+        return !strictCountdown;
+    }
+    static List<String> focusNotificationActionLabels(JSONObject session){
+        List<String> labels=new ArrayList<>();
+        if(shouldShowFocusControls(session)){
+            boolean paused="paused".equals(session.optString("state"));
+            labels.add(paused?"继续":"暂停");
+            labels.add("结束");
+        }
+        labels.add("帮助与故障恢复");
+        return labels;
+    }
     static void scheduleFocus(Context c,JSONObject s){
         if(!s.optString("mode").equals("countdown")||!s.optString("state").equals("running"))return;
         long remaining=Math.max(0L,s.optLong("targetMs")-s.optLong("elapsedMs"));
@@ -90,9 +109,14 @@ final class Reminders {
     static void cancelFocus(Context c){FocusKeepAliveService.stop(c);cancelKeepAlive(c);cancelFocusAlarm(c);NotificationManagerCompat.from(c).cancel(FOCUS_ID);}
     private static void channel(Context c,String id,String title,boolean sound,boolean vibration,boolean low){if(Build.VERSION.SDK_INT>=26){NotificationChannel channel=new NotificationChannel(id,title,low?NotificationManager.IMPORTANCE_LOW:NotificationManager.IMPORTANCE_DEFAULT);channel.enableVibration(vibration);if(!sound)channel.setSound(null,null);else channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());c.getSystemService(NotificationManager.class).createNotificationChannel(channel);}}
     private static NotificationCompat.Builder builder(Context c,String channel){return new NotificationCompat.Builder(c,channel).setSmallIcon(R.drawable.ic_stat_focus).setContentIntent(open(c)).setColor(0xff222222);}
-    static Notification buildFocusNotification(Context c,JSONObject s,long elapsed){channel(c,"focus-status","专注状态",false,false,true);boolean paused=s.optString("state").equals("paused"),countdown=s.optString("mode").equals("countdown");NotificationCompat.Builder notification=builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle(s.optString("title","专注中")).setContentText(paused?"已暂停 · 点击返回专注":countdown?"倒计时专注进行中":"正计时专注进行中").setOngoing(true).setOnlyAlertOnce(true).setSilent(true);
+    static Notification buildFocusNotification(Context c,JSONObject s,long elapsed){channel(c,"focus-status","专注状态",false,false,true);boolean paused=s.optString("state").equals("paused"),countdown=s.optString("mode").equals("countdown");NotificationCompat.Builder notification=builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle(s.optString("title","专注中")).setContentText(paused?"已暂停 · 点击返回专注":countdown?"倒计时专注进行中":"正计时专注进行中").setOngoing(true).setOnlyAlertOnce(true).setSilent(true).setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
         if(LockEngine.owns(s)) notification.setContentText(s.optBoolean("strictMode")?"严格锁机进行中 · 到期自动结束":"普通锁机进行中 · 点击返回锁机");
         if(!paused){notification.setUsesChronometer(true).setWhen(countdown?System.currentTimeMillis()+Math.max(0,s.optLong("targetMs")-elapsed):System.currentTimeMillis()-elapsed).setChronometerCountDown(countdown);}
+        if(shouldShowFocusControls(s)){
+            if(paused){notification.addAction(0,"继续",focusControlIntent(c,50,FOCUS_ACTION_RESUME));}
+            else{notification.addAction(0,"暂停",focusControlIntent(c,49,FOCUS_ACTION_PAUSE));}
+            notification.addAction(0,"结束",focusControlIntent(c,51,FOCUS_ACTION_FINISH));
+        }
         notification.addAction(0,"帮助与故障恢复",recovery(c));
         return notification.build();}
     static Notification buildFallbackKeepAliveNotification(Context c){channel(c,"focus-status","专注状态",false,false,true);return builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle("小猫专注").setContentText("正在同步专注状态").setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build();}

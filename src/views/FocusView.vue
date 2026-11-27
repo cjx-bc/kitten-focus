@@ -563,8 +563,19 @@ async function pickInterruptChip(chip: string) {
   await saveNoteIfChanged()
 }
 
+const autoRestPending = computed(() =>
+  Boolean(
+    result.value &&
+      app.rest.session?.state === 'running' &&
+      app.rest.session.record.id === result.value.id,
+  ),
+)
+
 async function backHome() {
   await saveNoteIfChanged()
+  if (autoRestPending.value) {
+    await app.exitRest()
+  }
   app.dismissResult()
 }
 
@@ -638,6 +649,10 @@ async function clearUnreadyAndRetry() {
 async function rest() {
   if (busy.value) return
   await saveNoteIfChanged()
+  if (autoRestPending.value) {
+    await router.replace('/rest')
+    return
+  }
   busy.value = true
   try {
     await app.startRest()
@@ -872,6 +887,7 @@ async function rest() {
         </div>
 
         <template v-if="canRest">
+          <p v-if="autoRestPending" class="muted">即将自动进入 {{ restMinutes }} 分钟休息…</p>
           <button type="button" class="primary wide" :disabled="busy" @click="rest">
             <Icon name="clock" :size="18" />休息 {{ restMinutes }} 分钟
           </button>

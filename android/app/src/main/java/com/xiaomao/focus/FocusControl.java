@@ -234,6 +234,13 @@ final class FocusControl {
             return projectTemporary(result);
         }
     }
+    static void enforceFocusActionAllowed(JSONObject active, String action, boolean needsReconcile) {
+        if (!"read".equals(action) && active != null && active.optBoolean("strictMode")
+            && "countdown".equals(active.optString("mode")) && !needsReconcile) {
+            throw new IllegalStateException("严格倒计时不能暂停、取消或提前结束；请等待本轮到期，帮助和故障恢复仍可进入");
+        }
+    }
+
     JSONObject focusAction(String action) throws JSONException {
         synchronized (store) {
             if (LockEngine.owns(store.read("active"))) {
@@ -243,9 +250,7 @@ final class FocusControl {
             }
             JSONObject observation = observeControl();
             JSONObject active = observation.getJSONObject("focus").optJSONObject("session");
-            if (!action.equals("read") && active != null && active.optBoolean("strictMode")
-                && active.optString("mode").equals("countdown") && !observation.optBoolean("needsReconcile"))
-                throw new IllegalStateException("严格倒计时不能暂停、取消或提前结束；请等待本轮到期，帮助和故障恢复仍可进入");
+            enforceFocusActionAllowed(active, action, observation.optBoolean("needsReconcile"));
             JSONObject result = focus.action(action);
             JSONObject remaining = result.optJSONObject("session");
             recovery.releaseFinished(remaining == null ? null : remaining.optString("id"));

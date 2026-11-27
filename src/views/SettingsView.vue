@@ -7,6 +7,7 @@ import StudyModeSheet from '../components/StudyModeSheet.vue'
 import { migrateProtectionPreferences } from '../domain/protectionModules'
 import { makeBackup, readBackup, type Backup } from '../domain/backup'
 import { dateKey } from '../domain/dates'
+import { REST_MINUTE_OPTIONS, resolveRestDurationMs } from '../domain/rest'
 import {
   native,
   exportFile,
@@ -24,7 +25,7 @@ import { waitForDialogClose } from '../components/sheetClose'
 import UpdateSettings from '../components/UpdateSettings.vue'
 import { useUpdates } from '../stores/updates'
 
-type SettingsSheet = 'duration' | 'sound' | 'backup' | 'about'
+type SettingsSheet = 'duration' | 'restTiming' | 'sound' | 'backup' | 'about'
 
 const app = useApp(),
   updates = useUpdates(),
@@ -34,6 +35,7 @@ const app = useApp(),
   studyOpen = ref(false),
   studyInitialView = ref<'home' | 'apps' | 'strict' | 'quiet' | 'permissions'>('home'),
   minutes = ref(25),
+  restForm = ref({ restMinutes: 5, autoRest: false, pomodoroLoop: false }),
   importInput = ref<HTMLInputElement>(),
   backup = ref<Backup | null>(null),
   error = ref(''),
@@ -66,9 +68,15 @@ const updateSummary = computed(() => {
   return state.currentVersion
 })
 
+const restMinutesLabel = computed(() =>
+  Math.round(resolveRestDurationMs(app.data.preferences.restMinutes) / 60_000),
+)
+const restSummary = computed(() => `${restMinutesLabel.value} 分钟`)
+
 const sheetBusy = computed(() => busy.value || updateBusy.value)
 const sheetTitle = computed(() => {
   if (sheet.value === 'duration') return '默认专注时长'
+  if (sheet.value === 'restTiming') return '计时与休息'
   if (sheet.value === 'sound') return '提醒与声音'
   if (sheet.value === 'backup') return backup.value ? '恢复本地备份' : '本地备份与恢复'
   if (sheet.value === 'about') return aboutView.value === 'backups' ? '升级恢复副本' : '检查更新与关于'
@@ -87,6 +95,13 @@ async function openSheet(target: SettingsSheet) {
   }
   error.value = ''
   if (target === 'duration') minutes.value = app.data.preferences.defaultMinutes
+  if (target === 'restTiming') {
+    restForm.value = {
+      restMinutes: restMinutesLabel.value,
+      autoRest: app.data.preferences.autoRest === true,
+      pomodoroLoop: app.data.preferences.pomodoroLoop === true,
+    }
+  }
   if (target === 'backup') backup.value = null
   if (target === 'about') {
     aboutView.value = 'about'
@@ -163,13 +178,13 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisible)
 })
 
-async function preference(key: 'sound' | 'vibration', event: Event) {
+async function preference(key: 'sound' | 'vibration' | 'keepScreenOn', event: Event) {
   const target = event.target as HTMLInputElement
   const value = target.checked
   try {
     await app.mutate((d) => (d.preferences[key] = value))
   } catch (e) {
-    target.checked = app.data.preferences[key]
+    target.checked = key === 'keepScreenOn' ? app.data.preferences.keepScreenOn !== false : app.data.preferences[key]
     app.notify(e instanceof Error ? e.message : String(e))
   }
 }
@@ -191,6 +206,30 @@ async function saveMinutes() {
     await app.mutate((d) => (d.preferences.defaultMinutes = minutes.value))
     sheet.value = null
     app.notify('默认时长已保存')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function saveRestTiming() {
+  if (busy.value) return
+  const mins = restForm.value.restMinutes
+  if (!Number.isInteger(mins) || mins < 1 || mins > 60) {
+    error.value = '请选择有效的休息时长'
+    return
+  }
+  busy.value = true
+  error.value = ''
+  try {
+    await app.mutate((d) => {
+      d.preferences.restMinutes = mins
+      d.preferences.autoRest = restForm.value.autoRest
+      d.preferences.pomodoroLoop = restForm.value.pomodoroLoop
+    })
+    sheet.value = null
+    app.notify('计时与休息设置已保存')
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -320,22 +359,24 @@ async function openBatteryOptimization() {
           {{ app.data.preferences.defaultMinutes }} 分钟<Icon name="right" :size="16" />
         </span>
       </button>
+      <button type="button" class="settings-row" @click="openSheet('restTiming')">
+        <span class="row"><Icon name="timer" :size="20" />计时与休息</span>
+        <span class="row settings-value">
+          {{ restSummary }}<Icon name="right" :size="16" />
+        </span>
+      </button>
       <label class="settings-row switch">
-        <span class="row"><Icon name="sound" :size="20" />结束提示音</span>
+        <span class="row"><Icon name="sun" :size="20" />屏幕常亮</span>
         <input
           type="checkbox"
-          :checked="app.data.preferences.sound"
-          @change="preference('sound', $event)"
+          :checked="app.data.preferences.keepScreenOn !== false"
+          @change="preference('keepScreenOn', $event)"
         />
       </label>
-      <label class="settings-row switch">
-        <span class="row"><Icon name="vibration" :size="20" />结束振动</span>
-        <input
-          type="checkbox"
-          :checked="app.data.preferences.vibration"
-          @change="preference('vibration', $event)"
-        />
-      </label>
+      <button type="button" class="settings-row" @click="openSheet('sound')">
+        <span class="row"><Icon name="bell" :size="20" />提醒与声音</span>
+        <Icon name="right" :size="16" />
+      </button>
     </div>
 
     <h3 class="settings-section-label">专注保护</h3>
@@ -364,10 +405,6 @@ async function openBatteryOptimization() {
           {{ app.lock.session ? '进行中' : '配置与记录' }}<Icon name="right" :size="16" />
         </span>
       </RouterLink>
-      <button type="button" class="settings-row" @click="openSheet('sound')">
-        <span class="row"><Icon name="bell" :size="20" />提醒与声音</span>
-        <Icon name="right" :size="16" />
-      </button>
     </div>
 
     <h3 class="settings-section-label">数据与支持</h3>
@@ -434,14 +471,75 @@ async function openBatteryOptimization() {
         <button type="submit" class="primary wide" :disabled="busy">保存设置</button>
       </form>
 
+      <form v-else-if="sheet === 'restTiming'" class="stack" @submit.prevent="saveRestTiming">
+        <fieldset>
+          <legend>休息时长（分钟）</legend>
+          <div class="chip-row" data-decision-group>
+            <button
+              v-for="m in REST_MINUTE_OPTIONS"
+              :key="m"
+              type="button"
+              class="chip"
+              :class="{ active: restForm.restMinutes === m }"
+              @click="restForm.restMinutes = m"
+            >
+              {{ m }} 分钟
+            </button>
+          </div>
+        </fieldset>
+        <div class="settings-group">
+          <label class="settings-row switch">
+            <span class="row">
+              <span class="settings-row-copy">
+                <span>自动进入休息</span>
+                <small>专注正常结束后自动开始休息</small>
+              </span>
+            </span>
+            <input v-model="restForm.autoRest" type="checkbox" />
+          </label>
+          <label class="settings-row switch">
+            <span class="row">
+              <span class="settings-row-copy">
+                <span>番茄循环</span>
+                <small>休息自然到期后自动开启下一轮专注</small>
+              </span>
+            </span>
+            <input v-model="restForm.pomodoroLoop" type="checkbox" />
+          </label>
+        </div>
+        <p v-if="!restForm.autoRest" class="field-help">
+          未开启「自动进入休息」时，专注结束后需手动点击休息；开启「番茄循环」将在休息自然到期时自动进入下一轮，主动退出休息不会触发。
+        </p>
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <button type="submit" class="primary wide" :disabled="busy">保存设置</button>
+      </form>
+
       <div v-else-if="sheet === 'sound'" class="notification-preferences">
+        <div class="settings-group" data-decision-group>
+          <label class="settings-row switch">
+            <span class="row"><Icon name="sound" :size="20" />结束提示音</span>
+            <input
+              type="checkbox"
+              :checked="app.data.preferences.sound"
+              @change="preference('sound', $event)"
+            />
+          </label>
+          <label class="settings-row switch">
+            <span class="row"><Icon name="vibration" :size="20" />结束振动</span>
+            <input
+              type="checkbox"
+              :checked="app.data.preferences.vibration"
+              @change="preference('vibration', $event)"
+            />
+          </label>
+        </div>
         <button type="button" class="secondary wide" @click="openStudy('quiet')">
           前往学霸模式 · 免打扰设置
         </button>
         <p class="field-help">专注免打扰在「学霸模式→免打扰」。</p>
         <template v-if="native">
           <h3 class="settings-section-label">系统提醒与后台</h3>
-          <div class="settings-group">
+          <div class="settings-group" data-decision-group>
             <button type="button" class="settings-row" @click="enableNotifications">
               <span class="row"><Icon name="bell" :size="20" />通知权限</span>
               <span class="row settings-value">

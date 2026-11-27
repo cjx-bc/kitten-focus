@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { App as CapacitorApp } from '@capacitor/app'
 import { consumeFocusReturn, consumeLockReturn, consumeRecoveryReturn, resolveMainEntry, native, onNativeOverlayEvent, syncFocusOverlayState } from './platform/bridge'
 import { notifyNativeSplashReady } from './platform/splash'
+import { createWebWakeLockController } from './platform/wakeLock'
 import { useApp } from './stores/app'
 import Icon from './components/Icon.vue'
 import Sheet from './components/Sheet.vue'
@@ -57,8 +58,61 @@ watch(() => app.lock.session?.id, async id => {
   const destination = await resolveMainEntry(route.path)
   if (destination !== route.path) await router.replace(destination)
 })
-watch([() => app.ready, () => app.rest.session?.record.id], ([ready, id]) => {
-  if (ready && id && route.path !== '/rest') void router.replace('/rest')
+const wakeLock = createWebWakeLockController()
+watch(
+  [
+    () => app.ready,
+    () => app.data.preferences.keepScreenOn,
+    () => app.focus.session?.state,
+    () => app.rest.session?.state,
+  ],
+  ([isReady, keepScreenOn, focusState, restState]) => {
+    if (native) return
+    const shouldKeepAwake =
+      Boolean(isReady) &&
+      keepScreenOn !== false &&
+      (focusState === 'running' || restState === 'running')
+    void wakeLock.sync(shouldKeepAwake)
+  },
+  { immediate: true },
+)
+let autoRestTimer: ReturnType<typeof setTimeout> | undefined
+function clearAutoRestTimer() {
+  if (autoRestTimer !== undefined) {
+    clearTimeout(autoRestTimer)
+    autoRestTimer = undefined
+  }
+}
+watch([() => app.ready, () => app.rest.session?.record.id, () => route.path], ([ready, id, path]) => {
+  if (!ready || !id) {
+    clearAutoRestTimer()
+    return
+  }
+  if (path === '/rest') {
+    clearAutoRestTimer()
+    return
+  }
+  const restSession = app.rest.session
+  const isFreshHarvestOnFocus =
+    path === '/focus' &&
+    restSession?.state === 'running' &&
+    app.lastResult?.id === id &&
+    app.lastResult?.status === 'completed' &&
+    Math.abs(Date.now() - restSession.startedAt) < 2500
+  if (isFreshHarvestOnFocus) {
+    if (autoRestTimer === undefined) {
+      app.notify('专注完成，即将开始休息')
+      autoRestTimer = setTimeout(() => {
+        autoRestTimer = undefined
+        if (app.rest.session?.state === 'running' && route.path !== '/rest') {
+          void router.replace('/rest')
+        }
+      }, 1500)
+    }
+    return
+  }
+  clearAutoRestTimer()
+  void router.replace('/rest')
 })
 watch(
   [() => app.ready, () => app.focus.session?.id, () => isStudySessionLocked(app.focus.session), () => route.path],
@@ -233,6 +287,8 @@ onMounted(async () => {
   }
 })
 onBeforeUnmount(() => {
+  clearAutoRestTimer()
+  void wakeLock.dispose()
   stopOverlayEvents?.()
   window.removeEventListener('open-recovery', onOpenRecovery)
   window.removeEventListener('recovery-return-request', onRecoveryReturnRequest)
