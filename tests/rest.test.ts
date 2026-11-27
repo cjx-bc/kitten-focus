@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { makeRest, readRest, REST_DURATION_MS } from '../src/domain/rest'
+import { makeRest, readRest, resolveRestDurationMs, REST_DURATION_MS } from '../src/domain/rest'
 import { settle } from '../src/domain/focus'
 import { statistics } from '../src/domain/statistics'
+import { projectPetDomain } from '../src/domain/pet'
 import type { ActiveFocus, FocusRecord } from '../src/domain/model'
 
 function record(minutes: number, mode: FocusRecord['mode'] = 'countdown'): FocusRecord {
@@ -80,5 +81,43 @@ describe('five-minute rest after focus', () => {
     expect(readRest(null, rest.endsAt)).toEqual({ session: null, remainingMs: 0 })
     expect(statistics([source], '2026-11-15', '2026-11-15')).toEqual(before)
     expect(source.durationMs).toBe(25 * 60000)
+  })
+})
+
+describe('custom rest duration (5 / 10 / 15 / 20 min)', () => {
+  it.each([5, 10, 15, 20])('resolves %i minutes and reads remaining time without capping at 5 minutes', (minutes) => {
+    const durationMs = resolveRestDurationMs(minutes)
+    expect(durationMs).toBe(minutes * 60000)
+    const source = record(25)
+    const rest = makeRest(source, source.endedAt, durationMs)
+    expect(rest.durationMs).toBe(minutes * 60000)
+    expect(rest.endsAt - rest.startedAt).toBe(minutes * 60000)
+    expect(readRest(rest, source.endedAt + 60000).remainingMs).toBe((minutes - 1) * 60000)
+    const done = readRest(rest, source.endedAt + minutes * 60000)
+    expect(done.session?.state).toBe('completed')
+    expect(done.remainingMs).toBe(0)
+  })
+
+  it('falls back to 5 minutes for missing or out-of-range restMinutes', () => {
+    expect(resolveRestDurationMs(undefined)).toBe(300000)
+    expect(resolveRestDurationMs(0)).toBe(300000)
+    expect(resolveRestDurationMs(-5)).toBe(300000)
+    expect(resolveRestDurationMs(61)).toBe(300000)
+    expect(resolveRestDurationMs(7.5)).toBe(300000)
+  })
+
+  it('never adds custom rest duration to focus count, focus duration, or pet affection', () => {
+    const source = record(25)
+    const beforeStats = statistics([source], '2026-11-15', '2026-11-15')
+    const beforePet = projectPetDomain({ records: [source], timeZone: 'UTC', now: source.endedAt })
+    const rest = makeRest(source, source.endedAt, resolveRestDurationMs(20))
+    const mid = readRest(rest, source.endedAt + 10 * 60000)
+    expect(mid.remainingMs).toBe(10 * 60000)
+    const done = readRest(rest, source.endedAt + 20 * 60000)
+    expect(done.session?.state).toBe('completed')
+    expect(statistics([source], '2026-11-15', '2026-11-15')).toEqual(beforeStats)
+    const afterPet = projectPetDomain({ records: [source], timeZone: 'UTC', now: rest.endsAt })
+    expect(afterPet.affection).toBe(beforePet.affection)
+    expect(afterPet.totalRaised).toBe(beforePet.totalRaised)
   })
 })

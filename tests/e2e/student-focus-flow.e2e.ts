@@ -694,4 +694,117 @@ describe('Student Focus Flow & Core Task Navigation (UF1, UF2, UF3, UF4)', () =>
 
     p.assertNoErrors('PetPickerSheet roster, skins, random mode, and balloon-dog failTitle')
   })
+
+  it('persists custom restMinutes (5/10/15/20), autoRest, pomodoroLoop, and keepScreenOn toggle; loops focus on natural rest expiry and stops on manual exit (#34)', async () => {
+    const p = await openPage({
+      supported: true,
+      authorized: true,
+      connected: true,
+      initialData: {
+        schemaVersion: 1,
+        themes: [{ id: 't1', name: '高数', color: '#ef4e36', order: 0, collapsed: false }],
+        items: [{ id: 'i1', themeId: 't1', title: '极限刷题', note: '', mode: 'countdown', minutes: 25, order: 0 }],
+        records: [],
+        deletedRecordIds: [],
+        events: [],
+        eventExceptions: [],
+        semesters: [],
+        courses: [],
+        courseExceptions: [],
+        preferences: { defaultMinutes: 25, sound: true, vibration: true, activeSemesterId: null },
+      },
+    })
+
+    // 1. Configure 计时与休息 (15 分钟, autoRest=true, pomodoroLoop=true) & toggle 屏幕常亮 in /settings
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '我的' })
+    await p.waitFor(() => window.location.hash.includes('/settings'))
+
+    await p.clickByRoleOrText({ text: '计时与休息' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    expect((await auditModals(p)).violations).toEqual([])
+    await p.clickByRoleOrText({ text: '15 分钟', withinOpenDialog: true })
+    await p.clickByRoleOrText({ text: '自动进入休息', withinOpenDialog: true })
+    await p.clickByRoleOrText({ text: '番茄循环', withinOpenDialog: true })
+    await p.clickByRoleOrText({ text: '保存设置', withinOpenDialog: true })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
+
+    // Toggle 屏幕常亮 off and verify persistence across reload, then restore true
+    await p.clickByRoleOrText({ text: '屏幕常亮' })
+    await p.reload(true)
+    const afterReload = await p.evaluate(() => {
+      const stub = (window as unknown as { __catFocusStub: { getState: () => { data: { preferences: Record<string, unknown> } } } }).__catFocusStub
+      return {
+        body: document.body.innerText,
+        prefs: stub.getState().data.preferences,
+      }
+    })
+    expect(afterReload.body).toContain('15 分钟')
+    expect(afterReload.prefs.restMinutes).toBe(15)
+    expect(afterReload.prefs.autoRest).toBe(true)
+    expect(afterReload.prefs.pomodoroLoop).toBe(true)
+    expect(afterReload.prefs.keepScreenOn).toBe(false)
+    await p.clickByRoleOrText({ text: '屏幕常亮' })
+
+    // 2. Start focus on 极限刷题 -> complete 25m -> 1.5s harvest -> /rest (15 分钟)
+    await p.clickByRoleOrText({ selector: 'nav.tabbar a', name: '专注' })
+    await p.waitFor(() => window.location.hash.includes('/focus'))
+    await p.clickByRoleOrText({ text: '自由专注', selector: '.task-pill' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    await p.clickByRoleOrText({ name: '开始极限刷题', withinOpenDialog: true })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('专注进行中'))
+
+    await p.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(
+        25 * 60000 + 500,
+      )
+    })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('休息 15 分钟'), {
+      timeoutMs: 5000,
+      label: 'harvest toast/settlement shows 15m rest',
+    })
+    await p.waitFor(() => window.location.hash.includes('/rest'), {
+      timeoutMs: 8000,
+      label: 'auto-rest entered after harvest',
+    })
+    expect(await p.evaluate(() => document.body.innerText)).toContain('15 分钟')
+
+    // 3. Natural rest completion at 15m -> pomodoroLoop automatically starts next round of 极限刷题!
+    await p.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceRestMs: (ms: number) => void } }).__catFocusStub.advanceRestMs(
+        15 * 60000 + 500,
+      )
+    })
+    await p.waitFor(() => window.location.hash.includes('/focus'), {
+      timeoutMs: 8000,
+      label: 'pomodoroLoop returned to /focus',
+    })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('专注进行中'), {
+      timeoutMs: 5000,
+      label: 'pomodoroLoop started next focus',
+    })
+    expect(await p.evaluate(() => document.body.innerText)).toContain('极限刷题')
+
+    // 4. Complete round 2 -> auto-rest -> manual 退出休息 MUST stop the loop (stay on standby /focus)
+    await p.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(
+        25 * 60000 + 500,
+      )
+    })
+    await p.waitFor(() => window.location.hash.includes('/rest'), { timeoutMs: 8000, label: 'round 2 auto-rest' })
+    await p.clickByRoleOrText({ text: '退出休息' })
+    await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+    await p.clickByRoleOrText({ text: '退出休息', withinOpenDialog: true })
+    await p.waitFor(() => window.location.hash.includes('/focus') && (document.body.innerText ?? '').includes('开始专注'), {
+      label: 'manual rest exit returns to standby without looping',
+    })
+
+    // Confirm rest time was never added to focus records (still 2 x 25m = 50m)
+    const recordsCount = await p.evaluate(() => {
+      const stub = (window as unknown as { __catFocusStub: { getState: () => { data: { records: Array<{ durationMs: number }> } } } }).__catFocusStub
+      return stub.getState().data.records.map((r) => r.durationMs)
+    })
+    expect(recordsCount).toEqual([25 * 60000, 25 * 60000])
+
+    p.assertNoErrors('custom rest, autoRest, pomodoroLoop, and keepScreenOn E2E')
+  })
 })

@@ -40,14 +40,14 @@ public class CatFocusPlugin extends Plugin {
     private interface Operation { JSONObject run() throws Exception; }
     private void resolve(PluginCall call,Operation operation){try{JSONObject result=operation.run();call.resolve(result==null?new JSObject():new JSObject(result.toString()));}catch(Exception error){call.reject(error.getMessage(),error);}}
     @PluginMethod public void loadData(PluginCall call){resolve(call,()->{new UpgradeBackups(getContext()).prepareStartup();JSONObject data=control.loadData();return new JSONObject().put("data",data==null?JSONObject.NULL:data);});}
-    @PluginMethod public void saveData(PluginCall call){resolve(call,()->{store.saveData(call.getObject("data"),false);WhiteNoisePlayer.getInstance(getContext()).syncFromStore(getContext());return null;});}
-    @PluginMethod public void replaceData(PluginCall call){resolve(call,()->{control.replaceData(call.getObject("data"));WhiteNoisePlayer.getInstance(getContext()).stop();return null;});}
-    @PluginMethod public void startFocus(PluginCall call){resolve(call,()->control.startFocus(call.getObject("session"),Boolean.TRUE.equals(call.getBoolean("strictModeConfirmed",false))));}
-    @PluginMethod public void focusAction(PluginCall call){resolve(call,()->control.focusAction(call.getString("action","read")));}
+    @PluginMethod public void saveData(PluginCall call){resolve(call,()->{store.saveData(call.getObject("data"),false);WhiteNoisePlayer.getInstance(getContext()).syncFromStore(getContext());MainActivity.refreshWindowState(getContext());return null;});}
+    @PluginMethod public void replaceData(PluginCall call){resolve(call,()->{control.replaceData(call.getObject("data"));WhiteNoisePlayer.getInstance(getContext()).stop();MainActivity.refreshWindowState(getContext());return null;});}
+    @PluginMethod public void startFocus(PluginCall call){resolve(call,()->{JSONObject res=control.startFocus(call.getObject("session"),Boolean.TRUE.equals(call.getBoolean("strictModeConfirmed",false)));MainActivity.refreshWindowState(getContext());return res;});}
+    @PluginMethod public void focusAction(PluginCall call){resolve(call,()->{JSONObject res=control.focusAction(call.getString("action","read"));MainActivity.refreshWindowState(getContext());return res;});}
     @PluginMethod public void startLock(PluginCall call){resolve(call,()->control.startLock(call.getString("configurationId",""),Boolean.TRUE.equals(call.getBoolean("strictLockConfirmed",false))));}
     @PluginMethod public void lockAction(PluginCall call){resolve(call,()->control.lockAction(call.getString("action","read"),Boolean.TRUE.equals(call.getBoolean("confirmed",false))));}
-    @PluginMethod public void startRest(PluginCall call){resolve(call,()->control.startRest(call.getString("recordId","")));}
-    @PluginMethod public void restAction(PluginCall call){resolve(call,()->control.restAction(call.getString("action","read")));}
+    @PluginMethod public void startRest(PluginCall call){resolve(call,()->{JSONObject res=control.startRest(call.getString("recordId",""));MainActivity.refreshWindowState(getContext());return res;});}
+    @PluginMethod public void restAction(PluginCall call){resolve(call,()->{JSONObject res=control.restAction(call.getString("action","read"));MainActivity.refreshWindowState(getContext());return res;});}
     @PluginMethod public void grantTemporaryAccess(PluginCall call){resolve(call,()->control.grantTemporaryAccess(call.getData()));}
     @PluginMethod public void observeControl(PluginCall call){resolve(call,()->control.observeControl());}
     @PluginMethod public void resolveMainEntry(PluginCall call){resolve(call,()->control.resolveMainEntry(call.getString("path","/focus")));}

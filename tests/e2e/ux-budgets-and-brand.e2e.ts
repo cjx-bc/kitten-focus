@@ -139,11 +139,40 @@ describe('Comprehensive UX Budgets & brand-spec.md Visual Gate (UF10, Tier 2 & T
       }
     }
 
-    // Root /settings forbidden engineering strings check (ux-spec.md §1.1 R1-B & §2.3.2)
+    // Root /settings forbidden engineering strings & <= 4 rows in 专注设置 (ux-spec.md §1.1 R1-B & §5.6)
     await page.goto(`${server.url}/#/settings`, true)
     const settingsStrings = await auditForbiddenStrings(page, { isPrimaryScreen: true })
     if (settingsStrings.violations.length) {
       failures.push(`/settings strings: ${settingsStrings.violations.map((v) => v.message).join('; ')}`)
+    }
+    const focusGroupRows = await page.evaluate(() => {
+      const labels = [...document.querySelectorAll('.settings-section-label')]
+      const target = labels.find((el) => (el.textContent ?? '').trim() === '专注设置')
+      const group = target?.nextElementSibling
+      return group ? group.querySelectorAll('.settings-row').length : -1
+    })
+    if (focusGroupRows < 1 || focusGroupRows > 4) {
+      failures.push(`/settings 专注设置 row count expected 1..4, got ${focusGroupRows}`)
+    }
+
+    // Audit SettingsView -> 计时与休息 & 提醒与声音 sheets
+    for (const sheetTrigger of ['计时与休息', '提醒与声音']) {
+      await page.clickByRoleOrText({ text: sheetTrigger })
+      await page.waitFor(() => document.querySelectorAll('dialog[open]').length === 1)
+      const sheetModals = await auditModals(page)
+      if (sheetModals.violations.length) {
+        failures.push(`/settings ${sheetTrigger} modals: ${sheetModals.violations.map((v) => v.message).join('; ')}`)
+      }
+      const sheetBudget = await auditScreenBudget(page)
+      if (sheetBudget.violations.length) {
+        failures.push(`/settings ${sheetTrigger} budget: ${sheetBudget.violations.map((v) => v.message).join('; ')}`)
+      }
+      const sheetBrand = await auditBrandSpec(page, { checkPageMargins: false, checkCards: true, checkTimers: false })
+      if (sheetBrand.violations.length) {
+        failures.push(`/settings ${sheetTrigger} brand: ${sheetBrand.violations.map((v) => v.message).join('; ')}`)
+      }
+      await page.pressKey('Escape')
+      await page.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
     }
 
     // Active /focus screen audit (countdown <10s and >=10s)

@@ -66,6 +66,7 @@ final class FocusBlockOverlay {
 
     private static volatile String lastRenderedSignature = "";
     private static volatile boolean lastAttachedLocked = false;
+    private static volatile boolean lastAttachedKeepScreenOn = false;
 
     private FocusBlockOverlay() {
     }
@@ -359,6 +360,12 @@ final class FocusBlockOverlay {
         });
     }
 
+    static void refreshKeepScreenOn(Context context) {
+        if (context != null && overlayView != null) {
+            refreshFromControlAsync(context);
+        }
+    }
+
     private static void renderAsync(
         Context app,
         JSONObject observation,
@@ -507,11 +514,19 @@ final class FocusBlockOverlay {
         if (wm == null) return;
 
         final boolean locked = isLockedMode(mode);
+        final boolean keepScreenOn = snap.keepScreenOn && !snap.paused && !snap.isLock;
         String signature = mode.name() + "|" + subPanel + "|" + snap.paused + "|" + snap.strictMode
-            + "|" + snap.countdown + "|" + blockedPackage + "|" + guardReasonLabel
+            + "|" + snap.countdown + "|" + keepScreenOn + "|" + blockedPackage + "|" + guardReasonLabel
             + "|" + snap.temporaryRemaining + "|" + snap.whitelistApps.size() + "|" + snap.title;
 
         if (overlayView != null && windowManager != null && attachedWindowContext == hostCtx && lastAttachedLocked == locked) {
+            if (keepScreenOn != lastAttachedKeepScreenOn) {
+                try {
+                    wm.updateViewLayout(overlayView, createWindowParams(windowType, locked, keepScreenOn));
+                    lastAttachedKeepScreenOn = keepScreenOn;
+                } catch (Exception ignored) {
+                }
+            }
             if (signature.equals(lastRenderedSignature)) {
                 View clockView = overlayView.findViewWithTag("focus_clock");
                 if (clockView instanceof TextView) {
@@ -540,7 +555,7 @@ final class FocusBlockOverlay {
         }
 
         FrameLayout wrapper = wrapOverlay(hostCtx, app, rebuilt, locked);
-        WindowManager.LayoutParams params = createWindowParams(windowType, locked);
+        WindowManager.LayoutParams params = createWindowParams(windowType, locked, keepScreenOn);
 
         try {
             wm.addView(wrapper, params);
@@ -549,6 +564,7 @@ final class FocusBlockOverlay {
             overlayView = wrapper;
             attachedWindowContext = hostCtx;
             lastAttachedLocked = locked;
+            lastAttachedKeepScreenOn = keepScreenOn;
             lastRenderedSignature = signature;
         } catch (Exception error) {
             android.util.Log.w("FocusBlockOverlay", "addView failed (type=" + windowType + ")", error);
@@ -569,13 +585,14 @@ final class FocusBlockOverlay {
                     WindowManager fallbackWm = (WindowManager) fallbackCtx.getSystemService(Context.WINDOW_SERVICE);
                     if (fallbackWm != null) {
                         FrameLayout fallbackWrapper = wrapOverlay(fallbackCtx, app, rebuilt, locked);
-                        WindowManager.LayoutParams fallbackParams = createWindowParams(fallbackType, locked);
+                        WindowManager.LayoutParams fallbackParams = createWindowParams(fallbackType, locked, keepScreenOn);
                         fallbackWm.addView(fallbackWrapper, fallbackParams);
                         if (locked) fallbackWrapper.requestFocus();
                         windowManager = fallbackWm;
                         overlayView = fallbackWrapper;
                         attachedWindowContext = fallbackCtx;
                         lastAttachedLocked = locked;
+                        lastAttachedKeepScreenOn = keepScreenOn;
                         lastRenderedSignature = signature;
                         return;
                     }
@@ -587,6 +604,7 @@ final class FocusBlockOverlay {
             overlayView = null;
             attachedWindowContext = null;
             lastAttachedLocked = false;
+            lastAttachedKeepScreenOn = false;
         }
     }
 
@@ -620,11 +638,14 @@ final class FocusBlockOverlay {
         return wrapper;
     }
 
-    private static WindowManager.LayoutParams createWindowParams(int windowType, boolean locked) {
+    private static WindowManager.LayoutParams createWindowParams(int windowType, boolean locked, boolean keepScreenOn) {
         int flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
         if (!locked) {
             flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+        }
+        if (keepScreenOn) {
+            flags |= WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
         }
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -1085,6 +1106,14 @@ final class FocusBlockOverlay {
         if (tempAccess != null) {
             s.temporaryRemaining = Math.max(0, 3 - tempAccess.optInt("used", 0));
         }
+        boolean keepScreenOn = true;
+        try {
+            JSONObject data = LocalStore.get(app).read("data");
+            JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
+            if (prefs != null) keepScreenOn = prefs.optBoolean("keepScreenOn", true);
+        } catch (Exception ignored) {
+        }
+        s.keepScreenOn = keepScreenOn;
         return s;
     }
 
@@ -1161,6 +1190,7 @@ final class FocusBlockOverlay {
         boolean strictMode;
         boolean paused;
         boolean countdown;
+        boolean keepScreenOn = true;
         long targetMs;
         long elapsedMs;
         long remainingMs;

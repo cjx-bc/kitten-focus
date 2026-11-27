@@ -6,18 +6,38 @@ import org.json.JSONObject;
 
 final class RestEngine {
     static final long DURATION_MS = 5 * 60 * 1000L;
-    private final Context context;
-    private final LocalStore store;
+
+    interface SideEffects {
+        void scheduleRest(long endMono);
+        void cancelRest();
+        void showRestFinished();
+    }
+
+    private final FocusEngine.Store store;
     private final SessionClock clock;
+    private final SideEffects effects;
 
     RestEngine(Context context) {
         this(context, LocalStore.get(context), SessionClock.system(context));
     }
 
     RestEngine(Context context, LocalStore store, SessionClock clock) {
-        this.context = context.getApplicationContext();
+        this(store, clock, androidEffects(context));
+    }
+
+    RestEngine(FocusEngine.Store store, SessionClock clock, SideEffects effects) {
         this.store = store;
         this.clock = clock;
+        this.effects = effects;
+    }
+
+    private static SideEffects androidEffects(Context context) {
+        final Context app = context.getApplicationContext();
+        return new SideEffects() {
+            @Override public void scheduleRest(long endMono) { Reminders.scheduleRest(app, endMono); }
+            @Override public void cancelRest() { Reminders.cancelRest(app); }
+            @Override public void showRestFinished() { Reminders.showRestFinished(app); }
+        };
     }
 
     static long resolveDurationMs(JSONObject preferences) {
@@ -72,14 +92,14 @@ final class RestEngine {
                 long remaining = Math.max(0, Math.min(totalMs, session.optLong("endsAt") - clock.epoch()));
                 session.put("endMono", now + remaining).put("bootId", clock.boot());
                 store.write("rest", session);
-                if (remaining > 0) Reminders.scheduleRest(context, session.optLong("endMono"));
+                if (remaining > 0) effects.scheduleRest(session.optLong("endMono"));
             }
             long remaining = Math.max(0, Math.min(totalMs, session.optLong("endMono") - now));
             if (remaining == 0) {
                 session.put("state", "completed");
                 store.write("rest", session);
-                Reminders.cancelRest(context);
-                Reminders.showRestFinished(context);
+                effects.cancelRest();
+                effects.showRestFinished();
             }
             return snapshot(session, remaining);
         }
@@ -101,14 +121,14 @@ final class RestEngine {
         synchronized (store) {
             JSONObject session = read().optJSONObject("session");
             if (session != null && session.optString("state").equals("running"))
-                Reminders.scheduleRest(context, session.optLong("endMono"));
+                effects.scheduleRest(session.optLong("endMono"));
         }
     }
 
     JSONObject exit() {
         synchronized (store) {
             store.write("rest", null);
-            Reminders.cancelRest(context);
+            effects.cancelRest();
             return new JSONObject();
         }
     }

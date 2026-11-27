@@ -59,6 +59,29 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    static void refreshWindowState(android.content.Context context) {
+        MainActivity activity = activeInstance;
+        if (activity != null) {
+            activity.runOnUiThread(activity::applyImmersiveFocusIfNeeded);
+        }
+        if (context != null) {
+            FocusBlockOverlay.refreshKeepScreenOn(context);
+        }
+    }
+
+    static boolean shouldKeepScreenOn(JSONObject data, JSONObject activeSession, JSONObject restSession) {
+        JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
+        if (prefs != null && !prefs.optBoolean("keepScreenOn", true)) {
+            return false;
+        }
+        boolean focusRunning = activeSession != null
+            && !LockEngine.owns(activeSession)
+            && "running".equals(activeSession.optString("state"));
+        boolean restRunning = restSession != null
+            && "running".equals(restSession.optString("state"));
+        return focusRunning || restRunning;
+    }
+
     @Override
     public void onUserLeaveHint() {
         super.onUserLeaveHint();
@@ -215,6 +238,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void applyImmersiveFocusIfNeeded() {
+        applyKeepScreenOnIfNeeded();
         try {
             androidx.core.view.WindowInsetsControllerCompat controller =
                 androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
@@ -228,6 +252,23 @@ public class MainActivity extends BridgeActivity {
                 controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars());
             } else {
                 controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void applyKeepScreenOnIfNeeded() {
+        try {
+            LocalStore store = LocalStore.get(this);
+            boolean keep = shouldKeepScreenOn(
+                store.read("data"),
+                store.read("active"),
+                store.read("rest")
+            );
+            if (keep) {
+                getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } else {
+                getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             }
         } catch (Exception ignored) {
         }
