@@ -74,10 +74,25 @@ describe('focus state and recovery', () => {
     expect(result.record?.durationMs).toBe(15000)
   })
   it('distinguishes an early countdown from a normal stopwatch and drops zero-length sessions', () => {
-    expect(settle(session(), { epoch: 5000, mono: 5000, boot: 1 }, 'finish').record?.status).toBe(
-      'early',
-    )
+    const early = settle(session(), { epoch: 5000, mono: 5000, boot: 1 }, 'finish')
+    expect(early.record?.status).toBe('early')
+    expect(early.record?.failReason).toBe('manual_giveup')
+    expect(early.record?.source).toBe('timer')
+    expect(early.record?.animalId).toBe('black-cat')
+    expect(early.record?.skinId).toBe('default')
     expect(settle(session(), { epoch: 0, mono: 0, boot: 1 }, 'finish').record).toBeUndefined()
+  })
+  it('allows cancel within 10s regret window and rejects at/after 10s or in strict countdown', () => {
+    expect(settle(session(), { epoch: 9999, mono: 9999, boot: 1 }, 'cancel')).toEqual({
+      session: null,
+      elapsedMs: 0,
+    })
+    expect(() => settle(session(), { epoch: 10000, mono: 10000, boot: 1 }, 'cancel')).toThrow(
+      '已超过 10 秒无责取消时间',
+    )
+    expect(() =>
+      settle(session({ strictMode: true }), { epoch: 3000, mono: 3000, boot: 1 }, 'cancel'),
+    ).toThrow('严格倒计时')
   })
 })
 function record(start: string, end: string, zone = 'UTC'): FocusRecord {

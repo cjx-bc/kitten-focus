@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef, computed } from 'vue'
 import type {
+  AnimalId,
   AppData,
   FocusItem,
   Theme,
@@ -13,7 +14,8 @@ import type {
   Occurrence,
   LockSnapshot,
 } from '../domain/model'
-import { emptyData, uid, defaultProtection, THEME_COLORS } from '../domain/model'
+import { emptyData, uid, defaultPetData, defaultProtection, THEME_COLORS } from '../domain/model'
+import { projectPetDomain, resolveSessionPet } from '../domain/pet'
 import {
   migrateProtectionPreferences,
   resolveEffectiveProtection,
@@ -112,6 +114,12 @@ export const useApp = defineStore('app', () => {
   )
   const items = computed(() =>
     data.value.items.filter((t) => !t.deleted).sort((a, b) => a.order - b.order),
+  )
+  const petProjection = computed(() =>
+    projectPetDomain({
+      records: data.value.records,
+      pet: data.value.pet,
+    }),
   )
   let dataLoaded = false,
     writeQueue: Promise<void> = Promise.resolve(),
@@ -224,6 +232,13 @@ export const useApp = defineStore('app', () => {
       if (!hadModules || !resolveEffectiveProtection(loaded.preferences.protection).strict) {
         clearStrictAcknowledged()
       }
+      if (loaded.pet === undefined) {
+        loaded.pet = {
+          ...defaultPetData(),
+          retroCutoffAt: loaded.records.length > 0 ? Date.now() : null,
+        }
+        await repository.save(JSON.parse(JSON.stringify(loaded)) as AppData)
+      }
       data.value = loaded
       dataLoaded = true
       await Promise.allSettled([
@@ -297,8 +312,20 @@ export const useApp = defineStore('app', () => {
         }
       }
       const theme = startingData.themes.find((t) => t.id === savedItem?.themeId),
-        now = Date.now()
+        now = Date.now(),
+        timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+        sessionPet = resolveSessionPet(
+          startingData.pet,
+          projectPetDomain({
+            records: startingData.records,
+            pet: startingData.pet,
+            timeZone,
+            now,
+          }),
+        )
       const session: ActiveFocus = {
+        animalId: sessionPet.animalId,
+        skinId: sessionPet.skinId,
         id: uid(),
         itemId: savedItem?.id || null,
         themeId: theme?.id || null,
@@ -308,7 +335,7 @@ export const useApp = defineStore('app', () => {
         mode,
         targetMs: minutes * 60000,
         startedAt: now,
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timeZone,
         state: 'running',
         elapsedMs: 0,
         pausedMs: 0,
@@ -330,10 +357,42 @@ export const useApp = defineStore('app', () => {
       rest.value = { session: null, remainingMs: 0 }
     })
   }
-  async function action(action: 'pause' | 'resume' | 'finish') {
+  async function action(action: 'pause' | 'resume' | 'finish' | 'cancel') {
     return sessionOperation(async () => {
-      await acceptSnapshot(await focusDriver.action(action))
+      const snapshot = await focusDriver.action(action)
+      if (action === 'cancel') lastResult.value = undefined
+      await acceptSnapshot(snapshot)
       await refreshRest()
+    })
+  }
+  function dismissResult() {
+    lastResult.value = undefined
+  }
+  async function updateRecordNote(recordId: string, note: string) {
+    if ([...note].length > 100) throw new Error('复盘小结最多 100 字')
+    await mutate((d) => {
+      const target = d.records.find((r) => r.id === recordId)
+      if (target) target.note = note
+    })
+    if (lastResult.value?.id === recordId) {
+      lastResult.value = { ...lastResult.value, note }
+    }
+  }
+  async function selectStandbyItem(itemId: string | null) {
+    await mutate((d) => {
+      const pet = d.pet ?? defaultPetData()
+      pet.lastSelectedItemId = itemId
+      d.pet = pet
+    })
+  }
+  async function selectAnimal(animalId: AnimalId | 'random', skinId?: string) {
+    await mutate((d) => {
+      const pet = d.pet ?? defaultPetData()
+      pet.selectedAnimalId = animalId
+      if (skinId && animalId !== 'random') {
+        pet.selectedSkins = { ...(pet.selectedSkins ?? {}), [animalId]: skinId }
+      }
+      d.pet = pet
     })
   }
   async function startRest() {
@@ -347,6 +406,7 @@ export const useApp = defineStore('app', () => {
   async function exitRest() {
     return sessionOperation(async () => {
       rest.value = await restDriver.exit()
+      lastResult.value = undefined
     })
   }
   async function startLock(configurationId: string, strictLockConfirmed = false, confirmedData?: AppData) {
@@ -709,10 +769,15 @@ export const useApp = defineStore('app', () => {
     clearUnreadyProtections,
     themes,
     items,
+    petProjection,
     init,
     tick,
     start,
     action,
+    dismissResult,
+    updateRecordNote,
+    selectStandbyItem,
+    selectAnimal,
     startRest,
     exitRest,
     mutate,

@@ -174,9 +174,25 @@ beforeEach(() => {
       preferences: { defaultMinutes: 25, sound: true, vibration: true, activeSemesterId: null, protection: defaultProtection() },
     },
     items: [],
+    themes: [],
     focus: { session: null, elapsedMs: 0 },
     rest: { session: null, remainingMs: 0 },
     lock: { session: null, remainingMs: 0, records: [] },
+    petProjection: {
+      affection: 0,
+      peakAffection: 0,
+      currentStreakDays: 0,
+      maxConsecutiveDays: 0,
+      totalRaised: 0,
+      raisedByAnimal: { 'black-cat': 0 },
+      dailyGainToday: 0,
+      dailyGains: {},
+      recordEffects: new Map(),
+      unlockedAnimals: ['black-cat'],
+      unlockedSkins: { 'black-cat': ['default'] },
+      weekFarmSlice: () => ({ weekStartDate: '2026-11-23', weekEndDate: '2026-11-29', weekTotalCount: 0, totalDurationMs: 0, instances: [] }),
+      weeklyFourColorMatrix: () => [],
+    },
     lastResult: undefined,
     strictAcknowledged: false,
     acknowledgeStrict: vi.fn(() => {
@@ -187,6 +203,10 @@ beforeEach(() => {
     }),
     notify: vi.fn(),
     action: vi.fn(async () => {}),
+    dismissResult: vi.fn(),
+    updateRecordNote: vi.fn(async () => {}),
+    selectStandbyItem: vi.fn(async () => {}),
+    selectAnimal: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
     startRest: vi.fn(async () => {}),
     mutate: vi.fn(async (change: any) => change(mocks.app.data)),
@@ -295,7 +315,7 @@ describe('P0: study focus page locking', () => {
       durationMs: 1500000, pausedMs: 0, segments: [], status: 'completed',
     }
     const ended = await mountSSR(FocusView)
-    expect(ended.html).toContain('返回待办')
+    expect(ended.html).toContain('返回首页')
   })
 })
 

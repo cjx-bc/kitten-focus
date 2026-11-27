@@ -3,7 +3,7 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useApp } from '../stores/app'
 import { duration, timer } from '../domain/dates'
-import { REST_DURATION_MS } from '../domain/rest'
+import { resolveRestDurationMs } from '../domain/rest'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
 import { waitForDialogClose } from '../components/sheetClose'
@@ -26,7 +26,13 @@ const busy = ref(false),
   startError = ref<{ message: string; kind: StartErrorKind } | null>(null)
 const session = computed(() => app.rest.session)
 const running = computed(() => session.value?.state === 'running')
-const progress = computed(() => Math.max(0, Math.min(1, app.rest.remainingMs / REST_DURATION_MS)))
+const restTotalMs = computed(() =>
+  session.value?.durationMs && session.value.durationMs > 0
+    ? session.value.durationMs
+    : resolveRestDurationMs(app.data.preferences.restMinutes),
+)
+const restMinutesLabel = computed(() => Math.round(restTotalMs.value / 60_000))
+const progress = computed(() => Math.max(0, Math.min(1, app.rest.remainingMs / restTotalMs.value)))
 const sheetTitle = computed(() => {
   if (sheet.value === 'confirmExit') return '退出休息？'
   if (sheet.value === 'startError') return '无法开始专注'
@@ -52,7 +58,7 @@ async function exit() {
     await app.exitRest()
     sheet.value = null
     leaving.value = true
-    await router.replace('/tasks')
+    await router.replace('/focus')
   } catch (error) {
     app.notify(error instanceof Error ? error.message : String(error))
   } finally {
@@ -134,12 +140,12 @@ async function clearUnreadyAndRetry() {
 watch(
   () => app.rest.session,
   (value) => {
-    if (!value && !busy.value && !leaving.value) void router.replace('/tasks')
+    if (!value && !busy.value && !leaving.value) void router.replace('/focus')
   },
 )
 onMounted(() => {
   document.addEventListener('rest-exit-request', requestExit)
-  if (!session.value) void router.replace('/tasks')
+  if (!session.value) void router.replace('/focus')
 })
 onBeforeUnmount(() => document.removeEventListener('rest-exit-request', requestExit))
 onBeforeRouteLeave(async () => {
@@ -164,7 +170,7 @@ onBeforeRouteLeave(async () => {
     </header>
     <div class="rest-center">
       <div class="rest-stage" data-ux-card>
-        <div class="stage-heading"><span class="rest-phase" role="status"><i :class="{ breathing: running }" aria-hidden="true" />{{ running ? '休息中' : '休息完成' }}</span><span>5 分钟</span></div>
+        <div class="stage-heading"><span class="rest-phase" role="status"><i :class="{ breathing: running }" aria-hidden="true" />{{ running ? '休息中' : '休息完成' }}</span><span>{{ restMinutesLabel }} 分钟</span></div>
         <div class="rest-clock number" role="timer" aria-label="休息剩余时间" aria-live="off">
           {{ timer(app.rest.remainingMs) }}
         </div>
@@ -180,7 +186,7 @@ onBeforeRouteLeave(async () => {
         <button type="button" class="primary wide" :disabled="busy" @click="again">
           <Icon name="play" :size="17" />再次专注
         </button>
-        <button type="button" class="text-button" :disabled="busy" @click="exit">返回待办</button>
+        <button type="button" class="text-button" :disabled="busy" @click="exit">返回首页</button>
       </template>
     </div>
     <Sheet :open="sheet !== null" :title="sheetTitle" :close-disabled="busy" @close="closeSheet">

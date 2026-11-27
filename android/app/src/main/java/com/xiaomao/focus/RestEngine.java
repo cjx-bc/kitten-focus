@@ -20,12 +20,24 @@ final class RestEngine {
         this.clock = clock;
     }
 
+    static long resolveDurationMs(JSONObject preferences) {
+        int minutes = preferences != null ? preferences.optInt("restMinutes", 5) : 5;
+        if (minutes < 1 || minutes > 60) minutes = 5;
+        return minutes * 60_000L;
+    }
+
     static JSONObject create(JSONObject record, long epoch, long mono, int boot) throws JSONException {
+        return create(record, epoch, mono, boot, DURATION_MS);
+    }
+
+    static JSONObject create(JSONObject record, long epoch, long mono, int boot, long durationMs) throws JSONException {
         if (record.optLong("durationMs") <= 0 || record.optString("status").equals("interrupted"))
             throw new IllegalArgumentException("本次专注不能开始休息");
+        long safeDuration = durationMs > 0 ? durationMs : DURATION_MS;
         return new JSONObject().put("record", new JSONObject(record.toString()))
-            .put("startedAt", epoch).put("endsAt", epoch + DURATION_MS)
-            .put("endMono", mono + DURATION_MS).put("bootId", boot).put("state", "running");
+            .put("durationMs", safeDuration)
+            .put("startedAt", epoch).put("endsAt", epoch + safeDuration)
+            .put("endMono", mono + safeDuration).put("bootId", boot).put("state", "running");
     }
 
     JSONObject start(String recordId) throws JSONException {
@@ -39,7 +51,9 @@ final class RestEngine {
                 return read();
             if (current != null && current.optString("state").equals("running"))
                 throw new IllegalStateException("已有一段休息正在进行");
-            store.write("rest", create(source, clock.epoch(), clock.mono(), clock.boot()));
+            JSONObject data = store.read("data");
+            JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
+            store.write("rest", create(source, clock.epoch(), clock.mono(), clock.boot(), resolveDurationMs(prefs)));
             sync();
             return read();
         }
@@ -50,15 +64,17 @@ final class RestEngine {
             JSONObject session = store.read("rest");
             if (session == null) return snapshot(null, 0);
             if (session.optString("state").equals("completed")) return snapshot(session, 0);
+            long totalMs = session.optLong("durationMs", DURATION_MS);
+            if (totalMs <= 0) totalMs = DURATION_MS;
             long now = clock.mono();
             boolean restarted = session.optInt("bootId") != clock.boot();
             if (restarted) {
-                long remaining = Math.max(0, Math.min(DURATION_MS, session.optLong("endsAt") - clock.epoch()));
+                long remaining = Math.max(0, Math.min(totalMs, session.optLong("endsAt") - clock.epoch()));
                 session.put("endMono", now + remaining).put("bootId", clock.boot());
                 store.write("rest", session);
                 if (remaining > 0) Reminders.scheduleRest(context, session.optLong("endMono"));
             }
-            long remaining = Math.max(0, Math.min(DURATION_MS, session.optLong("endMono") - now));
+            long remaining = Math.max(0, Math.min(totalMs, session.optLong("endMono") - now));
             if (remaining == 0) {
                 session.put("state", "completed");
                 store.write("rest", session);
@@ -73,9 +89,11 @@ final class RestEngine {
         synchronized (store) {
             JSONObject session = store.read("rest");
             if (session == null || session.optString("state").equals("completed")) return snapshot(session, 0);
+            long totalMs = session.optLong("durationMs", DURATION_MS);
+            if (totalMs <= 0) totalMs = DURATION_MS;
             long remaining = session.optInt("bootId") == clock.boot()
                 ? session.optLong("endMono") - clock.mono() : session.optLong("endsAt") - clock.epoch();
-            return snapshot(session, Math.max(0, Math.min(DURATION_MS, remaining)));
+            return snapshot(session, Math.max(0, Math.min(totalMs, remaining)));
         }
     }
 

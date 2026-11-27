@@ -458,6 +458,14 @@ function toggleTheme(theme: Theme) {
   <div class="page tasks-page">
     <header class="page-header">
       <div class="task-title">
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="返回专注"
+          @click="router.replace('/focus')"
+        >
+          <Icon name="back" />
+        </button>
         <h1>待办</h1>
         <button
           type="button"

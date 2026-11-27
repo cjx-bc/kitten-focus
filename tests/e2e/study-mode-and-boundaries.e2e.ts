@@ -283,9 +283,13 @@ describe('Study Mode, ADR-0004 Boundaries & Independent Lock (UF5, UF8, UF9)', (
     await p.waitFor(() => document.querySelectorAll('dialog[open]').length === 0)
 
     // Finish active focus
-    await p.clickByRoleOrText({ name: '结束专注' })
+    await p.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(12000)
+    })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('左滑放弃'))
+    await p.clickByRoleOrText({ name: '放弃专注' })
     await p.clickByRoleOrText({ text: '结束专注', withinOpenDialog: true })
-    await p.waitFor(() => /提前结束|本次专注已结束/.test(document.body.innerText ?? ''))
+    await p.waitFor(() => /挂了|提前结束/.test(document.body.innerText ?? ''))
 
     p.assertNoErrors('ADR-0004 study-lock and safe exits')
   })
@@ -434,10 +438,15 @@ describe('Study Mode, ADR-0004 Boundaries & Independent Lock (UF5, UF8, UF9)', (
     expect(stillIsolated.whitelist).toEqual([])
 
     // End round -> start 跟随全局任务 -> next round picks up updated globalWhitelist
-    await p.clickByRoleOrText({ name: '结束专注' })
+    await p.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(12000)
+    })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('左滑放弃'))
+    await p.clickByRoleOrText({ name: '放弃专注' })
     await p.clickByRoleOrText({ text: '结束专注', withinOpenDialog: true })
-    await p.waitFor(() => /提前结束|本次专注已结束/.test(document.body.innerText ?? ''))
-    await p.clickByRoleOrText({ text: '返回待办' })
+    await p.waitFor(() => /挂了|提前结束/.test(document.body.innerText ?? ''))
+    await p.clickByRoleOrText({ text: '返回首页' })
+    await p.navigateHash('#/tasks')
     await p.waitFor(() => window.location.hash.includes('/tasks'))
 
     await p.clickByRoleOrText({ name: '开始跟随全局任务' })
@@ -489,9 +498,13 @@ describe('Study Mode, ADR-0004 Boundaries & Independent Lock (UF5, UF8, UF9)', (
 
     // End focus cleanly
     await p.navigateHash('#/focus')
-    await p.clickByRoleOrText({ name: '结束专注' })
+    await p.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(12000)
+    })
+    await p.waitFor(() => (document.body.innerText ?? '').includes('左滑放弃'))
+    await p.clickByRoleOrText({ name: '放弃专注' })
     await p.clickByRoleOrText({ text: '结束专注', withinOpenDialog: true })
-    await p.waitFor(() => /提前结束|本次专注已结束/.test(document.body.innerText ?? ''))
+    await p.waitFor(() => /挂了|提前结束/.test(document.body.innerText ?? ''))
 
     // 2. Start Independent Lock -> visit /tasks -> focus start is blocked
     await p.navigateHash('#/lock')

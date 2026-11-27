@@ -169,19 +169,27 @@ final class FocusBlockOverlay {
         }
     }
 
-    static void updateRouteState(Context context, String routePath) {
+    static boolean isSafeRoute(String routePath) {
         if (routePath == null) routePath = "/";
-        currentRoute = routePath;
-        boolean safe = routePath.startsWith("/recovery")
+        return routePath.startsWith("/recovery")
             || routePath.startsWith("/emergency")
             || routePath.startsWith("/help")
             || routePath.startsWith("/permissions")
             || routePath.startsWith("/rest")
             || routePath.startsWith("/tasks")
+            || routePath.startsWith("/cat")
+            || routePath.startsWith("/calendar")
+            || routePath.startsWith("/statistics")
             || routePath.startsWith("/stats")
             || routePath.startsWith("/schedule")
             || routePath.startsWith("/settings")
             || routePath.equals("/");
+    }
+
+    static void updateRouteState(Context context, String routePath) {
+        if (routePath == null) routePath = "/";
+        currentRoute = routePath;
+        boolean safe = isSafeRoute(routePath);
         safeRouteSuppressed = safe;
         if (safe) {
             if (currentMode == Mode.NORMAL_FOCUS || currentMode == Mode.STUDY_LOCKED) {
@@ -475,6 +483,10 @@ final class FocusBlockOverlay {
     }
 
     private static void attachOrUpdateWindow(Context app, SessionSnapshot snap, Mode mode) {
+        if (snap == null || !snap.active || mode == Mode.NONE) {
+            dismiss();
+            return;
+        }
         Context a11yCtx = FocusAccessibilityService.serviceContext();
         boolean hasAppOverlay = AppUsageGuard.hasOverlayPermission(app);
         Context hostCtx;

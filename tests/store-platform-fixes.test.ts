@@ -474,4 +474,32 @@ describe('app store resilience fixes', () => {
     expect(app.toast).toBe('已关闭未就绪的保护项，请重新点击开始专注')
     app.dispose()
   })
+
+  it('initializes pet retroCutoffAt on legacy load, supports updateRecordNote (<=100 code points) and cancel/dismissResult', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const legacy = emptyData()
+    legacy.records.push(makeRecord('legacy-1'))
+    mocks.load.mockResolvedValueOnce(legacy)
+
+    const app = useApp()
+    await app.init()
+    expect(app.data.pet?.selectedAnimalId).toBe('black-cat')
+    expect(typeof app.data.pet?.retroCutoffAt).toBe('number')
+    expect(mocks.save).toHaveBeenCalled()
+
+    app.lastResult = legacy.records[0]
+    await expect(app.updateRecordNote('legacy-1', 'x'.repeat(101))).rejects.toThrow('100')
+    await app.updateRecordNote('legacy-1', '刷题很顺利')
+    expect(app.data.records[0]?.note).toBe('刷题很顺利')
+    expect(app.lastResult?.note).toBe('刷题很顺利')
+
+    app.dismissResult()
+    expect(app.lastResult).toBeUndefined()
+
+    mocks.focusAction.mockResolvedValueOnce({ session: null, elapsedMs: 0 })
+    await app.action('cancel')
+    expect(mocks.focusAction).toHaveBeenLastCalledWith('cancel')
+    expect(app.lastResult).toBeUndefined()
+    app.dispose()
+  })
 })

@@ -358,9 +358,16 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
             pausedMs: s.pausedMs || 0,
             segments: [{ start: s.startedAt, end: s.startedAt + s.targetMs }],
             status: 'completed',
+            animalId: s.animalId || 'black-cat',
+            skinId: s.skinId || 'default',
+            source: 'timer',
           };
           state.focusSession = null;
-          state.restSession = { record, startedAt: now, endsAt: now + 300000, state: 'running' };
+          const prefs = (state.data && state.data.preferences) || {};
+          if (prefs.autoRest === true) {
+            const restMs = (Number.isInteger(prefs.restMinutes) && prefs.restMinutes >= 1 && prefs.restMinutes <= 60 ? prefs.restMinutes : 5) * 60000;
+            state.restSession = { durationMs: restMs, record, startedAt: now, endsAt: now + restMs, state: 'running' };
+          }
           persist();
           return { session: null, elapsedMs: s.targetMs, record: clone(record) };
         }
@@ -369,6 +376,14 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
         }
         if (s.strictMode && s.mode === 'countdown' && el < s.targetMs) {
           throw new Error('严格倒计时不能暂停、取消或提前结束');
+        }
+        if (action === 'cancel') {
+          if (el >= 10000) {
+            throw new Error('已超过 10 秒无责取消时间，请左滑放弃');
+          }
+          state.focusSession = null;
+          persist();
+          return { session: null, elapsedMs: 0 };
         }
         if (action === 'pause' && s.state === 'running') {
           s.elapsedMs = el;
@@ -402,10 +417,16 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
             pausedMs: s.pausedMs || 0,
             segments: [{ start: s.startedAt, end: s.startedAt + el }],
             status,
+            animalId: s.animalId || 'black-cat',
+            skinId: s.skinId || 'default',
+            source: 'timer',
+            ...(status === 'early' ? { failReason: 'manual_giveup' } : {}),
           };
           state.focusSession = null;
-          if (status === 'completed') {
-            state.restSession = { record, startedAt: now, endsAt: now + 300000, state: 'running' };
+          const prefs = (state.data && state.data.preferences) || {};
+          if (status === 'completed' && prefs.autoRest === true) {
+            const restMs = (Number.isInteger(prefs.restMinutes) && prefs.restMinutes >= 1 && prefs.restMinutes <= 60 ? prefs.restMinutes : 5) * 60000;
+            state.restSession = { durationMs: restMs, record, startedAt: now, endsAt: now + restMs, state: 'running' };
           }
           persist();
           return { session: null, elapsedMs: el, record: clone(record) };
@@ -432,9 +453,11 @@ function buildCatFocusStubScript(options: CatFocusStubOptions = {}): string {
           status: 'early',
         };
         const now = Date.now() + state.clockOffsetMs;
-        state.restSession = { record: clone(record), startedAt: now, endsAt: now + 300000, state: 'running' };
+        const prefs = (state.data && state.data.preferences) || {};
+        const restMs = (Number.isInteger(prefs.restMinutes) && prefs.restMinutes >= 1 && prefs.restMinutes <= 60 ? prefs.restMinutes : 5) * 60000;
+        state.restSession = { durationMs: restMs, record: clone(record), startedAt: now, endsAt: now + restMs, state: 'running' };
         persist();
-        return { session: clone(state.restSession), remainingMs: 300000 };
+        return { session: clone(state.restSession), remainingMs: restMs };
       },
       async restAction({ action }) {
         if (action === 'exit') {

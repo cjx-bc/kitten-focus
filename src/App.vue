@@ -24,7 +24,11 @@ const app = useApp(),
   updates = useUpdates(),
   route = useRoute(),
   router = useRouter(),
-  full = computed(() => ['/focus', '/rest', '/lock', '/permissions', '/help', '/emergency', '/recovery'].includes(route.path))
+  full = computed(
+    () =>
+      ['/rest', '/lock', '/permissions', '/help', '/emergency', '/recovery', '/tasks'].includes(route.path) ||
+      (route.path === '/focus' && Boolean(app.focus.session || app.lastResult)),
+  )
 watch(
   [
     () => app.ready,
@@ -66,9 +70,9 @@ watch(
   { immediate: true },
 )
 const tabs = [
-  { path: '/tasks', label: '待办', icon: 'tasks' },
-  { path: '/calendar', label: '日历', icon: 'calendar' },
-  { path: '/cat', label: '小猫', icon: 'cat' },
+  { path: '/focus', label: '专注', icon: 'timer' },
+  { path: '/calendar', label: '时间轴', icon: 'calendar' },
+  { path: '/cat', label: '农场', icon: 'cat' },
   { path: '/statistics', label: '统计', icon: 'statistics' },
   { path: '/settings', label: '我的', icon: 'user' },
 ]
@@ -108,7 +112,7 @@ function dismissUpdatePrompt(persistForVersion: boolean) {
   }
 }
 watch(
-  [() => updates.startupChecked, () => updates.state?.release?.versionCode, () => app.ready],
+  [() => updates.startupChecked, () => updates.state?.release?.versionCode, () => app.ready, full],
   ([checked]) => {
     if (checked) maybeOpenUpdatePrompt()
   },
@@ -209,9 +213,17 @@ onMounted(async () => {
         else if (isStudySessionLocked(app.focus.session)) {
           if (route.path === '/focus') app.notify('学霸模式进行中，结束后可返回')
           else void router.replace('/focus')
-        } else if (route.path === '/focus') void router.replace('/tasks')
-        else if (route.path !== '/tasks') void router.replace('/tasks')
-        else void CapacitorApp.minimizeApp()
+        } else if (route.path === '/focus') {
+          if (app.focus.session) {
+            app.notify('专注进行中，请在页面内暂停、取消或结束')
+          } else if (app.lastResult) {
+            app.dismissResult()
+          } else {
+            void CapacitorApp.minimizeApp()
+          }
+        } else {
+          void router.replace('/focus')
+        }
       })
     }
   } finally {

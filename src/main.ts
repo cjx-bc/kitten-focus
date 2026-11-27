@@ -11,7 +11,7 @@ const pinia = createPinia()
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', redirect: '/tasks' },
+    { path: '/', redirect: '/focus' },
     { path: '/tasks', component: () => import('./views/TasksView.vue') },
     { path: '/calendar', component: () => import('./views/CalendarView.vue') },
     { path: '/cat', component: () => import('./views/CatView.vue') },

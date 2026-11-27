@@ -86,8 +86,8 @@ describe('Comprehensive UX Budgets & brand-spec.md Visual Gate (UF10, Tier 2 & T
     await server?.close()
   })
 
-  const PRIMARY_TAB_ROUTES = ['/tasks', '/calendar', '/cat', '/statistics', '/settings'] as const
-  const SECONDARY_ROUTES = ['/lock', '/permissions', '/help', '/emergency', '/recovery'] as const
+  const PRIMARY_TAB_ROUTES = ['/focus', '/calendar', '/cat', '/statistics', '/settings'] as const
+  const SECONDARY_ROUTES = ['/tasks', '/lock', '/permissions', '/help', '/emergency', '/recovery'] as const
   const VIEWPORTS = [
     { width: 360, height: 800 },
     { width: 390, height: 844 },
@@ -124,7 +124,7 @@ describe('Comprehensive UX Budgets & brand-spec.md Visual Gate (UF10, Tier 2 & T
     await page.setViewport(390, 844)
     const failures: string[] = []
 
-    for (const routePath of ['/tasks', '/calendar', '/cat', '/statistics']) {
+    for (const routePath of ['/focus', '/calendar', '/cat', '/statistics', '/tasks']) {
       await page.goto(`${server.url}/#${routePath}`, true)
       const budget = await auditScreenBudget(page)
       if (budget.violations.length) {
@@ -132,7 +132,7 @@ describe('Comprehensive UX Budgets & brand-spec.md Visual Gate (UF10, Tier 2 & T
       }
       const strings = await auditForbiddenStrings(page, {
         isPrimaryScreen: true,
-        checkTasksHeaderBadges: routePath === '/tasks',
+        checkTasksHeaderBadges: routePath === '/tasks' || routePath === '/focus',
       })
       if (strings.violations.length) {
         failures.push(`${routePath} strings: ${strings.violations.map((v) => v.message).join('; ')}`)
@@ -146,28 +146,64 @@ describe('Comprehensive UX Budgets & brand-spec.md Visual Gate (UF10, Tier 2 & T
       failures.push(`/settings strings: ${settingsStrings.violations.map((v) => v.message).join('; ')}`)
     }
 
-    // Active /focus screen audit
+    // Active /focus screen audit (countdown <10s and >=10s)
     await page.goto(`${server.url}/#/tasks`, true)
     await page.clickByRoleOrText({ name: '开始极限刷题' })
     await page.waitFor(() => window.location.hash.includes('/focus'))
 
     const focusBudget = await auditScreenBudget(page)
     if (focusBudget.violations.length) {
-      failures.push(`/focus budget: ${focusBudget.violations.map((v) => v.message).join('; ')}`)
+      failures.push(`/focus active budget: ${focusBudget.violations.map((v) => v.message).join('; ')}`)
     }
     const focusStrings = await auditForbiddenStrings(page, { isPrimaryScreen: true })
     if (focusStrings.violations.length) {
-      failures.push(`/focus strings: ${focusStrings.violations.map((v) => v.message).join('; ')}`)
+      failures.push(`/focus active strings: ${focusStrings.violations.map((v) => v.message).join('; ')}`)
     }
     const focusBrand = await auditBrandSpec(page)
     if (focusBrand.violations.length) {
-      failures.push(`/focus brand: ${focusBrand.violations.map((v) => v.message).join('; ')}`)
+      failures.push(`/focus active brand: ${focusBrand.violations.map((v) => v.message).join('; ')}`)
     }
 
-    // End focus early -> enter /rest -> audit /rest
+    // Advance past 10s regret window so left-swipe track appears and audit again
+    await page.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(12000)
+    })
+    await page.waitFor(() => (document.body.innerText ?? '').includes('左滑放弃'))
+    const sliderBudget = await auditScreenBudget(page)
+    if (sliderBudget.violations.length) {
+      failures.push(`/focus slider budget: ${sliderBudget.violations.map((v) => v.message).join('; ')}`)
+    }
+    const sliderBrand = await auditBrandSpec(page)
+    if (sliderBrand.violations.length) {
+      failures.push(`/focus slider brand: ${sliderBrand.violations.map((v) => v.message).join('; ')}`)
+    }
+
+    // End focus early -> audit settlement screen -> complete a stopwatch -> enter /rest -> audit /rest
+    await page.clickByRoleOrText({ name: '放弃专注' })
+    await page.clickByRoleOrText({ text: '结束专注', withinOpenDialog: true })
+    await page.waitFor(() => /挂了|提前结束/.test(document.body.innerText ?? ''))
+    const earlyStrings = await auditForbiddenStrings(page, { isPrimaryScreen: true })
+    if (earlyStrings.violations.length) {
+      failures.push(`/focus early strings: ${earlyStrings.violations.map((v) => v.message).join('; ')}`)
+    }
+    const earlyBrand = await auditBrandSpec(page)
+    if (earlyBrand.violations.length) {
+      failures.push(`/focus early brand: ${earlyBrand.violations.map((v) => v.message).join('; ')}`)
+    }
+    await page.clickByRoleOrText({ text: '返回首页' })
+    await page.waitFor(() => (document.body.innerText ?? '').includes('开始专注'))
+
+    // Start stopwatch -> finish -> completed settlement -> rest
+    await page.clickByRoleOrText({ text: '正计时', selector: '.quick-chip' })
+    await page.clickByRoleOrText({ text: '开始专注' })
+    await page.waitFor(() => (document.body.innerText ?? '').includes('正计时专注'))
+    await page.evaluate(() => {
+      ;(window as unknown as { __catFocusStub: { advanceFocusMs: (ms: number) => void } }).__catFocusStub.advanceFocusMs(12000)
+    })
+    await page.waitFor(() => !!document.querySelector('[aria-label="结束专注"]'))
     await page.clickByRoleOrText({ name: '结束专注' })
     await page.clickByRoleOrText({ text: '结束专注', withinOpenDialog: true })
-    await page.waitFor(() => /提前结束|本次专注已结束/.test(document.body.innerText ?? ''))
+    await page.waitFor(() => (document.body.innerText ?? '').includes('本次专注正常结束'))
     await page.clickByRoleOrText({ text: '休息 5 分钟' })
     await page.waitFor(() => window.location.hash.includes('/rest'))
 
@@ -184,10 +220,10 @@ describe('Comprehensive UX Budgets & brand-spec.md Visual Gate (UF10, Tier 2 & T
       failures.push(`/rest brand: ${restBrand.violations.map((v) => v.message).join('; ')}`)
     }
 
-    // Exit rest cleanly
+    // Exit rest cleanly -> returns to /focus
     await page.clickByRoleOrText({ text: '退出休息' })
     await page.clickByRoleOrText({ text: '退出休息', withinOpenDialog: true })
-    await page.waitFor(() => window.location.hash.includes('/tasks'))
+    await page.waitFor(() => window.location.hash.includes('/focus'))
 
     page.assertNoErrors('primary student views UX budget')
     expect(failures).toEqual([])
