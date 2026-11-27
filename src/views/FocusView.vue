@@ -5,7 +5,7 @@ import { useApp } from '../stores/app'
 import type { FocusItem, Mode } from '../domain/model'
 import { timer, duration } from '../domain/dates'
 import { REGRET_WINDOW_MS } from '../domain/focus'
-import { getAnimalMeta, SKIN_CATALOG } from '../domain/pet'
+import { getAnimalMeta } from '../domain/pet'
 import { resolveRestDurationMs } from '../domain/rest'
 import { studyCapsuleDisplay } from '../domain/protectionDisplay'
 import { isStudySessionLocked } from '../navigation/mainEntry'
@@ -13,6 +13,7 @@ import { protectionDriver } from '../platform/bridge'
 import type { ProtectionStatus } from '../domain/model'
 import Icon from '../components/Icon.vue'
 import PetGraphic from '../components/PetGraphic.vue'
+import PetPickerSheet from '../components/PetPickerSheet.vue'
 import Sheet from '../components/Sheet.vue'
 import { waitForDialogClose } from '../components/sheetClose'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
@@ -23,7 +24,7 @@ import {
   type StartErrorKind,
 } from '../domain/startRecovery'
 
-type FocusSheet = 'tasks' | 'pet' | 'safety' | 'endConfirm' | 'startError' | null
+type FocusSheet = 'tasks' | 'safety' | 'endConfirm' | 'startError' | null
 
 const PET_BUBBLES = ['今天也要加油！', '喵～陪你专注', '稳住节奏！', '写完这轮就休息～'] as const
 const INTERRUPT_CHIPS = ['回消息', '刷视频', '临时有事', '走神了'] as const
@@ -34,6 +35,7 @@ const app = useApp(),
   router = useRouter(),
   busy = ref(false),
   focusSheet = ref<FocusSheet>(null),
+  petOpen = ref(false),
   studyOpen = ref(false),
   studyInitialView = ref<'home' | 'permissions'>('home'),
   pendingFinishSessionId = ref<string | null>(null),
@@ -83,6 +85,7 @@ watch(
   { immediate: true },
 )
 
+const isRandomCompanion = computed(() => app.data.pet?.selectedAnimalId === 'random')
 const standbyAnimalId = computed(() => {
   const sel = app.data.pet?.selectedAnimalId
   if (sel && sel !== 'random' && app.petProjection.unlockedAnimals.includes(sel)) return sel
@@ -115,8 +118,14 @@ async function refreshProtection() {
 }
 
 function openStudyFromCapsule() {
+  if (busy.value || focusSheet.value !== null || petOpen.value) return
   studyInitialView.value = studyCapsule.value.tone === 'warning' ? 'permissions' : 'home'
   studyOpen.value = true
+}
+
+function openPetPicker() {
+  if (busy.value || focusSheet.value !== null || studyOpen.value) return
+  petOpen.value = true
 }
 
 onMounted(() => {
@@ -176,7 +185,6 @@ watch(
 
 const focusSheetTitle = computed(() => {
   if (focusSheet.value === 'tasks') return '选择专注事项'
-  if (focusSheet.value === 'pet') return '伙伴图鉴'
   if (focusSheet.value === 'safety') return '专注辅助与安全出口'
   if (focusSheet.value === 'endConfirm') return '结束本次专注？'
   if (focusSheet.value === 'startError') return '无法开始专注'
@@ -388,14 +396,6 @@ async function startFocusSession(item: FocusItem | null, mode: Mode, minutes: nu
     await startFocusSessionInner(item, mode, minutes)
   } finally {
     busy.value = false
-  }
-}
-
-async function selectSkin(skinId: string) {
-  try {
-    await app.selectAnimal(standbyAnimalId.value, skinId)
-  } catch (e) {
-    app.notify(e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -919,7 +919,7 @@ async function rest() {
           <button
             type="button"
             class="pet-stage-btn"
-            :aria-label="`轻点${standbyAnimalMeta.name}互动`"
+            :aria-label="isRandomCompanion ? '轻点上阵动物互动' : `轻点${standbyAnimalMeta.name}互动`"
             @click="onPetTap"
           >
             <PetGraphic
@@ -935,10 +935,10 @@ async function rest() {
             type="button"
             class="companion-pill"
             aria-haspopup="dialog"
-            :aria-expanded="focusSheet === 'pet'"
-            @click="focusSheet = 'pet'"
+            :aria-expanded="petOpen"
+            @click="openPetPicker"
           >
-            <span>{{ standbyAnimalMeta.name }} · 换伙伴</span>
+            <span>{{ isRandomCompanion ? '随机出场' : standbyAnimalMeta.name }} · 换伙伴</span>
             <Icon name="right" :size="14" />
           </button>
         </div>
@@ -1069,39 +1069,6 @@ async function rest() {
         </div>
       </div>
 
-      <div v-else-if="focusSheet === 'pet'" class="stack">
-        <div class="notice">
-          当前好感：<strong class="number">{{ app.petProjection.affection }}</strong> · 已养大
-          <strong class="number">{{ app.petProjection.totalRaised }}</strong> 只小动物
-        </div>
-        <div class="card pet-preview-card">
-          <PetGraphic
-            :animal-id="standbyAnimalId"
-            :skin-id="standbySkinId"
-            stage="standby"
-            :size="88"
-          />
-          <div class="pet-preview-info">
-            <h3>{{ standbyAnimalMeta.name }}</h3>
-            <p class="field-help">有效专注每满 5 分钟增加 1 点好感，单次上限 36 点；中途放弃扣除 5 点好感。</p>
-            <div v-if="SKIN_CATALOG[standbyAnimalId].length > 1" class="chip-row">
-              <button
-                v-for="skin in SKIN_CATALOG[standbyAnimalId]"
-                :key="skin.id"
-                type="button"
-                class="chip"
-                :class="{ active: standbySkinId === skin.id }"
-                :disabled="!(app.petProjection.unlockedSkins[standbyAnimalId] ?? ['default']).includes(skin.id)"
-                @click="selectSkin(skin.id)"
-              >
-                {{ skin.name }}
-              </button>
-            </div>
-          </div>
-        </div>
-        <button type="button" class="primary wide" @click="closeFocusSheet">完成</button>
-      </div>
-
       <div v-else-if="focusSheet === 'safety'" class="safety-sheet">
         <p class="notice" role="status">
           当前状态：{{ session ? (studyLocked ? '学霸模式保护中' : '普通专注中') : '未在专注中' }}
@@ -1160,6 +1127,8 @@ async function rest() {
         </template>
       </div>
     </Sheet>
+
+    <PetPickerSheet :open="petOpen" @close="petOpen = false" />
 
     <StudyModeSheet
       :open="studyOpen"
@@ -1594,16 +1563,6 @@ async function rest() {
   padding: 10px 16px;
   background: var(--white);
   border: 1px solid var(--line);
-}
-.pet-preview-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.pet-preview-info {
-  flex: 1;
-  display: grid;
-  gap: 6px;
 }
 .safety-sheet {
   display: grid;

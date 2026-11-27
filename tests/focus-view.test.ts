@@ -147,5 +147,19 @@ describe('FocusView standby, 3-stage growth, 10s cancel, and settlement', () => 
     expect(early.html).toContain('刷视频')
     expect(early.html).toContain('临时有事')
     expect(early.html).toContain('走神了')
+
+    mocks.app.lastResult = {
+      ...mocks.app.lastResult,
+      id: 'r-balloon-early',
+      animalId: 'balloon-dog',
+      status: 'early',
+    }
+    const dogEarly = await mountFocusSSR()
+    expect(dogEarly.html).toContain('完蛋！你的气球小狗漏气挂了')
+
+    mocks.app.lastResult = undefined
+    mocks.app.data.pet.selectedAnimalId = 'random'
+    const randomStandby = await mountFocusSSR()
+    expect(randomStandby.html).toContain('随机出场 · 换伙伴')
   })
 })
