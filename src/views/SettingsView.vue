@@ -688,17 +688,17 @@ async function openBatteryOptimization() {
               <section class="about-release" aria-labelledby="latest-release-title">
                 <div class="about-section-heading">
                   <h3 id="latest-release-title">最近更新</h3>
-                  <time datetime="2026-11-23">2026.11.23</time>
+                  <time datetime="2026-11-28">2026.11.28</time>
                 </div>
-                <p class="release-name">v0.2.14 <span>覆盖升级自动重连通知监听与真机调试提效</span></p>
+                <p class="release-name">v0.3.0 <span>专注待机首屏、一周农场、时间轴统计与三档防分心</span></p>
                 <ul class="release-changes">
-                  <li>覆盖安装升级后在系统替换广播自动重连已授权的通知监听服务，减少升级后“已授权但等待连接”。</li>
-                  <li>新增开发期一键真机覆盖安装与自动恢复调试权限脚本（`android:dev-install` / `android:install` / `android:grant`），适配 OPPO/ColorOS 权限监控指引。</li>
-                  <li>沿用原包名与内测签名，支持从「我的 → 检查更新」或直接覆盖安装并保留本地数据。</li>
+                  <li>上线专注待机首屏、滑动调时、黑猫三阶段孵育、10 秒无责撤回与左滑放弃，内置 12 只百兽双轨图鉴、多毛色皮肤、一周农场与打卡图导出。</li>
+                  <li>新增时间轴卡片与防刷分手动补录、一周 24 小时四色分布图、离线白噪音锁屏续播、自定义休息与番茄循环、常驻通知操控及统计 365 热力图。</li>
+                  <li>融合零权限「离开应用 10 秒看护」与原学霸模式/锁机三档防分心，沿用原包名与内测签名，支持从「我的 → 检查更新」或直接覆盖安装保留本地数据。</li>
                 </ul>
                 <a
                   class="about-link"
-                  href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.2.14"
+                  href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.3.0"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
