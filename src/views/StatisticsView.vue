@@ -14,6 +14,7 @@ import {
   zoneTime,
 } from '../domain/dates'
 import type { FocusRecord } from '../domain/model'
+import { fillRoundedRect, strokeRoundedRect } from '../domain/canvasShapes'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
 import Chart from '../components/Chart.vue'
@@ -435,44 +436,6 @@ function heatmapLayout(cssWidth: number, cssHeight: number) {
   return { leadingEmpty, totalCols, padX, colPitch, rowPitch, cellW, cellH, offsetY }
 }
 
-function fillRoundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  const radius = Math.min(r, w / 2, h / 2)
-  ctx.beginPath()
-  ctx.moveTo(x + radius, y)
-  ctx.arcTo(x + w, y, x + w, y + h, radius)
-  ctx.arcTo(x + w, y + h, x, y + h, radius)
-  ctx.arcTo(x, y + h, x, y, radius)
-  ctx.arcTo(x, y, x + w, y, radius)
-  ctx.closePath()
-  ctx.fill()
-}
-
-function strokeRoundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  const radius = Math.min(r, w / 2, h / 2)
-  ctx.beginPath()
-  ctx.moveTo(x + radius, y)
-  ctx.arcTo(x + w, y, x + w, y + h, radius)
-  ctx.arcTo(x + w, y + h, x, y + h, radius)
-  ctx.arcTo(x, y + h, x, y, radius)
-  ctx.arcTo(x, y, x + w, y, radius)
-  ctx.closePath()
-  ctx.stroke()
-}
-
 function drawHeatmap() {
   const canvas = heatmapCanvas.value
   if (!canvas) return
@@ -510,15 +473,15 @@ function drawHeatmap() {
     const y = offsetY + row * rowPitch + (rowPitch - cellH) / 2
     const day = days[i]!
     ctx.fillStyle = HEATMAP_COLORS[day.level]
-    fillRoundRect(ctx, x, y, cellW, cellH, 2)
+    fillRoundedRect(ctx, x, y, cellW, cellH, 2)
     if (i === selectedIdx) {
       ctx.strokeStyle = day.level >= 3 ? '#FFFFFF' : '#222222'
       ctx.lineWidth = 1.5
-      strokeRoundRect(ctx, x - 0.5, y - 0.5, cellW + 1, cellH + 1, 2.5)
+      strokeRoundedRect(ctx, x - 0.5, y - 0.5, cellW + 1, cellH + 1, 2.5)
       if (day.level >= 3) {
         ctx.strokeStyle = '#222222'
         ctx.lineWidth = 1
-        strokeRoundRect(ctx, x - 1.5, y - 1.5, cellW + 3, cellH + 3, 3)
+        strokeRoundedRect(ctx, x - 1.5, y - 1.5, cellW + 3, cellH + 3, 3)
       }
     }
   }
@@ -1040,8 +1003,8 @@ async function confirmRemove(record: FocusRecord) {
 .heatmap-stage {
   margin-top: 12px;
   background: var(--white);
-  border-radius: 14px;
-  padding: 8px;
+  border-radius: var(--radius);
+  padding: 10px 8px;
 }
 .heatmap-canvas {
   display: block;

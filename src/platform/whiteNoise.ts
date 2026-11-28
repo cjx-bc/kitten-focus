@@ -83,6 +83,7 @@ export function createWhiteNoiseController(deps?: {
   let audio: AudioLike | null = null
   let currentTrack: WhiteNoiseId = 'off'
   let liveVolume = DEFAULT_WHITE_NOISE_VOLUME
+  let pausedByNoisy = false
   let lastInput: WhiteNoiseSyncInput = {
     track: 'off',
     volume: DEFAULT_WHITE_NOISE_VOLUME,
@@ -104,6 +105,9 @@ export function createWhiteNoiseController(deps?: {
   async function sync(input: WhiteNoiseSyncInput, userAction = false): Promise<void> {
     const track = normalizeWhiteNoiseId(input.track)
     const volume = clampWhiteNoiseVolume(input.volume)
+    if (!input.hasActiveFocus || track === 'off' || userAction) {
+      pausedByNoisy = false
+    }
     lastInput = {
       track,
       volume,
@@ -131,7 +135,7 @@ export function createWhiteNoiseController(deps?: {
       return
     }
 
-    if (input.sessionState !== 'running') {
+    if (input.sessionState !== 'running' || pausedByNoisy) {
       if (audio) {
         try {
           audio.pause()
@@ -158,6 +162,19 @@ export function createWhiteNoiseController(deps?: {
     }
   }
 
+  function pauseForNoisy() {
+    pausedByNoisy = true
+    if (audio) {
+      try {
+        audio.pause()
+      } catch {}
+    }
+  }
+
+  function clearNoisyPause() {
+    pausedByNoisy = false
+  }
+
   function setLiveVolume(volume: number) {
     liveVolume = clampWhiteNoiseVolume(volume)
     if (!isNative() && audio) {
@@ -166,15 +183,18 @@ export function createWhiteNoiseController(deps?: {
   }
 
   function stop() {
+    pausedByNoisy = false
     lastInput = { ...lastInput, hasActiveFocus: false, sessionState: null }
     releaseAudio()
   }
 
   return {
     sync,
+    pauseForNoisy,
+    clearNoisyPause,
     setLiveVolume,
     stop,
-    getState: () => ({ currentTrack, liveVolume, hasAudio: Boolean(audio), lastInput }),
+    getState: () => ({ currentTrack, liveVolume, pausedByNoisy, hasAudio: Boolean(audio), lastInput }),
   }
 }
 
@@ -182,5 +202,7 @@ const defaultController = createWhiteNoiseController()
 
 export const syncWhiteNoisePlayback = (input: WhiteNoiseSyncInput, userAction = false) =>
   defaultController.sync(input, userAction)
+export const pauseWhiteNoiseForNoisy = () => defaultController.pauseForNoisy()
+export const clearWhiteNoiseNoisyPause = () => defaultController.clearNoisyPause()
 export const setWhiteNoiseLiveVolume = (volume: number) => defaultController.setLiveVolume(volume)
 export const stopWhiteNoisePlayback = () => defaultController.stop()

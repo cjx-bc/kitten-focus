@@ -16,9 +16,6 @@ import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import org.json.JSONObject;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
 /**
  * Native offline white-noise loop player tied to active focus sessions.
  * Uses AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK to mix politely with online lectures/videos,
@@ -30,7 +27,6 @@ final class WhiteNoisePlayer {
     private final Context appContext;
     private final Object lock = new Object();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService persistenceExecutor = Executors.newSingleThreadExecutor();
     private final WhiteNoisePolicy policy = new WhiteNoisePolicy();
 
     private MediaPlayer mediaPlayer;
@@ -102,8 +98,7 @@ final class WhiteNoisePlayer {
     void syncFromUserAction(Context context) {
         synchronized (lock) {
             if (policy.isPausedByNoisy()) {
-                // Force fresh evaluation when user explicitly interacts with white noise controls.
-                policy.evaluate("off", lastVolume, false, false);
+                policy.clearPausedByNoisy();
             }
         }
         syncFromStore(context);
@@ -154,33 +149,17 @@ final class WhiteNoisePlayer {
             abandonAudioFocusLocked();
         }
         if (didPause) {
-            persistPausedPreferenceAndNotify(pausedTrack);
+            notifyNoisyPaused(pausedTrack);
         }
     }
 
-    private void persistPausedPreferenceAndNotify(String pausedTrack) {
-        persistenceExecutor.execute(() -> {
-            try {
-                LocalStore store = LocalStore.get(appContext);
-                synchronized (store) {
-                    JSONObject data = store.read("data");
-                    if (data != null) {
-                        JSONObject prefs = data.optJSONObject("preferences");
-                        if (prefs != null) {
-                            prefs.put("whiteNoise", "off");
-                            store.write("data", data);
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-            JSObject payload = new JSObject();
-            payload.put("reason", "becoming_noisy");
-            if (pausedTrack != null && !pausedTrack.isEmpty()) {
-                payload.put("track", pausedTrack);
-            }
-            CatFocusPlugin.emitJsEvent("whiteNoisePaused", payload);
-        });
+    private void notifyNoisyPaused(String pausedTrack) {
+        JSObject payload = new JSObject();
+        payload.put("reason", "becoming_noisy");
+        if (pausedTrack != null && !pausedTrack.isEmpty()) {
+            payload.put("track", pausedTrack);
+        }
+        CatFocusPlugin.emitJsEvent("whiteNoisePaused", payload);
     }
 
     private void applyDecisionLocked(WhiteNoisePolicy.Decision decision) {

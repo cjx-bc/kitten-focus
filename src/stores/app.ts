@@ -33,7 +33,12 @@ import {
   permissionStatus,
 } from '../platform/bridge'
 import { notificationDriver } from '../platform/notifications'
-import { stopWhiteNoisePlayback, syncWhiteNoisePlayback } from '../platform/whiteNoise'
+import {
+  clearWhiteNoiseNoisyPause as clearWhiteNoiseControllerNoisyPause,
+  pauseWhiteNoiseForNoisy as pauseWhiteNoiseControllerForNoisy,
+  stopWhiteNoisePlayback,
+  syncWhiteNoisePlayback,
+} from '../platform/whiteNoise'
 import { makeBackup, readBackup } from '../domain/backup'
 import { buildManualFocusRecord } from '../domain/manualBackfill'
 import { validateEvent } from '../domain/calendar'
@@ -47,7 +52,8 @@ export const useApp = defineStore('app', () => {
     lock = shallowRef<LockSnapshot>({ session: null, remainingMs: 0, records: [] }),
     ready = ref(false),
     error = ref(''),
-    toast = ref('')
+    toast = ref(''),
+    whiteNoiseNoisyPaused = ref(false)
   const lastResult = shallowRef<FocusSnapshot['record']>(undefined)
   const STRICT_ACK_KEY = 'xiaomao-strict-acknowledged'
   function readStrictAck(): boolean {
@@ -166,13 +172,35 @@ export const useApp = defineStore('app', () => {
     writeQueue = pending.then(() => {}, () => {})
     return pending
   }
+  function pauseWhiteNoiseForNoisy() {
+    whiteNoiseNoisyPaused.value = true
+    pauseWhiteNoiseControllerForNoisy()
+  }
+  function clearWhiteNoiseNoisyPause() {
+    whiteNoiseNoisyPaused.value = false
+    clearWhiteNoiseControllerNoisyPause()
+  }
   function syncWhiteNoiseFromApp() {
     const active = focus.value.session
+    if (!active) {
+      whiteNoiseNoisyPaused.value = false
+    }
     void syncWhiteNoisePlayback({
       track: data.value.preferences.whiteNoise,
       volume: data.value.preferences.whiteNoiseVolume,
       hasActiveFocus: Boolean(active),
       sessionState: active?.state ?? null,
+    })
+  }
+  async function syncStoredWhiteNoise() {
+    if (!dataLoaded) return
+    await dataOperation(async () => {
+      const loaded = await repository.load()
+      if (loaded.preferences.whiteNoise !== data.value.preferences.whiteNoise) {
+        const next = structuredClone(data.value)
+        next.preferences.whiteNoise = loaded.preferences.whiteNoise
+        data.value = JSON.parse(JSON.stringify(next)) as AppData
+      }
     })
   }
   async function mutate(update: (next: AppData) => void) {
@@ -366,6 +394,7 @@ export const useApp = defineStore('app', () => {
         return focusDriver.start(session, strictModeConfirmed)
       })
       lastResult.value = undefined
+      clearWhiteNoiseNoisyPause()
       await acceptSnapshot(snapshot)
       rest.value = { session: null, remainingMs: 0 }
     })
@@ -750,6 +779,12 @@ export const useApp = defineStore('app', () => {
       if (restored.preferences.protection) {
         restored.preferences.protection = migrateProtectionPreferences(restored.preferences.protection)
       }
+      if (restored.pet === undefined) {
+        restored.pet = {
+          ...defaultPetData(),
+          retroCutoffAt: restored.records.length > 0 ? Date.now() : null,
+        }
+      }
       await dataOperation(async () => {
         await repository.replace(restored)
         clearStrictAcknowledged()
@@ -797,6 +832,10 @@ export const useApp = defineStore('app', () => {
     ready,
     error,
     toast,
+    whiteNoiseNoisyPaused,
+    pauseWhiteNoiseForNoisy,
+    clearWhiteNoiseNoisyPause,
+    syncStoredWhiteNoise,
     lastResult,
     strictAcknowledged,
     acknowledgeStrict,

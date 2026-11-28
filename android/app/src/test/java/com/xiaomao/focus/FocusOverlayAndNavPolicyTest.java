@@ -178,4 +178,42 @@ public class FocusOverlayAndNavPolicyTest {
         int[] chestnut = FocusBlockOverlay.resolveAnimalPalette("yellow-chick", "chestnut");
         assertEquals(0xFF9C6B43, chestnut[0]);
     }
+
+    @Test
+    public void resolvesRegretWindowPetStagesAndRenderSignatures() {
+        // Regret window (< 10s) applies to normal countdown/stopwatch & non-strict sessions, never strict countdown
+        assertTrue(FocusBlockOverlay.isInRegretWindow(false, true, 0L));
+        assertTrue(FocusBlockOverlay.isInRegretWindow(false, true, 9_999L));
+        assertFalse(FocusBlockOverlay.isInRegretWindow(false, true, 10_000L));
+        assertTrue(FocusBlockOverlay.isInRegretWindow(false, false, 5_000L));
+        assertFalse(FocusBlockOverlay.isInRegretWindow(true, true, 3_000L));
+
+        // 3-stage pet progression: countdown 0-33% / 33-75% / 75-100%, stopwatch 0-8m / 8-20m / 20m+
+        assertEquals(1, FocusBlockOverlay.resolvePetStage(true, 0L, 1_500_000L));
+        assertEquals(1, FocusBlockOverlay.resolvePetStage(true, 494_000L, 1_500_000L));
+        assertEquals(2, FocusBlockOverlay.resolvePetStage(true, 495_000L, 1_500_000L));
+        assertEquals(2, FocusBlockOverlay.resolvePetStage(true, 1_124_000L, 1_500_000L));
+        assertEquals(3, FocusBlockOverlay.resolvePetStage(true, 1_125_000L, 1_500_000L));
+
+        assertEquals(1, FocusBlockOverlay.resolvePetStage(false, 7L * 60_000L, 1_500_000L));
+        assertEquals(2, FocusBlockOverlay.resolvePetStage(false, 8L * 60_000L, 1_500_000L));
+        assertEquals(2, FocusBlockOverlay.resolvePetStage(false, 19L * 60_000L, 1_500_000L));
+        assertEquals(3, FocusBlockOverlay.resolvePetStage(false, 20L * 60_000L, 1_500_000L));
+
+        // Signature distinguishes petStage, regretWindow, SubPanel.WHITE_NOISE, and whiteNoiseTrack
+        String s1 = FocusBlockOverlay.buildRenderSignature(
+            Mode.NORMAL_FOCUS, FocusBlockOverlay.SubPanel.NONE, false, false, true, true,
+            "", "", 0, 0, "高数", "black-cat", "default", 1, true, "off"
+        );
+        String s2 = FocusBlockOverlay.buildRenderSignature(
+            Mode.NORMAL_FOCUS, FocusBlockOverlay.SubPanel.NONE, false, false, true, true,
+            "", "", 0, 0, "高数", "black-cat", "default", 1, false, "off"
+        );
+        String s3 = FocusBlockOverlay.buildRenderSignature(
+            Mode.NORMAL_FOCUS, FocusBlockOverlay.SubPanel.WHITE_NOISE, false, false, true, true,
+            "", "", 0, 0, "高数", "black-cat", "default", 2, false, "rain"
+        );
+        assertFalse(s1.equals(s2));
+        assertFalse(s2.equals(s3));
+    }
 }

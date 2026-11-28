@@ -22,12 +22,15 @@ import Icon from '../components/Icon.vue'
 import PetGraphic from '../components/PetGraphic.vue'
 import PetPickerSheet from '../components/PetPickerSheet.vue'
 import Sheet from '../components/Sheet.vue'
+import StartErrorSheetContent from '../components/StartErrorSheetContent.vue'
 import { waitForDialogClose } from '../components/sheetClose'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
 import {
   classifyStartError,
-  getUnreadyProtectionIds,
   isCancelledStartError,
+  runClearUnreadyAndRetry,
+  runGoRecovery,
+  runOpenStudyPermissions,
   type StartErrorKind,
 } from '../domain/startRecovery'
 
@@ -222,6 +225,7 @@ const whiteNoisePercent = computed(() => Math.round(whiteNoiseVolume.value * 100
 async function selectWhiteNoise(trackId: WhiteNoiseId) {
   if (busy.value) return
   try {
+    app.clearWhiteNoiseNoisyPause?.()
     await app.mutate((d) => {
       d.preferences.whiteNoise = trackId
       if (d.preferences.whiteNoiseVolume === undefined) {
@@ -699,21 +703,28 @@ async function again() {
   }
 }
 
-async function goRecoveryFromStartError() {
-  if (busy.value) return
+function clearStartErrorSheet() {
   focusSheet.value = null
   startError.value = null
-  await waitForDialogClose()
-  await router.push('/recovery')
+}
+
+async function goRecoveryFromStartError() {
+  if (busy.value) return
+  await runGoRecovery({
+    clearSheet: clearStartErrorSheet,
+    navigate: () => router.push('/recovery'),
+  })
 }
 
 async function openStudyFromStartError() {
   if (busy.value) return
-  focusSheet.value = null
-  startError.value = null
-  await waitForDialogClose()
-  studyInitialView.value = 'permissions'
-  studyOpen.value = true
+  await runOpenStudyPermissions({
+    clearSheet: clearStartErrorSheet,
+    openStudy: () => {
+      studyInitialView.value = 'permissions'
+      studyOpen.value = true
+    },
+  })
 }
 
 async function clearUnreadyAndRetry() {
@@ -721,21 +732,19 @@ async function clearUnreadyAndRetry() {
   if (!pending || busy.value) return
   busy.value = true
   try {
-    const ids = await getUnreadyProtectionIds(app.data.preferences.protection)
-    if (!ids.length) {
-      focusSheet.value = null
-      startError.value = null
-      await waitForDialogClose()
-      studyInitialView.value = 'permissions'
-      studyOpen.value = true
-      return
-    }
-    await app.clearUnreadyProtections(ids, true)
-    focusSheet.value = null
-    startError.value = null
-    await waitForDialogClose()
-    busy.value = false
-    await startFocusSession(pending.item, pending.mode ?? 'countdown', pending.minutes ?? defaultMinutes.value)
+    await runClearUnreadyAndRetry({
+      protection: app.data.preferences.protection,
+      clearUnreadyProtections: app.clearUnreadyProtections,
+      clearSheet: clearStartErrorSheet,
+      openStudy: () => {
+        studyInitialView.value = 'permissions'
+        studyOpen.value = true
+      },
+      retry: async () => {
+        busy.value = false
+        await startFocusSession(pending.item, pending.mode ?? 'countdown', pending.minutes ?? defaultMinutes.value)
+      },
+    })
   } catch (e) {
     app.notify(e instanceof Error ? e.message : String(e))
   } finally {
@@ -1208,6 +1217,9 @@ async function rest() {
       </div>
 
       <div v-else-if="focusSheet === 'whiteNoise'" class="stack">
+        <p v-if="app.whiteNoiseNoisyPaused && whiteNoiseTrack !== 'off'" class="notice" role="status">
+          音频输出已断开，白噪音已暂停；点击曲目可恢复播放
+        </p>
         <div class="white-noise-grid" data-decision-group role="radiogroup" aria-label="白噪音曲目">
           <button
             v-for="track in WHITE_NOISE_TRACKS"
@@ -1272,33 +1284,15 @@ async function rest() {
         </div>
       </div>
 
-      <div v-else-if="focusSheet === 'startError' && startError" class="stack">
-        <p class="notice" role="alert">{{ startError.message }}</p>
-        <template v-if="startError.kind === 'recovery'">
-          <button type="button" class="primary wide" :disabled="busy" @click="goRecoveryFromStartError">
-            前往故障恢复
-          </button>
-          <button type="button" class="secondary wide" :disabled="busy" @click="closeFocusSheet">
-            取消
-          </button>
-        </template>
-        <template v-else-if="startError.kind === 'protection'">
-          <button type="button" class="primary wide" :disabled="busy" @click="openStudyFromStartError">
-            前往学霸模式处理
-          </button>
-          <button type="button" class="secondary wide" :disabled="busy" @click="clearUnreadyAndRetry">
-            关闭未就绪保护并开始
-          </button>
-          <button type="button" class="text-button" :disabled="busy" @click="closeFocusSheet">
-            取消
-          </button>
-        </template>
-        <template v-else>
-          <button type="button" class="primary wide" :disabled="busy" @click="closeFocusSheet">
-            知道了
-          </button>
-        </template>
-      </div>
+      <StartErrorSheetContent
+        v-else-if="focusSheet === 'startError' && startError"
+        :error="startError"
+        :busy="busy"
+        @recovery="goRecoveryFromStartError"
+        @study="openStudyFromStartError"
+        @clear-retry="clearUnreadyAndRetry"
+        @close="closeFocusSheet"
+      />
     </Sheet>
 
     <PetPickerSheet :open="petOpen" @close="petOpen = false" />

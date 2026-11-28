@@ -285,4 +285,32 @@ describe('RestView pomodoroLoop behavior', () => {
     expect(mounted.state.startError?.message).toContain('无障碍')
     mounted.unmount()
   })
+
+  it('auto-triggers completion reminder and next focus once on cold-open completed rest with pomodoroLoop=true', async () => {
+    mocks.app.data.preferences.pomodoroLoop = true
+    mocks.app.data.preferences.sound = true
+    mocks.app.data.preferences.vibration = true
+    const record = makeRecord({ id: 'rec-cold-1' })
+    mocks.app.rest = {
+      session: { durationMs: 300_000, record, startedAt: 2_500_000, endsAt: 2_800_000, state: 'completed' },
+      remainingMs: 0,
+    }
+
+    const firstMount = mountLiveRestView()
+    await nextTick()
+    await nextTick()
+    firstMount.unmount()
+
+    expect(mocks.feedback).toHaveBeenCalledTimes(1)
+    expect(mocks.feedback).toHaveBeenCalledWith({ sound: true, vibration: true })
+    expect(mocks.app.start).toHaveBeenCalledTimes(1)
+    expect(mocks.app.start).toHaveBeenCalledWith(mocks.app.items[0], 'countdown', 25)
+    expect(mocks.router.replace).toHaveBeenCalledWith('/focus')
+
+    // Re-mounting / returning to completed rest for the same record.id must NOT loop
+    const secondMount = mountLiveRestView()
+    await nextTick()
+    secondMount.unmount()
+    expect(mocks.app.start).toHaveBeenCalledTimes(1)
+  })
 })

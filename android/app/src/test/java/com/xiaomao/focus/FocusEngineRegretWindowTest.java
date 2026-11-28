@@ -9,6 +9,7 @@ import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -225,5 +226,32 @@ public class FocusEngineRegretWindowTest {
         assertFalse(pausedLeave.isNull("session"));
         assertEquals("paused", pausedLeave.getJSONObject("session").getString("state"));
         assertFalse(pausedLeave.has("record"));
+    }
+
+    @Test
+    public void failLeaveRejectsStrictCountdownBothUnderAndOver10s() throws Exception {
+        MemoryStore store = new MemoryStore();
+        FakeClock clock = new FakeClock();
+        NoopEffects effects = new NoopEffects();
+        FocusEngine engine = new FocusEngine(store, clock, effects);
+
+        engine.start(session("countdown", true));
+        clock.advance(3_000L);
+        JSONObject activeUnder10s = store.read("active");
+        assertThrows(IllegalStateException.class, () ->
+            FocusControl.enforceFocusActionAllowed(activeUnder10s, "fail_leave", false)
+        );
+        assertThrows(IllegalStateException.class, () -> engine.action("fail_leave"));
+        assertNotNull(store.read("active"));
+        assertNull(store.read("lastFinished"));
+
+        clock.advance(12_000L);
+        JSONObject activeOver10s = store.read("active");
+        assertThrows(IllegalStateException.class, () ->
+            FocusControl.enforceFocusActionAllowed(activeOver10s, "fail_leave", false)
+        );
+        assertThrows(IllegalStateException.class, () -> engine.action("fail_leave"));
+        assertEquals("sess-1", store.read("active").getString("id"));
+        assertNull(store.read("lastFinished"));
     }
 }

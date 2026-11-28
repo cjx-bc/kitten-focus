@@ -15,7 +15,6 @@ import {
 import {
   getAnimalMeta,
   getSkinMeta,
-  projectPetDomain,
   type FarmInstance,
 } from '../domain/pet'
 import { formatWeekRangeLabel, renderWeeklyFarmCard } from '../domain/farmCard'
@@ -45,14 +44,7 @@ onBeforeUnmount(() => {
 const reducedMotionPref = computed(() => app.data.preferences.animation === 'off')
 const isCurrentWeek = computed(() => currentWeekStart.value === thisWeekStart.value)
 
-const petProjection = computed(() =>
-  projectPetDomain({
-    records: app.data.records,
-    pet: app.data.pet,
-  }),
-)
-
-const weekSlice = computed(() => petProjection.value.weekFarmSlice(currentWeekStart.value))
+const weekSlice = computed(() => app.petProjection.weekFarmSlice(currentWeekStart.value))
 const weekRangeLabel = computed(() =>
   formatWeekRangeLabel(weekSlice.value.weekStartDate, weekSlice.value.weekEndDate),
 )

@@ -30,8 +30,11 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -47,6 +50,62 @@ final class FocusBlockOverlay {
         STUDY_LOCKED,
         BLOCKED_APP,
         GUARD_PULLBACK
+    }
+
+    enum SubPanel {
+        NONE,
+        CONFIRM_FINISH,
+        WHITELIST,
+        SAFETY,
+        WHITE_NOISE
+    }
+
+    static final class AnimalPalette {
+        final int body;
+        final int belly;
+        final int accent;
+
+        AnimalPalette(int body, int belly, int accent) {
+            this.body = body;
+            this.belly = belly;
+            this.accent = accent;
+        }
+
+        int[] toArray() {
+            return new int[] { body, belly, accent };
+        }
+    }
+
+    private static final String[][] WHITE_NOISE_OPTIONS = {
+        { "off", "关闭" },
+        { "rain", "雨声" },
+        { "birds", "鸟鸣" },
+        { "stream", "溪流" },
+        { "fire", "篝火" },
+        { "waves", "海浪" },
+    };
+
+    private static final Map<String, AnimalPalette> ANIMAL_PALETTES = buildAnimalPalettes();
+
+    private static Map<String, AnimalPalette> buildAnimalPalettes() {
+        Map<String, AnimalPalette> map = new HashMap<>();
+        map.put("black-cat", new AnimalPalette(0xFF222222, 0xFF3A3A3F, 0xFFEF4E36));
+        map.put("black-cat:cow", new AnimalPalette(0xFFFFFFFF, 0xFF222222, 0xFFEF4E36));
+        map.put("black-cat:siamese", new AnimalPalette(0xFFE7D8C3, 0xFF4A3C31, 0xFF698CAA));
+        map.put("yellow-chick", new AnimalPalette(0xFFF2C94C, 0xFFFFF3C4, 0xFFEF4E36));
+        map.put("yellow-chick:chestnut", new AnimalPalette(0xFF9C6B43, 0xFFE6C9A8, 0xFFEF4E36));
+        map.put("yellow-chick:snow", new AnimalPalette(0xFFFFFFFF, 0xFFF5F5F5, 0xFFE7A54A));
+        map.put("white-goose", new AnimalPalette(0xFFFFFFFF, 0xFFF5F5F5, 0xFFEF4E36));
+        map.put("orange-cat", new AnimalPalette(0xFFE7A54A, 0xFFFFF6E8, 0xFFEF4E36));
+        map.put("pixel-bird", new AnimalPalette(0xFFA08BB0, 0xFFF5F5F5, 0xFFEF4E36));
+        map.put("patch-bear", new AnimalPalette(0xFF222222, 0xFF85858B, 0xFFEF4E36));
+        map.put("green-parrot", new AnimalPalette(0xFF7B9A80, 0xFFE7A54A, 0xFFEF4E36));
+        map.put("flying-pig", new AnimalPalette(0xFF222222, 0xFF85858B, 0xFFEF4E36));
+        map.put("balloon-dog", new AnimalPalette(0xFFEF4E36, 0xFFE7A54A, 0xFFFFFFFF));
+        map.put("light-deer", new AnimalPalette(0xFF698CAA, 0xFFF5F5F5, 0xFFEF4E36));
+        map.put("angel-cat", new AnimalPalette(0xFF222222, 0xFFA08BB0, 0xFFE7A54A));
+        map.put("black-dragon", new AnimalPalette(0xFF222222, 0xFFE7A54A, 0xFFEF4E36));
+        return Collections.unmodifiableMap(map);
     }
 
     static final String COLOR_BG = "#FFFFFF";
@@ -76,7 +135,7 @@ final class FocusBlockOverlay {
     private static volatile boolean safeRouteSuppressed = false;
     private static volatile String yieldedWhitelistPackage = "";
     private static volatile long whitelistLaunchGraceUntilMs = 0L;
-    private static volatile String subPanel = ""; // "", "confirm_finish", "whitelist", "safety"
+    private static volatile SubPanel subPanel = SubPanel.NONE;
     private static volatile boolean tickScheduled = false;
 
     private static volatile String lastRenderedSignature = "";
@@ -196,10 +255,49 @@ final class FocusBlockOverlay {
             || routePath.startsWith("/cat")
             || routePath.startsWith("/calendar")
             || routePath.startsWith("/statistics")
-            || routePath.startsWith("/stats")
-            || routePath.startsWith("/schedule")
             || routePath.startsWith("/settings")
             || routePath.equals("/");
+    }
+
+    static boolean isInRegretWindow(boolean strictMode, boolean countdown, long elapsedMs) {
+        return !(strictMode && countdown) && elapsedMs < FocusEngine.REGRET_WINDOW_MS;
+    }
+
+    static int resolvePetStage(boolean countdown, long elapsedMs, long targetMs) {
+        long clampedElapsed = Math.max(0L, elapsedMs);
+        if (countdown) {
+            double progress = targetMs > 0L ? ((double) clampedElapsed) / targetMs : 0.0;
+            if (progress < 0.33) return 1;
+            if (progress < 0.75) return 2;
+            return 3;
+        }
+        if (clampedElapsed < 8L * 60_000L) return 1;
+        if (clampedElapsed < 20L * 60_000L) return 2;
+        return 3;
+    }
+
+    static String buildRenderSignature(
+        Mode mode,
+        SubPanel panel,
+        boolean paused,
+        boolean strictMode,
+        boolean countdown,
+        boolean keepScreenOn,
+        String blockedPkg,
+        String reasonLabel,
+        int temporaryRemaining,
+        int whitelistSize,
+        String title,
+        String animalId,
+        String skinId,
+        int petStage,
+        boolean regretWindow,
+        String whiteNoiseTrack
+    ) {
+        return mode.name() + "|" + panel.name() + "|" + paused + "|" + strictMode
+            + "|" + countdown + "|" + keepScreenOn + "|" + blockedPkg + "|" + reasonLabel
+            + "|" + temporaryRemaining + "|" + whitelistSize + "|" + title
+            + "|" + animalId + "|" + skinId + "|" + petStage + "|" + regretWindow + "|" + whiteNoiseTrack;
     }
 
     static boolean shouldSuppressOverlay(boolean activeSession, String routePath) {
@@ -258,7 +356,7 @@ final class FocusBlockOverlay {
         yieldedWhitelistPackage = "";
         guardReasonLabel = "";
         blockedPackage = pkg;
-        subPanel = "";
+        subPanel = SubPanel.NONE;
         renderAsync(app, observation, !pkg.isEmpty(), false, "");
     }
 
@@ -270,7 +368,7 @@ final class FocusBlockOverlay {
         yieldedWhitelistPackage = "";
         blockedPackage = "";
         guardReasonLabel = label;
-        subPanel = "";
+        subPanel = SubPanel.NONE;
         renderAsync(app, observation, false, true, label);
     }
 
@@ -309,7 +407,7 @@ final class FocusBlockOverlay {
             currentMode = Mode.NONE;
             blockedPackage = "";
             guardReasonLabel = "";
-            subPanel = "";
+            subPanel = SubPanel.NONE;
             return;
         }
         Runnable task = () -> {
@@ -325,7 +423,7 @@ final class FocusBlockOverlay {
             currentMode = Mode.NONE;
             blockedPackage = "";
             guardReasonLabel = "";
-            subPanel = "";
+            subPanel = SubPanel.NONE;
             lastRenderedSignature = "";
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -355,7 +453,7 @@ final class FocusBlockOverlay {
             currentMode = Mode.NONE;
             blockedPackage = "";
             guardReasonLabel = "";
-            subPanel = "";
+            subPanel = SubPanel.NONE;
             lastAttachedLocked = false;
             lastRenderedSignature = "";
             if (app != null && AppUsageGuard.hasOverlayPermission(app)) {
@@ -537,10 +635,26 @@ final class FocusBlockOverlay {
 
         final boolean locked = isLockedMode(mode);
         final boolean keepScreenOn = snap.keepScreenOn && !snap.paused && !snap.isLock;
-        String signature = mode.name() + "|" + subPanel + "|" + snap.paused + "|" + snap.strictMode
-            + "|" + snap.countdown + "|" + keepScreenOn + "|" + blockedPackage + "|" + guardReasonLabel
-            + "|" + snap.temporaryRemaining + "|" + snap.whitelistApps.size() + "|" + snap.title
-            + "|" + snap.animalId + "|" + snap.skinId;
+        final int petStage = resolvePetStage(snap.countdown, snap.elapsedMs, snap.targetMs);
+        final boolean regretWindow = isInRegretWindow(snap.strictMode, snap.countdown, snap.elapsedMs);
+        String signature = buildRenderSignature(
+            mode,
+            subPanel,
+            snap.paused,
+            snap.strictMode,
+            snap.countdown,
+            keepScreenOn,
+            blockedPackage,
+            guardReasonLabel,
+            snap.temporaryRemaining,
+            snap.whitelistApps.size(),
+            snap.title,
+            snap.animalId,
+            snap.skinId,
+            petStage,
+            regretWindow,
+            snap.whiteNoiseTrack
+        );
 
         if (overlayView != null && windowManager != null && attachedWindowContext == hostCtx && lastAttachedLocked == locked) {
             if (keepScreenOn != lastAttachedKeepScreenOn) {
@@ -643,8 +757,8 @@ final class FocusBlockOverlay {
                     return super.dispatchKeyEvent(event);
                 }
                 if (code == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
-                    if (!subPanel.isEmpty()) {
-                        subPanel = "";
+                    if (subPanel != SubPanel.NONE) {
+                        subPanel = SubPanel.NONE;
                         refreshFromControlAsync(app);
                         return true;
                     }
@@ -701,15 +815,30 @@ final class FocusBlockOverlay {
         ));
 
         if (mode == Mode.NORMAL_FOCUS) {
-            TextView backTasks = buildPillButton(app, "← 任务", false, v -> openRoute(app, "/tasks"));
+            TextView backTasks = buildPillButton(app, "← 待办", false, v -> openRoute(app, "/tasks"));
             topRow.addView(backTasks);
 
             View spacer = new View(app);
             spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
             topRow.addView(spacer);
 
+            String noiseLabel = "off".equals(snap.whiteNoiseTrack)
+                ? "白噪音"
+                : "白噪音 · " + resolveWhiteNoiseLabel(snap.whiteNoiseTrack);
+            TextView noiseBtn = buildPillButton(app, noiseLabel, false, v -> {
+                subPanel = subPanel == SubPanel.WHITE_NOISE ? SubPanel.NONE : SubPanel.WHITE_NOISE;
+                refreshFromControlAsync(app);
+            });
+            LinearLayout.LayoutParams noiseLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            );
+            noiseLp.rightMargin = dp(app, 8);
+            noiseBtn.setLayoutParams(noiseLp);
+            topRow.addView(noiseBtn);
+
             TextView helpBtn = buildPillButton(app, "帮助与恢复", false, v -> {
-                subPanel = "safety".equals(subPanel) ? "" : "safety";
+                subPanel = subPanel == SubPanel.SAFETY ? SubPanel.NONE : SubPanel.SAFETY;
                 refreshFromControlAsync(app);
             });
             topRow.addView(helpBtn);
@@ -768,7 +897,15 @@ final class FocusBlockOverlay {
         center.setLayoutParams(centerLp);
 
         boolean guardDoor = mode == Mode.BLOCKED_APP || mode == Mode.GUARD_PULLBACK;
-        PetGuardView petView = new PetGuardView(app, snap.animalId, snap.skinId, guardDoor);
+        PetGuardView petView = new PetGuardView(
+            app,
+            snap.animalId,
+            snap.skinId,
+            guardDoor,
+            snap.elapsedMs,
+            snap.targetMs,
+            snap.countdown
+        );
         LinearLayout.LayoutParams petLp = new LinearLayout.LayoutParams(dp(app, 108), dp(app, 108));
         petLp.bottomMargin = dp(app, 10);
         petView.setLayoutParams(petLp);
@@ -810,7 +947,9 @@ final class FocusBlockOverlay {
         clockView.setFontFeatureSettings("tnum");
         center.addView(clockView);
 
-        if ("confirm_finish".equals(subPanel)) {
+        final boolean inRegretWindow = isInRegretWindow(snap.strictMode, snap.countdown, snap.elapsedMs);
+
+        if (subPanel == SubPanel.CONFIRM_FINISH) {
             LinearLayout confirmCard = buildCard(app);
             TextView ask = new TextView(app);
             ask.setText(snap.isLock ? "确认提前结束本次锁机吗？" : "确认提前结束本轮专注吗？");
@@ -823,7 +962,7 @@ final class FocusBlockOverlay {
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             TextView cancelBtn = buildPillButton(app, "继续专注", false, v -> {
-                subPanel = "";
+                subPanel = SubPanel.NONE;
                 refreshFromControlAsync(app);
             });
             LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(0, dp(app, 48), 1f);
@@ -831,14 +970,60 @@ final class FocusBlockOverlay {
             cancelBtn.setLayoutParams(btnLp);
             row.addView(cancelBtn);
 
-            TextView finishBtn = buildPillButton(app, "确认结束", true, v -> executeAction(app, snap.isLock ? "lock_finish" : "focus_finish"));
+            TextView finishBtn = buildPillButton(app, "确认结束", true, v ->
+                executeAction(
+                    app,
+                    snap.isLock ? "lock_finish" : (inRegretWindow ? "focus_cancel" : "focus_finish")
+                )
+            );
             LinearLayout.LayoutParams btnLp2 = new LinearLayout.LayoutParams(0, dp(app, 48), 1f);
             finishBtn.setLayoutParams(btnLp2);
             row.addView(finishBtn);
 
             confirmCard.addView(row);
             center.addView(confirmCard);
-        } else if ("whitelist".equals(subPanel)) {
+        } else if (subPanel == SubPanel.WHITE_NOISE) {
+            LinearLayout noiseCard = buildCard(app);
+            TextView noiseTitle = new TextView(app);
+            noiseTitle.setText("白噪音");
+            noiseTitle.setTextColor(Color.parseColor(COLOR_INK));
+            noiseTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+            noiseTitle.setPadding(0, 0, 0, dp(app, 10));
+            noiseCard.addView(noiseTitle);
+
+            for (int rowIdx = 0; rowIdx < WHITE_NOISE_OPTIONS.length; rowIdx += 2) {
+                LinearLayout row = new LinearLayout(app);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                );
+                rowLp.bottomMargin = dp(app, 8);
+                row.setLayoutParams(rowLp);
+
+                for (int colIdx = 0; colIdx < 2 && rowIdx + colIdx < WHITE_NOISE_OPTIONS.length; colIdx++) {
+                    final String trackId = WHITE_NOISE_OPTIONS[rowIdx + colIdx][0];
+                    final String trackLabel = WHITE_NOISE_OPTIONS[rowIdx + colIdx][1];
+                    final boolean selected = trackId.equals(snap.whiteNoiseTrack);
+                    TextView chip = buildRadioPillButton(app, trackLabel, selected, v -> selectWhiteNoiseTrack(app, trackId));
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(app, 48), 1f);
+                    if (colIdx == 0) lp.rightMargin = dp(app, 8);
+                    chip.setLayoutParams(lp);
+                    row.addView(chip);
+                }
+                noiseCard.addView(row);
+            }
+
+            TextView closeNoise = buildPillButton(app, "返回专注计时", false, v -> {
+                subPanel = SubPanel.NONE;
+                refreshFromControlAsync(app);
+            });
+            LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(app, 48));
+            closeLp.topMargin = dp(app, 4);
+            closeNoise.setLayoutParams(closeLp);
+            noiseCard.addView(closeNoise);
+            center.addView(noiseCard);
+        } else if (subPanel == SubPanel.WHITELIST) {
             LinearLayout wlCard = buildCard(app);
             TextView wlTitle = new TextView(app);
             wlTitle.setText("学习白名单应用（点击可直接打开）");
@@ -873,7 +1058,7 @@ final class FocusBlockOverlay {
             wlCard.addView(scroll);
 
             TextView closeWl = buildPillButton(app, "返回专注计时", false, v -> {
-                subPanel = "";
+                subPanel = SubPanel.NONE;
                 refreshFromControlAsync(app);
             });
             LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(app, 48));
@@ -881,7 +1066,7 @@ final class FocusBlockOverlay {
             closeWl.setLayoutParams(closeLp);
             wlCard.addView(closeWl);
             center.addView(wlCard);
-        } else if ("safety".equals(subPanel)) {
+        } else if (subPanel == SubPanel.SAFETY) {
             LinearLayout safetyCard = buildCard(app);
             TextView safetyTitle = new TextView(app);
             safetyTitle.setText("需要退出或修复权限状态？");
@@ -900,7 +1085,7 @@ final class FocusBlockOverlay {
             LinearLayout row = new LinearLayout(app);
             row.setOrientation(LinearLayout.HORIZONTAL);
             TextView backBtn = buildPillButton(app, "返回专注", false, v -> {
-                subPanel = "";
+                subPanel = SubPanel.NONE;
                 refreshFromControlAsync(app);
             });
             LinearLayout.LayoutParams b1 = new LinearLayout.LayoutParams(0, dp(app, 48), 1f);
@@ -946,10 +1131,15 @@ final class FocusBlockOverlay {
             pauseResume.setLayoutParams(p1);
             actionRow.addView(pauseResume);
 
-            TextView endBtn = buildPillButton(app, "结束", false, v -> {
-                subPanel = "confirm_finish";
-                refreshFromControlAsync(app);
-            });
+            TextView endBtn;
+            if (inRegretWindow) {
+                endBtn = buildPillButton(app, "取消", false, v -> executeAction(app, "focus_cancel"));
+            } else {
+                endBtn = buildPillButton(app, "结束", false, v -> {
+                    subPanel = SubPanel.CONFIRM_FINISH;
+                    refreshFromControlAsync(app);
+                });
+            }
             LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, dp(app, 50), 1f);
             endBtn.setLayoutParams(p2);
             actionRow.addView(endBtn);
@@ -976,13 +1166,13 @@ final class FocusBlockOverlay {
                 bottom.addView(tempBtn);
             }
 
-            if (!snap.whitelistApps.isEmpty() && !"whitelist".equals(subPanel)) {
+            if (!snap.whitelistApps.isEmpty() && subPanel != SubPanel.WHITELIST) {
                 TextView wlBtn = buildPillButton(
                     app,
                     "白名单应用（" + snap.whitelistApps.size() + "）",
                     mode != Mode.BLOCKED_APP || snap.temporaryRemaining <= 0,
                     v -> {
-                        subPanel = "whitelist";
+                        subPanel = SubPanel.WHITELIST;
                         refreshFromControlAsync(app);
                     }
                 );
@@ -992,7 +1182,7 @@ final class FocusBlockOverlay {
                 bottom.addView(wlBtn);
             }
 
-            if (!snap.strictMode && !"confirm_finish".equals(subPanel)) {
+            if (!snap.strictMode && subPanel != SubPanel.CONFIRM_FINISH) {
                 LinearLayout row = new LinearLayout(app);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1008,10 +1198,15 @@ final class FocusBlockOverlay {
                     pauseResume.setLayoutParams(p1);
                     row.addView(pauseResume);
                 }
-                TextView endBtn = buildPillButton(app, "结束", false, v -> {
-                    subPanel = "confirm_finish";
-                    refreshFromControlAsync(app);
-                });
+                TextView endBtn;
+                if (!snap.isLock && inRegretWindow) {
+                    endBtn = buildPillButton(app, "取消", false, v -> executeAction(app, "focus_cancel"));
+                } else {
+                    endBtn = buildPillButton(app, "结束", false, v -> {
+                        subPanel = SubPanel.CONFIRM_FINISH;
+                        refreshFromControlAsync(app);
+                    });
+                }
                 LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, dp(app, 48), 1f);
                 endBtn.setLayoutParams(p2);
                 row.addView(endBtn);
@@ -1029,7 +1224,7 @@ final class FocusBlockOverlay {
             safetyLink.setMinimumHeight(dp(app, 48));
             safetyLink.setPadding(dp(app, 12), dp(app, 10), dp(app, 12), dp(app, 10));
             safetyLink.setOnClickListener(v -> {
-                subPanel = "safety".equals(subPanel) ? "" : "safety";
+                subPanel = subPanel == SubPanel.SAFETY ? SubPanel.NONE : SubPanel.SAFETY;
                 refreshFromControlAsync(app);
             });
             bottom.addView(safetyLink);
@@ -1047,12 +1242,21 @@ final class FocusBlockOverlay {
                     control.focusAction("pause");
                 } else if ("focus_resume".equals(actionKind)) {
                     control.focusAction("resume");
+                } else if ("focus_cancel".equals(actionKind)) {
+                    control.focusAction("cancel");
                 } else if ("focus_finish".equals(actionKind)) {
-                    control.focusAction("finish");
+                    JSONObject preObs = control.observeControl();
+                    SessionSnapshot preSnap = extractSnapshot(app, preObs);
+                    if (preSnap.active && !preSnap.isLock
+                        && isInRegretWindow(preSnap.strictMode, preSnap.countdown, preSnap.elapsedMs)) {
+                        control.focusAction("cancel");
+                    } else {
+                        control.focusAction("finish");
+                    }
                 } else if ("lock_finish".equals(actionKind)) {
                     control.lockAction("finish", true);
                 }
-                subPanel = "";
+                subPanel = SubPanel.NONE;
                 JSONObject obs = control.observeControl();
                 SessionSnapshot snap = extractSnapshot(app, obs);
                 if (!snap.active) {
@@ -1067,8 +1271,34 @@ final class FocusBlockOverlay {
         });
     }
 
+    private static void selectWhiteNoiseTrack(Context app, String trackId) {
+        WORKER.execute(() -> {
+            try {
+                String normalized = WhiteNoisePolicy.normalizeTrack(trackId);
+                LocalStore store = LocalStore.get(app);
+                synchronized (store) {
+                    JSONObject data = store.read("data");
+                    if (data == null) data = new JSONObject();
+                    JSONObject prefs = data.optJSONObject("preferences");
+                    if (prefs == null) {
+                        prefs = new JSONObject();
+                        data.put("preferences", prefs);
+                    }
+                    prefs.put("whiteNoise", normalized);
+                    store.saveData(data, false);
+                }
+                WhiteNoisePlayer.getInstance(app).syncFromUserAction(app);
+                subPanel = SubPanel.NONE;
+                JSONObject obs = new FocusControl(app).observeControl();
+                renderAsync(app, obs, currentMode == Mode.BLOCKED_APP, currentMode == Mode.GUARD_PULLBACK, guardReasonLabel);
+                CatFocusPlugin.emitJsEvent("sessionChanged", "");
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
     private static void openRoute(Context app, String route) {
-        subPanel = "";
+        subPanel = SubPanel.NONE;
         safeRouteSuppressed = !route.startsWith("/focus") && !route.startsWith("/lock");
         dismiss();
         Intent intent = new Intent(app, MainActivity.class)
@@ -1096,7 +1326,7 @@ final class FocusBlockOverlay {
             yieldedWhitelistPackage = pkg;
             whitelistLaunchGraceUntilMs = safeUptimeMs() + WHITELIST_LAUNCH_GRACE_MS;
             mainForeground = false;
-            subPanel = "";
+            subPanel = SubPanel.NONE;
             dismiss();
             app.startActivity(launch);
         } catch (Exception ignored) {
@@ -1107,7 +1337,7 @@ final class FocusBlockOverlay {
 
     private static void openTemporaryChoice(Context app, String targetPkg) {
         if (TextUtils.isEmpty(targetPkg)) return;
-        subPanel = "";
+        subPanel = SubPanel.NONE;
         Intent intent = new Intent(app, FocusBlockActivity.class)
             .putExtra(FocusBlockActivity.TARGET_PACKAGE, targetPkg)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -1168,14 +1398,26 @@ final class FocusBlockOverlay {
             s.temporaryRemaining = Math.max(0, 3 - tempAccess.optInt("used", 0));
         }
         boolean keepScreenOn = true;
+        String whiteNoiseTrack = "off";
         try {
             JSONObject data = LocalStore.get(app).read("data");
             JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
-            if (prefs != null) keepScreenOn = prefs.optBoolean("keepScreenOn", true);
+            if (prefs != null) {
+                keepScreenOn = prefs.optBoolean("keepScreenOn", true);
+                whiteNoiseTrack = WhiteNoisePolicy.normalizeTrack(prefs.optString("whiteNoise", "off"));
+            }
         } catch (Exception ignored) {
         }
         s.keepScreenOn = keepScreenOn;
+        s.whiteNoiseTrack = whiteNoiseTrack;
         return s;
+    }
+
+    private static String resolveWhiteNoiseLabel(String trackId) {
+        for (String[] pair : WHITE_NOISE_OPTIONS) {
+            if (pair[0].equals(trackId)) return pair[1];
+        }
+        return "关闭";
     }
 
     private static String resolveAppLabel(Context context, String pkg) {
@@ -1230,6 +1472,15 @@ final class FocusBlockOverlay {
         return btn;
     }
 
+    private static TextView buildRadioPillButton(Context app, String label, boolean selected, View.OnClickListener click) {
+        TextView btn = buildPillButton(app, label, selected, click);
+        if (selected) {
+            btn.setTextColor(Color.parseColor(COLOR_BG));
+            btn.setBackground(pillBg(Color.parseColor(COLOR_INK), dp(app, 100), 0, 0));
+        }
+        return btn;
+    }
+
     static Typeface resolveNunitoTypeface(Context context) {
         if (cachedNunitoTypeface != null) return cachedNunitoTypeface;
         if (nunitoLoadAttempted || context == null) return null;
@@ -1248,43 +1499,40 @@ final class FocusBlockOverlay {
     static int[] resolveAnimalPalette(String animalId, String skinId) {
         String id = animalId == null ? "black-cat" : animalId;
         String skin = skinId == null ? "default" : skinId;
-        if ("black-cat".equals(id)) {
-            if ("cow".equals(skin)) return new int[] { 0xFFFFFFFF, 0xFF222222, 0xFFEF4E36 };
-            if ("siamese".equals(skin)) return new int[] { 0xFFE7D8C3, 0xFF4A3C31, 0xFF698CAA };
-            return new int[] { 0xFF222222, 0xFF3A3A3F, 0xFFEF4E36 };
+        AnimalPalette palette = !"default".equals(skin) ? ANIMAL_PALETTES.get(id + ":" + skin) : null;
+        if (palette == null) {
+            palette = ANIMAL_PALETTES.get(id);
         }
-        if ("yellow-chick".equals(id)) {
-            if ("chestnut".equals(skin)) return new int[] { 0xFF9C6B43, 0xFFE6C9A8, 0xFFEF4E36 };
-            if ("snow".equals(skin)) return new int[] { 0xFFFFFFFF, 0xFFF5F5F5, 0xFFE7A54A };
-            return new int[] { 0xFFF2C94C, 0xFFFFF3C4, 0xFFEF4E36 };
+        if (palette == null) {
+            palette = ANIMAL_PALETTES.get("black-cat");
         }
-        if ("white-goose".equals(id)) return new int[] { 0xFFFFFFFF, 0xFFF5F5F5, 0xFFEF4E36 };
-        if ("orange-cat".equals(id)) return new int[] { 0xFFE7A54A, 0xFFFFF6E8, 0xFFEF4E36 };
-        if ("pixel-bird".equals(id)) return new int[] { 0xFFA08BB0, 0xFFF5F5F5, 0xFFEF4E36 };
-        if ("patch-bear".equals(id)) return new int[] { 0xFF222222, 0xFF85858B, 0xFFEF4E36 };
-        if ("green-parrot".equals(id)) return new int[] { 0xFF7B9A80, 0xFFE7A54A, 0xFFEF4E36 };
-        if ("flying-pig".equals(id)) return new int[] { 0xFF222222, 0xFF85858B, 0xFFEF4E36 };
-        if ("balloon-dog".equals(id)) return new int[] { 0xFFEF4E36, 0xFFE7A54A, 0xFFFFFFFF };
-        if ("light-deer".equals(id)) return new int[] { 0xFF698CAA, 0xFFF5F5F5, 0xFFEF4E36 };
-        if ("angel-cat".equals(id)) return new int[] { 0xFF222222, 0xFFA08BB0, 0xFFE7A54A };
-        if ("black-dragon".equals(id)) return new int[] { 0xFF222222, 0xFFE7A54A, 0xFFEF4E36 };
-        return new int[] { 0xFF222222, 0xFF3A3A3F, 0xFFEF4E36 };
+        return palette.toArray();
     }
 
     private static final class PetGuardView extends View {
         private final String animalId;
         private final String skinId;
         private final boolean guardDoor;
+        private final int stage;
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path path = new Path();
         private final RectF rect = new RectF();
 
-        PetGuardView(Context context, String animalId, String skinId, boolean guardDoor) {
+        PetGuardView(
+            Context context,
+            String animalId,
+            String skinId,
+            boolean guardDoor,
+            long elapsedMs,
+            long targetMs,
+            boolean countdown
+        ) {
             super(context);
             this.animalId = animalId == null ? "black-cat" : animalId;
             this.skinId = skinId == null ? "default" : skinId;
             this.guardDoor = guardDoor;
+            this.stage = resolvePetStage(countdown, elapsedMs, targetMs);
             fill.setStyle(Paint.Style.FILL);
             stroke.setStyle(Paint.Style.STROKE);
             stroke.setStrokeCap(Paint.Cap.ROUND);
@@ -1325,51 +1573,63 @@ final class FocusBlockOverlay {
                 canvas.drawRoundRect(rect, 2f, 2f, fill);
             }
 
-            // Ground shadow
+            // Ground shadow scales with growth stage
             fill.setColor(0x14000000);
-            rect.set(28f, 100f, 92f, 111f);
+            float shadowHalfW = stage == 1 ? 22f : stage == 2 ? 28f : 32f;
+            rect.set(60f - shadowHalfW, 100f, 60f + shadowHalfW, 111f);
             canvas.drawOval(rect, fill);
 
-            // Back accessories (curled tail / wings / antlers / halo)
-            if ("black-cat".equals(animalId) || "orange-cat".equals(animalId)
-                || "angel-cat".equals(animalId) || "black-dragon".equals(animalId)) {
+            // Progressive growth scaling anchored at feet (60, 104)
+            float stageScale = stage == 1 ? 0.80f : stage == 2 ? 0.91f : 1.0f;
+            canvas.scale(stageScale, stageScale, 60f, 104f);
+
+            // Back accessories grow in stages 2 and 3
+            if (stage >= 2 && ("black-cat".equals(animalId) || "orange-cat".equals(animalId)
+                || "angel-cat".equals(animalId) || "black-dragon".equals(animalId))) {
                 stroke.setColor(inkColor);
                 stroke.setStrokeWidth(7.5f);
                 path.reset();
                 path.moveTo(82f, 90f);
-                path.quadTo(103f, 82f, 97f, 54f);
-                path.quadTo(94f, 44f, 88f, 49f);
+                if (stage == 2) {
+                    path.quadTo(96f, 84f, 94f, 70f);
+                } else {
+                    path.quadTo(103f, 82f, 97f, 54f);
+                    path.quadTo(94f, 44f, 88f, 49f);
+                }
                 canvas.drawPath(path, stroke);
             }
-            if ("angel-cat".equals(animalId) || "flying-pig".equals(animalId) || "black-dragon".equals(animalId)) {
+            if (stage >= 2 && ("angel-cat".equals(animalId) || "flying-pig".equals(animalId) || "black-dragon".equals(animalId))) {
                 fill.setColor("angel-cat".equals(animalId) ? bellyColor : 0xFF85858B);
-                rect.set(18f, 58f, 38f, 80f);
+                float wingSpread = stage == 2 ? 4f : 0f;
+                rect.set(18f + wingSpread, 58f, 38f, 80f);
                 canvas.drawOval(rect, fill);
-                rect.set(82f, 58f, 102f, 80f);
+                rect.set(82f, 58f, 102f - wingSpread, 80f);
                 canvas.drawOval(rect, fill);
                 stroke.setColor(inkColor);
                 stroke.setStrokeWidth(2f);
-                rect.set(18f, 58f, 38f, 80f);
+                rect.set(18f + wingSpread, 58f, 38f, 80f);
                 canvas.drawOval(rect, stroke);
-                rect.set(82f, 58f, 102f, 80f);
+                rect.set(82f, 58f, 102f - wingSpread, 80f);
                 canvas.drawOval(rect, stroke);
             }
-            if ("angel-cat".equals(animalId)) {
+            if (stage == 3 && "angel-cat".equals(animalId)) {
                 stroke.setColor(accentColor);
                 stroke.setStrokeWidth(3f);
                 rect.set(42f, 10f, 78f, 20f);
                 canvas.drawOval(rect, stroke);
             }
-            if ("light-deer".equals(animalId)) {
+            if (stage >= 2 && "light-deer".equals(animalId)) {
                 stroke.setColor(inkColor);
                 stroke.setStrokeWidth(3f);
                 canvas.drawLine(42f, 30f, 32f, 14f, stroke);
-                canvas.drawLine(36f, 22f, 44f, 16f, stroke);
                 canvas.drawLine(78f, 30f, 88f, 14f, stroke);
-                canvas.drawLine(84f, 22f, 76f, 16f, stroke);
-                fill.setColor(accentColor);
-                canvas.drawCircle(32f, 14f, 3.2f, fill);
-                canvas.drawCircle(88f, 14f, 3.2f, fill);
+                if (stage == 3) {
+                    canvas.drawLine(36f, 22f, 44f, 16f, stroke);
+                    canvas.drawLine(84f, 22f, 76f, 16f, stroke);
+                    fill.setColor(accentColor);
+                    canvas.drawCircle(32f, 14f, 3.2f, fill);
+                    canvas.drawCircle(88f, 14f, 3.2f, fill);
+                }
             }
 
             // Ears / horns / crest
@@ -1447,10 +1707,12 @@ final class FocusBlockOverlay {
                 }
             }
 
-            // Collar / Scarf accent
-            fill.setColor(accentColor);
-            rect.set(44f, 68f, 76f, 73f);
-            canvas.drawRoundRect(rect, 2.5f, 2.5f, fill);
+            // Collar / Scarf accent (stage 2+) & Guard badge bell on collar (stage 3)
+            if (stage >= 2) {
+                fill.setColor(accentColor);
+                rect.set(44f, 68f, 76f, 73f);
+                canvas.drawRoundRect(rect, 2.5f, 2.5f, fill);
+            }
 
             // Big white round eyes + dark pupils (signature AppMark / PetGraphic look)
             fill.setColor(0xFFFFFFFF);
@@ -1489,12 +1751,21 @@ final class FocusBlockOverlay {
                 canvas.drawCircle(60f, 58f, 4f, fill);
             }
 
-            // Guard badge bell on collar
-            fill.setColor(0xFFFFFFFF);
-            canvas.drawCircle(60f, 74f, 3.5f, fill);
-            stroke.setColor(inkColor);
-            stroke.setStrokeWidth(1.4f);
-            canvas.drawCircle(60f, 74f, 3.5f, stroke);
+            if (stage == 3) {
+                // Guard badge bell on collar
+                fill.setColor(0xFFFFFFFF);
+                canvas.drawCircle(60f, 74f, 3.5f, fill);
+                stroke.setColor(inkColor);
+                stroke.setStrokeWidth(1.4f);
+                canvas.drawCircle(60f, 74f, 3.5f, stroke);
+
+                // Front paws
+                fill.setColor(bodyColor);
+                rect.set(43f, 96f, 55f, 104f);
+                canvas.drawOval(rect, fill);
+                rect.set(65f, 96f, 77f, 104f);
+                canvas.drawOval(rect, fill);
+            }
 
             canvas.restore();
         }
@@ -1529,6 +1800,7 @@ final class FocusBlockOverlay {
         String title = "";
         String animalId = "black-cat";
         String skinId = "default";
+        String whiteNoiseTrack = "off";
         JSONArray whitelistPackages;
         List<String[]> whitelistApps = new java.util.ArrayList<>();
     }

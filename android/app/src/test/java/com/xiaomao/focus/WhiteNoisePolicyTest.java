@@ -74,6 +74,19 @@ public class WhiteNoisePolicyTest {
 
         WhiteNoisePolicy.Decision reselected = policy.evaluate("waves", 0.7, true, true);
         assertEquals(WhiteNoisePolicy.Action.PLAY, reselected.action);
+
+        // Becoming noisy preserves track in preferences; explicit user resume or new focus session resumes without wiping track
+        assertTrue(policy.onBecomingNoisy());
+        assertEquals("waves", policy.getCurrentTrack());
+        assertTrue(policy.isPausedByNoisy());
+        policy.clearPausedByNoisy();
+        assertFalse(policy.isPausedByNoisy());
+        assertEquals(WhiteNoisePolicy.Action.PLAY, policy.evaluate("waves", 0.7, true, true).action);
+
+        assertTrue(policy.onBecomingNoisy());
+        assertEquals(WhiteNoisePolicy.Action.STOP, policy.evaluate("waves", 0.7, false, false).action);
+        assertFalse(policy.isPausedByNoisy());
+        assertEquals(WhiteNoisePolicy.Action.PLAY, policy.evaluate("waves", 0.7, true, true).action);
     }
 
     @Test

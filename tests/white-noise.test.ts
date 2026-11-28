@@ -110,6 +110,10 @@ beforeEach(() => {
       weeklyFourColorMatrix: () => [],
     },
     lastResult: undefined,
+    whiteNoiseNoisyPaused: false,
+    clearWhiteNoiseNoisyPause: vi.fn(() => {
+      mocks.app.whiteNoiseNoisyPaused = false
+    }),
     notify: vi.fn(),
     start: vi.fn(async () => {}),
     action: vi.fn(async () => {}),
@@ -208,6 +212,44 @@ describe('whiteNoise playback controller and state linkage', () => {
     await controller.sync({ track: 'waves', volume: 0.5, hasActiveFocus: false, sessionState: null })
     expect(created[1]!.paused).toBe(true)
     expect(created[1]!.src).toBe('')
+  })
+
+  it('pauses browser audio on becoming noisy without clearing track and resumes on explicit user action or new session', async () => {
+    const created: Array<ReturnType<typeof makeMockAudio>> = []
+    const controller = createWhiteNoiseController({
+      isNative: () => false,
+      createAudio: (src) => {
+        const a = makeMockAudio(src)
+        created.push(a)
+        return a
+      },
+    })
+
+    await controller.sync({ track: 'waves', volume: 0.7, hasActiveFocus: true, sessionState: 'running' })
+    expect(created[0]!.paused).toBe(false)
+
+    // Becoming noisy pauses playback while retaining loaded track
+    controller.pauseForNoisy()
+    expect(created[0]!.paused).toBe(true)
+    expect(controller.getState().pausedByNoisy).toBe(true)
+    expect(controller.getState().currentTrack).toBe('waves')
+
+    // Non-user tick sync must NOT leak audio out of speaker while pausedByNoisy
+    await controller.sync({ track: 'waves', volume: 0.7, hasActiveFocus: true, sessionState: 'running' })
+    expect(created[0]!.paused).toBe(true)
+
+    // Explicit user selection/resume clears noisy pause and resumes playback
+    await controller.sync({ track: 'waves', volume: 0.7, hasActiveFocus: true, sessionState: 'running' }, true)
+    expect(controller.getState().pausedByNoisy).toBe(false)
+    expect(created[0]!.paused).toBe(false)
+
+    // Noisy pause during session A resets when session A ends so session B plays normally
+    controller.pauseForNoisy()
+    expect(created[0]!.paused).toBe(true)
+    await controller.sync({ track: 'waves', volume: 0.7, hasActiveFocus: false, sessionState: null })
+    expect(controller.getState().pausedByNoisy).toBe(false)
+    await controller.sync({ track: 'waves', volume: 0.7, hasActiveFocus: true, sessionState: 'running' })
+    expect(created[1]!.paused).toBe(false)
   })
 
   it('delegates playback on native platform without spawning WebView <audio>', async () => {

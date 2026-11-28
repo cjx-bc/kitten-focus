@@ -268,6 +268,9 @@ final class FocusControl {
             if (active == null || LockEngine.owns(active) || !"running".equals(active.optString("state"))) {
                 return null;
             }
+            JSONObject observation = observeControl();
+            JSONObject observedActive = observation.getJSONObject("focus").optJSONObject("session");
+            enforceFocusActionAllowed(observedActive, "fail_leave", observation.optBoolean("needsReconcile"));
             JSONObject result = focus.action("fail_leave");
             JSONObject remaining = result.optJSONObject("session");
             recovery.releaseFinished(remaining == null ? null : remaining.optString("id"));

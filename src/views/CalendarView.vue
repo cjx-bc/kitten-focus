@@ -25,13 +25,16 @@ import { renderWeeklyGridPngDataUrl } from '../domain/weeklyGridPng'
 import { exportPngFile } from '../platform/exportPng'
 import {
   classifyStartError,
-  getUnreadyProtectionIds,
   isCancelledStartError,
+  runClearUnreadyAndRetry,
+  runGoRecovery,
+  runOpenStudyPermissions,
   type StartErrorKind,
 } from '../domain/startRecovery'
 import Icon from '../components/Icon.vue'
 import PetGraphic from '../components/PetGraphic.vue'
 import Sheet from '../components/Sheet.vue'
+import StartErrorSheetContent from '../components/StartErrorSheetContent.vue'
 import { waitForDialogClose } from '../components/sheetClose'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
 
@@ -552,20 +555,27 @@ async function startFromEvent() {
   await runStartItem(item)
 }
 
-async function goRecoveryFromStartError() {
-  if (busy.value) return
+function clearStartErrorSheet() {
   sheet.value = null
   startError.value = null
-  await waitForDialogClose()
-  await router.push('/recovery')
+}
+
+async function goRecoveryFromStartError() {
+  if (busy.value) return
+  await runGoRecovery({
+    clearSheet: clearStartErrorSheet,
+    navigate: () => router.push('/recovery'),
+  })
 }
 
 async function openStudyFromStartError() {
   if (busy.value) return
-  sheet.value = null
-  startError.value = null
-  await waitForDialogClose()
-  studyOpen.value = true
+  await runOpenStudyPermissions({
+    clearSheet: clearStartErrorSheet,
+    openStudy: () => {
+      studyOpen.value = true
+    },
+  })
 }
 
 async function clearUnreadyAndRetry() {
@@ -577,20 +587,18 @@ async function clearUnreadyAndRetry() {
   }
   busy.value = true
   try {
-    const ids = await getUnreadyProtectionIds(app.data.preferences.protection)
-    if (!ids.length) {
-      sheet.value = null
-      startError.value = null
-      await waitForDialogClose()
-      studyOpen.value = true
-      return
-    }
-    await app.clearUnreadyProtections(ids, true)
-    sheet.value = null
-    startError.value = null
-    await waitForDialogClose()
-    busy.value = false
-    await runStartItem(item)
+    await runClearUnreadyAndRetry({
+      protection: app.data.preferences.protection,
+      clearUnreadyProtections: app.clearUnreadyProtections,
+      clearSheet: clearStartErrorSheet,
+      openStudy: () => {
+        studyOpen.value = true
+      },
+      retry: async () => {
+        busy.value = false
+        await runStartItem(item)
+      },
+    })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     if (!isCancelledStartError(message)) {
@@ -1767,48 +1775,15 @@ function coursePosition(o: Occurrence) {
         <button class="primary wide" :disabled="busy">确认本次调课</button>
       </form>
 
-      <div v-else-if="sheet === 'startError' && startError" class="stack">
-        <p class="notice" role="alert">{{ startError.message }}</p>
-        <template v-if="startError.kind === 'recovery'">
-          <button
-            type="button"
-            class="primary wide"
-            :disabled="busy"
-            @click="goRecoveryFromStartError"
-          >
-            前往故障恢复
-          </button>
-          <button type="button" class="secondary wide" :disabled="busy" @click="closeSheet()">
-            取消
-          </button>
-        </template>
-        <template v-else-if="startError.kind === 'protection'">
-          <button
-            type="button"
-            class="primary wide"
-            :disabled="busy"
-            @click="openStudyFromStartError"
-          >
-            前往学霸模式处理
-          </button>
-          <button
-            type="button"
-            class="secondary wide"
-            :disabled="busy"
-            @click="clearUnreadyAndRetry"
-          >
-            关闭未就绪保护并开始
-          </button>
-          <button type="button" class="text-button" :disabled="busy" @click="closeSheet()">
-            取消
-          </button>
-        </template>
-        <template v-else>
-          <button type="button" class="primary wide" :disabled="busy" @click="closeSheet()">
-            知道了
-          </button>
-        </template>
-      </div>
+      <StartErrorSheetContent
+        v-else-if="sheet === 'startError' && startError"
+        :error="startError"
+        :busy="busy"
+        @recovery="goRecoveryFromStartError"
+        @study="openStudyFromStartError"
+        @clear-retry="clearUnreadyAndRetry"
+        @close="closeSheet()"
+      />
 
       <form v-else-if="sheet === 'manual'" @submit.prevent="submitManualBackfill">
         <label>

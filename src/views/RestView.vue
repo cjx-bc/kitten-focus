@@ -1,3 +1,8 @@
+<script lang="ts">
+const POMODORO_LOOP_KEY = 'xiaomao-pomodoro-loop-handled'
+const handledLoopsByApp = new WeakMap<object, Set<string>>()
+</script>
+
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
@@ -7,12 +12,14 @@ import { resolveRestDurationMs } from '../domain/rest'
 import { playLightCompletionFeedback } from '../platform/feedback'
 import Icon from '../components/Icon.vue'
 import Sheet from '../components/Sheet.vue'
-import { waitForDialogClose } from '../components/sheetClose'
+import StartErrorSheetContent from '../components/StartErrorSheetContent.vue'
 import StudyModeSheet from '../components/StudyModeSheet.vue'
 import {
   classifyStartError,
-  getUnreadyProtectionIds,
   isCancelledStartError,
+  runClearUnreadyAndRetry,
+  runGoRecovery,
+  runOpenStudyPermissions,
   type StartErrorKind,
 } from '../domain/startRecovery'
 
@@ -24,7 +31,6 @@ const busy = ref(false),
   sheet = ref<RestSheet>(null),
   leaving = ref(false),
   studyOpen = ref(false),
-  loopTriggeredRecordId = ref<string | null>(null),
   startError = ref<{ message: string; kind: StartErrorKind } | null>(null)
 const session = computed(() => app.rest.session)
 const running = computed(() => session.value?.state === 'running')
@@ -41,10 +47,57 @@ const sheetTitle = computed(() => {
   return ''
 })
 
-function closeSheet() {
-  if (busy.value) return
+function getAppHandledSet(): Set<string> {
+  let set = handledLoopsByApp.get(app)
+  if (!set) {
+    set = new Set<string>()
+    handledLoopsByApp.set(app, set)
+  }
+  return set
+}
+
+function readStoredLoopIds(): string[] {
+  try {
+    if (typeof sessionStorage === 'undefined') return []
+    const raw = sessionStorage.getItem(POMODORO_LOOP_KEY)
+    const parsed = raw ? (JSON.parse(raw) as unknown) : []
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function isLoopHandled(recordId: string): boolean {
+  if (getAppHandledSet().has(recordId)) return true
+  return readStoredLoopIds().includes(recordId)
+}
+
+function markLoopHandled(recordId: string) {
+  getAppHandledSet().add(recordId)
+  try {
+    if (typeof sessionStorage === 'undefined') return
+    const next = Array.from(new Set([...readStoredLoopIds(), recordId])).slice(-20)
+    sessionStorage.setItem(POMODORO_LOOP_KEY, JSON.stringify(next))
+  } catch {}
+}
+
+function clearLoopHandled(recordId: string) {
+  getAppHandledSet().delete(recordId)
+  try {
+    if (typeof sessionStorage === 'undefined') return
+    const next = readStoredLoopIds().filter((id) => id !== recordId)
+    sessionStorage.setItem(POMODORO_LOOP_KEY, JSON.stringify(next))
+  } catch {}
+}
+
+function clearStartErrorSheet() {
   sheet.value = null
   startError.value = null
+}
+
+function closeSheet() {
+  if (busy.value) return
+  clearStartErrorSheet()
 }
 
 function requestExit() {
@@ -56,12 +109,16 @@ function requestExit() {
 async function exit() {
   if (busy.value) return
   busy.value = true
+  leaving.value = true
+  const currentRecordId = session.value?.record.id
+  if (currentRecordId) markLoopHandled(currentRecordId)
   try {
     await app.exitRest()
+    if (currentRecordId) clearLoopHandled(currentRecordId)
     sheet.value = null
-    leaving.value = true
     await router.replace('/focus')
   } catch (error) {
+    leaving.value = false
     app.notify(error instanceof Error ? error.message : String(error))
   } finally {
     busy.value = false
@@ -93,13 +150,16 @@ async function goRecoveryFromStartError() {
   if (busy.value) return
   busy.value = true
   try {
-    await app.exitRest()
-    sheet.value = null
-    startError.value = null
-    leaving.value = true
-    await waitForDialogClose()
-    await router.push('/recovery')
+    await runGoRecovery({
+      beforeNavigate: async () => {
+        await app.exitRest()
+        leaving.value = true
+      },
+      clearSheet: clearStartErrorSheet,
+      navigate: () => router.push('/recovery'),
+    })
   } catch (e) {
+    leaving.value = false
     app.notify(e instanceof Error ? e.message : String(e))
   } finally {
     busy.value = false
@@ -108,35 +168,49 @@ async function goRecoveryFromStartError() {
 
 async function openStudyFromStartError() {
   if (busy.value) return
-  sheet.value = null
-  startError.value = null
-  await waitForDialogClose()
-  studyOpen.value = true
+  await runOpenStudyPermissions({
+    clearSheet: clearStartErrorSheet,
+    openStudy: () => {
+      studyOpen.value = true
+    },
+  })
 }
 
 async function clearUnreadyAndRetry() {
   if (busy.value) return
   busy.value = true
   try {
-    const ids = await getUnreadyProtectionIds(app.data.preferences.protection)
-    if (!ids.length) {
-      sheet.value = null
-      startError.value = null
-      await waitForDialogClose()
-      studyOpen.value = true
-      return
-    }
-    await app.clearUnreadyProtections(ids, true)
-    sheet.value = null
-    startError.value = null
-    await waitForDialogClose()
-    busy.value = false
-    await again()
+    await runClearUnreadyAndRetry({
+      protection: app.data.preferences.protection,
+      clearUnreadyProtections: app.clearUnreadyProtections,
+      clearSheet: clearStartErrorSheet,
+      openStudy: () => {
+        studyOpen.value = true
+      },
+      retry: async () => {
+        busy.value = false
+        await again()
+      },
+    })
   } catch (e) {
     app.notify(e instanceof Error ? e.message : String(e))
   } finally {
     busy.value = false
   }
+}
+
+function maybeTriggerPomodoroLoop() {
+  if (leaving.value || busy.value) return
+  const current = session.value
+  if (!current || current.state !== 'completed') return
+  if (app.data.preferences.pomodoroLoop !== true) return
+  if (isLoopHandled(current.record.id)) return
+  markLoopHandled(current.record.id)
+  playLightCompletionFeedback({
+    sound: app.data.preferences.sound,
+    vibration: app.data.preferences.vibration,
+  })
+  void again()
 }
 
 watch(
@@ -147,22 +221,17 @@ watch(
 )
 watch(
   () => session.value?.state,
-  (nextState, prevState) => {
-    if (prevState !== 'running' || nextState !== 'completed') return
-    const rec = session.value?.record
-    if (!rec || loopTriggeredRecordId.value === rec.id) return
-    if (app.data.preferences.pomodoroLoop !== true) return
-    loopTriggeredRecordId.value = rec.id
-    playLightCompletionFeedback({
-      sound: app.data.preferences.sound,
-      vibration: app.data.preferences.vibration,
-    })
-    void again()
+  (nextState) => {
+    if (nextState === 'completed') maybeTriggerPomodoroLoop()
   },
 )
 onMounted(() => {
   document.addEventListener('rest-exit-request', requestExit)
-  if (!session.value) void router.replace('/focus')
+  if (!session.value) {
+    void router.replace('/focus')
+    return
+  }
+  maybeTriggerPomodoroLoop()
 })
 onBeforeUnmount(() => document.removeEventListener('rest-exit-request', requestExit))
 onBeforeRouteLeave(async () => {
@@ -211,33 +280,15 @@ onBeforeRouteLeave(async () => {
         <button type="button" class="secondary" :disabled="busy" @click="closeSheet">继续休息</button>
         <button type="button" class="primary" :disabled="busy" @click="exit">退出休息</button>
       </div>
-      <div v-else-if="sheet === 'startError' && startError" class="stack">
-        <p class="notice" role="alert">{{ startError.message }}</p>
-        <template v-if="startError.kind === 'recovery'">
-          <button type="button" class="primary wide" :disabled="busy" @click="goRecoveryFromStartError">
-            前往故障恢复
-          </button>
-          <button type="button" class="secondary wide" :disabled="busy" @click="closeSheet">
-            取消
-          </button>
-        </template>
-        <template v-else-if="startError.kind === 'protection'">
-          <button type="button" class="primary wide" :disabled="busy" @click="openStudyFromStartError">
-            前往学霸模式处理
-          </button>
-          <button type="button" class="secondary wide" :disabled="busy" @click="clearUnreadyAndRetry">
-            关闭未就绪保护并开始
-          </button>
-          <button type="button" class="text-button" :disabled="busy" @click="closeSheet">
-            取消
-          </button>
-        </template>
-        <template v-else>
-          <button type="button" class="primary wide" :disabled="busy" @click="closeSheet">
-            知道了
-          </button>
-        </template>
-      </div>
+      <StartErrorSheetContent
+        v-else-if="sheet === 'startError' && startError"
+        :error="startError"
+        :busy="busy"
+        @recovery="goRecoveryFromStartError"
+        @study="openStudyFromStartError"
+        @clear-retry="clearUnreadyAndRetry"
+        @close="closeSheet"
+      />
     </Sheet>
     <StudyModeSheet
       :open="studyOpen"
