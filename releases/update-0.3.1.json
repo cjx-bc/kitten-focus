@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "applicationId": "com.xiaomao.focus",
+    "versionCode": 26,
+    "versionName": "0.3.1",
+    "minSdk": 24,
+    "url": "https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.1/xiaomao-focus-0.3.1-debug.apk",
+    "downloadUrls": [
+      "https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.1/xiaomao-focus-0.3.1-debug.apk",
+      "https://download-focus.linma.asia/releases/xiaomao-focus-0.3.1-debug.apk",
+      "https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.1/xiaomao-focus-0.3.1-debug.apk",
+      "https://47.251.9.162/releases/xiaomao-focus-0.3.1-debug.apk"
+    ],
+    "size": 6325735,
+    "sha256": "1582e427ce437bc5f76eeaee23de308290a25ff28f6ed4fcde50440472ec50aa",
+    "notes": "稳定性修复版上线：修复日历四色图与一周农场 PNG 原生 SAF 导出 `TransactionTooLargeException` 闪退及设置导出弹窗未收起问题；修复白噪音永久失焦循环抢焦点、Android 16 开机 `mediaPlayback` 前台服务崩溃及状态通知 10 秒延迟展示；修复原生专注覆盖层 Nunito 字重、白噪音面板裁剪与正计时误显「取消」，并消除 `FocusControl` 锁竞争及主线程扫描开销；对齐手动补录仅计入时间轴与时长的统计口径，修复 10 秒内通知「结束」撤回、轻看护异常退出竞态、跨天时间轴与 365 热力图闰年边界。沿用原包名与内测签名，可直接覆盖安装保留本地数据。"
+  }
+}

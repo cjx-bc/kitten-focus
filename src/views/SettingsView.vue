@@ -703,15 +703,15 @@ async function openBatteryOptimization() {
                   <h3 id="latest-release-title">最近更新</h3>
                   <time datetime="2026-11-28">2026.11.28</time>
                 </div>
-                <p class="release-name">v0.3.0 <span>专注待机首屏、一周农场、时间轴统计与三档防分心</span></p>
+                <p class="release-name">v0.3.1 <span>稳定性修复、导出加固与 Android 16 实机优化</span></p>
                 <ul class="release-changes">
-                  <li>上线专注待机首屏、滑动调时、黑猫三阶段孵育、10 秒无责撤回与左滑放弃，内置 12 只百兽双轨图鉴、多毛色皮肤、一周农场与打卡图导出。</li>
-                  <li>新增时间轴卡片与防刷分手动补录、一周 24 小时四色分布图、离线白噪音锁屏续播、自定义休息与番茄循环、常驻通知操控及统计 365 热力图。</li>
-                  <li>融合零权限「离开应用 10 秒看护」与原学霸模式/锁机三档防分心，沿用原包名与内测签名，支持从「我的 → 检查更新」或直接覆盖安装保留本地数据。</li>
+                  <li>修复日历四色分布图与一周农场 PNG 导出在原生 SAF 选择器下触发 `TransactionTooLargeException` 闪退，并将导入/导出写入改为临时文件与后台线程；修复设置备份导出前未收起弹窗的问题。</li>
+                  <li>修复白噪音失焦循环抢焦点、Android 16 开机续锁 `mediaPlayback` 前台服务崩溃、状态通知前 10 秒延迟展示、原生专注覆盖层白噪音面板裁剪与字体字重异常，并优化 `FocusControl` 锁竞争与主线程响应。</li>
+                  <li>对齐手动补录统计口径（仅计入时间轴与时长，不计入专注次数与好感），修复 10 秒内通知「结束」撤回、轻看护异常退出竞态、跨天时间轴及 365 热力图闰年边界，并保留原有数据兼容。</li>
                 </ul>
                 <a
                   class="about-link"
-                  href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.3.0"
+                  href="https://github.com/cjx-bc/kitten-focus/releases/tag/v0.3.1"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

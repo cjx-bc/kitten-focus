@@ -10,8 +10,8 @@
     />
     <title>小猫专注 · 把时间留给自己</title>
     <link rel="icon" href="/site/cat.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/site/style.css?v=0.3.0" />
-    <script src="/site/download.js?v=0.3.0" defer></script>
+    <link rel="stylesheet" href="/site/style.css?v=0.3.1" />
+    <script src="/site/download.js?v=0.3.1" defer></script>
   </head>
   <body>
     <header class="header wrap">
@@ -29,7 +29,7 @@
           <a
             class="download-button"
             id="download-main"
-            href="https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.0/xiaomao-focus-0.3.0-debug.apk"
+            href="https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.1/xiaomao-focus-0.3.1-debug.apk"
             download
             ><svg
               width="20"
@@ -44,7 +44,7 @@
             ><span>下载安卓版</span></a
           >
           <p class="version-meta">
-            <span data-version>v0.3.0</span><span>·</span><span data-size>6.0 MB</span><span>·</span
+            <span data-version>v0.3.1</span><span>·</span><span data-size>6.0 MB</span><span>·</span
             ><span>Android 7.0 及以上</span>
           </p>
           <p class="download-status" id="download-status" role="status" aria-live="polite"></p>
@@ -116,12 +116,12 @@
             <a
               id="download-secondary"
               class="text-link"
-              href="https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.0/xiaomao-focus-0.3.0-debug.apk"
+              href="https://gh-proxy.com/https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.1/xiaomao-focus-0.3.1-debug.apk"
               >下载安卓安装包 <span aria-hidden="true">↗</span></a
             ><a
               id="backup-download"
               class="backup-link"
-              href="https://download-focus.linma.asia/releases/xiaomao-focus-0.3.0-debug.apk"
+              href="https://download-focus.linma.asia/releases/xiaomao-focus-0.3.1-debug.apk"
               >备用下载</a
             >
           </div>
@@ -129,7 +129,7 @@
             <a
               id="github-download"
               class="backup-link"
-              href="https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.0/xiaomao-focus-0.3.0-debug.apk"
+              href="https://github.com/cjx-bc/kitten-focus/releases/download/v0.3.1/xiaomao-focus-0.3.1-debug.apk"
               >GitHub 原站下载</a
             >
           </p>
@@ -147,9 +147,9 @@
       <section class="release-section wrap" aria-labelledby="release-title">
         <div class="release-header">
           <h2 id="release-title">最近更新</h2>
-          <span data-version>v0.3.0</span>
+          <span data-version>v0.3.1</span>
         </div>
-        <p id="release-notes">P0 核心版上线：新增专注待机首屏与滑动调时（5～180 分钟及正计时），小黑猫随进度三阶段实时孵育，支持 10 秒无责取消与左滑放弃；上线 12 只百兽双轨图鉴（10 只好感阶梯解锁 + 2 只成就解锁）与黑猫/小鸡多毛色皮肤、一周农场展示与周打卡图导出；时间轴默认开启并支持防刷分手动补录与一周 24 小时四色分布图导出；统计页升级日/周/月/年/累计多维视图与 365 热力图；新增离线白噪音锁屏续播、自定义休息与番茄循环、常驻通知暂停/结束控制；融合零权限「离开应用 10 秒看护」与原学霸模式/独立锁机三档防分心，原有待办、日程、课表与备份兼容保留。沿用原包名和内测签名，可直接覆盖安装保留本地数据。</p>
+        <p id="release-notes">稳定性修复版上线：修复日历四色图与一周农场 PNG 原生 SAF 导出 `TransactionTooLargeException` 闪退及设置导出弹窗未收起问题；修复白噪音永久失焦循环抢焦点、Android 16 开机 `mediaPlayback` 前台服务崩溃及状态通知 10 秒延迟展示；修复原生专注覆盖层 Nunito 字重、白噪音面板裁剪与正计时误显「取消」，并消除 `FocusControl` 锁竞争及主线程扫描开销；对齐手动补录仅计入时间轴与时长的统计口径，修复 10 秒内通知「结束」撤回、轻看护异常退出竞态、跨天时间轴与 365 热力图闰年边界。沿用原包名与内测签名，可直接覆盖安装保留本地数据。</p>
         <details>
           <summary>安装与数据说明</summary>
           <p>
