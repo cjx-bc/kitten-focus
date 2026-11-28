@@ -313,4 +313,21 @@ describe('RestView pomodoroLoop behavior', () => {
     secondMount.unmount()
     expect(mocks.app.start).toHaveBeenCalledTimes(1)
   })
+
+  it('does NOT auto-start next focus when cold-opening a stale completed rest (>5m past endsAt)', async () => {
+    mocks.app.data.preferences.pomodoroLoop = true
+    const record = makeRecord({ id: 'rec-stale-hours-ago' })
+    const oldEnd = Date.now() - 2 * 3_600_000
+    mocks.app.rest = {
+      session: { durationMs: 300_000, record, startedAt: oldEnd - 300_000, endsAt: oldEnd, state: 'completed' },
+      remainingMs: 0,
+    }
+
+    const mounted = mountLiveRestView()
+    await nextTick()
+    mounted.unmount()
+
+    expect(mocks.app.start).not.toHaveBeenCalled()
+    expect(mocks.feedback).not.toHaveBeenCalled()
+  })
 })

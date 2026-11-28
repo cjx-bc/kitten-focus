@@ -120,6 +120,17 @@ describe('FocusView standby, 3-stage growth, 10s cancel, and settlement', () => 
     mocks.app.focus.elapsedMs = 80_000
     const stage3 = await mountFocusSSR()
     expect(stage3.html).toContain('小黑猫（阶段3）')
+
+    // Stopwatch under 10s must NOT enter the 10s cancel regret window
+    mocks.app.focus.session = {
+      ...mocks.app.focus.session,
+      id: 'f-sw',
+      mode: 'stopwatch',
+    }
+    mocks.app.focus.elapsedMs = 4_000
+    const sw = await mountFocusSSR()
+    expect(sw.html).toContain('end-control')
+    expect(sw.html).not.toMatch(/cancel-control[^>]*>\s*取消\s*</)
   })
 
   it('renders completed affection/litter gains and early failure chips + note input', async () => {

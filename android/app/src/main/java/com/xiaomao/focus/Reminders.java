@@ -52,13 +52,17 @@ final class Reminders {
     static void scheduleRest(Context c,long due){schedule(c,AlarmManager.ELAPSED_REALTIME_WAKEUP,due,restIntent(c));}
     static void cancelRest(Context c){c.getSystemService(AlarmManager.class).cancel(restIntent(c));NotificationManagerCompat.from(c).cancel(REST_ID);}
     static void showRestFinished(Context c){
+        showRestFinished(c,false);
+    }
+    static void showRestFinished(Context c,boolean pomodoroLoop){
         if(!notificationsAllowed(c))return;
         boolean sound=true,vibration=true;
         try{JSONObject data=LocalStore.get(c).read("data");if(data!=null){JSONObject preferences=data.optJSONObject("preferences");if(preferences!=null){sound=preferences.optBoolean("sound",true);vibration=preferences.optBoolean("vibration",true);}}}catch(Exception ignored){}
         String id="rest-done-"+sound+"-"+vibration;
         channel(c,id,"休息结束提醒",sound,vibration,false);
+        String body=pomodoroLoop?"休息结束，返回应用继续下一轮专注":"下一段专注，由你自己开始。";
         post(c,REST_ID,builder(c,id).setContentTitle("休息结束，准备好再开始")
-            .setContentText("下一段专注，由你自己开始。").setAutoCancel(true).build());
+            .setContentText(body).setAutoCancel(true).build());
     }
     static boolean notificationsAllowed(Context c){return Build.VERSION.SDK_INT<33||ContextCompat.checkSelfPermission(c,Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED;}
     private static void post(Context context, int id, Notification notification) {
@@ -113,7 +117,7 @@ final class Reminders {
     private static void channel(Context c,String id,String title,boolean sound,boolean vibration,boolean low){channelWithImportance(c,id,title,sound,vibration,low?NotificationManager.IMPORTANCE_LOW:NotificationManager.IMPORTANCE_DEFAULT);}
     private static void channelWithImportance(Context c,String id,String title,boolean sound,boolean vibration,int importance){if(Build.VERSION.SDK_INT>=26){NotificationChannel channel=new NotificationChannel(id,title,importance);channel.enableVibration(vibration);if(!sound)channel.setSound(null,null);else channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());c.getSystemService(NotificationManager.class).createNotificationChannel(channel);}}
     private static NotificationCompat.Builder builder(Context c,String channel){return new NotificationCompat.Builder(c,channel).setSmallIcon(R.drawable.ic_stat_focus).setContentIntent(open(c)).setColor(0xff222222);}
-    static Notification buildFocusNotification(Context c,JSONObject s,long elapsed){channel(c,"focus-status","专注状态",false,false,true);boolean paused=s.optString("state").equals("paused"),countdown=s.optString("mode").equals("countdown");NotificationCompat.Builder notification=builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle(s.optString("title","专注中")).setContentText(paused?"已暂停 · 点击返回专注":countdown?"倒计时专注进行中":"正计时专注进行中").setOngoing(true).setOnlyAlertOnce(true).setSilent(true).setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+    static Notification buildFocusNotification(Context c,JSONObject s,long elapsed){channel(c,"focus-status","专注状态",false,false,true);boolean paused=s.optString("state").equals("paused"),countdown=s.optString("mode").equals("countdown");NotificationCompat.Builder notification=builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle(s.optString("title","专注中")).setContentText(paused?"已暂停 · 点击返回专注":countdown?"倒计时专注进行中":"正计时专注进行中").setOngoing(true).setOnlyAlertOnce(true).setSilent(true).setVisibility(NotificationCompat.VISIBILITY_PUBLIC).setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE);
         if(LockEngine.owns(s)) notification.setContentText(s.optBoolean("strictMode")?"严格锁机进行中 · 到期自动结束":"普通锁机进行中 · 点击返回锁机");
         if(!paused){notification.setUsesChronometer(true).setWhen(countdown?System.currentTimeMillis()+Math.max(0,s.optLong("targetMs")-elapsed):System.currentTimeMillis()-elapsed).setChronometerCountDown(countdown);}
         if(shouldShowFocusControls(s)){
@@ -123,7 +127,7 @@ final class Reminders {
         }
         notification.addAction(0,"帮助与故障恢复",recovery(c));
         return notification.build();}
-    static Notification buildFallbackKeepAliveNotification(Context c){channel(c,"focus-status","专注状态",false,false,true);return builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle("小猫专注").setContentText("正在同步专注状态").setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build();}
+    static Notification buildFallbackKeepAliveNotification(Context c){channel(c,"focus-status","专注状态",false,false,true);return builder(c,"focus-status").setContentIntent(returnToFocus(c)).setContentTitle("小猫专注").setContentText("正在同步专注状态").setOngoing(true).setOnlyAlertOnce(true).setSilent(true).setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE).build();}
     static void showFocus(Context c,JSONObject s,long elapsed){FocusKeepAliveService.ensureStarted(c);if(!notificationsAllowed(c))return;post(c,FOCUS_ID,buildFocusNotification(c,s,elapsed));}
     static void showLeaveWarning(Context c){
         if(c==null||!notificationsAllowed(c))return;

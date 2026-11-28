@@ -67,6 +67,10 @@ public class BusinessBackupDataPetTest {
         rejectRecord("note", CHICK.repeat(101), false, JSONObject.NULL);
         rejectRecord("source", "other", 3, JSONObject.NULL);
         rejectRecord("failReason", "other", false, JSONObject.NULL);
+
+        assertThrows(IllegalArgumentException.class, () ->
+            BusinessBackupData.validateRecordFields(new JSONObject().put("id", "r1").put("animalId", "bad"))
+        );
     }
 
     @Test

@@ -1,5 +1,7 @@
 # 小猫专注：第一版产品规格
 
+> **历史基线归档说明**：本文档记录 `v0.1–v0.2` 第一版已确认基线。自 `v0.3.0` 起，专注待机首屏、单局伴学养成、一周农场、手动补录、离线白噪音、自定义休息与番茄循环、轻看护及三档防分心已按 [docs/ux-spec.md](ux-spec.md)、[docs/cat-companion-plan.md](cat-companion-plan.md) 与 [ADR 0004](adr/0004-native-focus-control-boundary.md) / [ADR 0005](adr/0005-chickfocus-full-parity-architecture.md) 演进，当前实现请以 `ux-spec.md` 与 `GLOSSARY.md` 为准。
+
 版本：已确认需求基线 v1。日期：2026-11-14。状态：用户已在 Q32 回复“确认”，包括指标补充与实现质量约束；现进入实现与验证阶段。
 
 来源：[访谈记录](requirements.md)、[业务术语](../GLOSSARY.md)、[架构决策](adr/)、[界面参考](references/README.md)。本规格汇总最终决定，已吸收对 Q7、Q11 和 Q29 的修订。

@@ -15,6 +15,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -26,6 +27,7 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -186,6 +188,10 @@ final class FocusBlockOverlay {
         return mode == Mode.NORMAL_FOCUS;
     }
 
+    static boolean shouldUseCompactHeader(SubPanel panel) {
+        return panel == SubPanel.WHITE_NOISE || panel == SubPanel.WHITELIST;
+    }
+
     private static long safeUptimeMs() {
         try {
             return SystemClock.uptimeMillis();
@@ -260,7 +266,7 @@ final class FocusBlockOverlay {
     }
 
     static boolean isInRegretWindow(boolean strictMode, boolean countdown, long elapsedMs) {
-        return !(strictMode && countdown) && elapsedMs < FocusEngine.REGRET_WINDOW_MS;
+        return !strictMode && countdown && elapsedMs < FocusEngine.REGRET_WINDOW_MS;
     }
 
     static int resolvePetStage(boolean countdown, long elapsedMs, long targetMs) {
@@ -379,6 +385,9 @@ final class FocusBlockOverlay {
         if (shouldSuppressForWhitelist(mainForeground, false, false, yieldedWhitelistPackage, safeUptimeMs(), whitelistLaunchGraceUntilMs)) {
             return;
         }
+        if (overlayView != null && (currentMode == Mode.BLOCKED_APP || currentMode == Mode.GUARD_PULLBACK) && !mainForeground) {
+            return;
+        }
         yieldedWhitelistPackage = "";
         blockedPackage = "";
         guardReasonLabel = "";
@@ -472,8 +481,28 @@ final class FocusBlockOverlay {
         final Context app = context.getApplicationContext();
         WORKER.execute(() -> {
             try {
-                JSONObject observation = new FocusControl(app).observeControl();
+                JSONObject observation = new FocusControl(app).observeSessionState();
                 showForSession(app, observation);
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    private static void refreshCurrentOverlayAsync(Context context) {
+        if (context == null) return;
+        final Context app = context.getApplicationContext();
+        final Mode modeSnapshot = currentMode;
+        final String reasonSnapshot = guardReasonLabel;
+        WORKER.execute(() -> {
+            try {
+                JSONObject observation = new FocusControl(app).observeSessionState();
+                boolean isBlocked = modeSnapshot == Mode.BLOCKED_APP;
+                boolean isGuard = modeSnapshot == Mode.GUARD_PULLBACK;
+                if (isBlocked || isGuard) {
+                    renderAsync(app, observation, isBlocked, isGuard, reasonSnapshot);
+                } else {
+                    showForSession(app, observation);
+                }
             } catch (Exception ignored) {
             }
         });
@@ -481,7 +510,24 @@ final class FocusBlockOverlay {
 
     static void refreshKeepScreenOn(Context context) {
         if (context != null && overlayView != null) {
+            refreshCurrentOverlayAsync(context);
+        }
+    }
+
+    static void syncForActiveSession(Context context) {
+        if (context == null) return;
+        if (overlayView != null) {
+            refreshCurrentOverlayAsync(context);
+            return;
+        }
+        if (mainForeground && !safeRouteSuppressed && canAttachOverlay(context)) {
             refreshFromControlAsync(context);
+        }
+    }
+
+    static void dismissIfLockedOrBlocked() {
+        if (isLockedMode(currentMode)) {
+            dismiss();
         }
     }
 
@@ -494,48 +540,61 @@ final class FocusBlockOverlay {
     ) {
         Handler handler = mainHandler();
         if (handler == null) return;
-        Runnable renderTask = () -> {
-            appContext = app;
-            SessionSnapshot snap = extractSnapshot(app, observation);
-            if (!snap.active) {
-                dismiss();
-                return;
-            }
-            if (FocusProtection.isInActiveCall(app)) {
-                dismiss();
-                return;
-            }
-            KeyguardManager km = app.getSystemService(KeyguardManager.class);
-            if (km != null && km.isKeyguardLocked()) {
-                dismiss();
-                return;
-            }
-            if ((safeRouteSuppressed || shouldSuppressOverlay(snap.active, currentRoute)) && !blockedApp && !guardPullback) {
-                dismiss();
-                return;
-            }
-            if (shouldSuppressForWhitelist(mainForeground, blockedApp, guardPullback, yieldedWhitelistPackage, safeUptimeMs(), whitelistLaunchGraceUntilMs)) {
-                dismiss();
-                return;
-            }
-            Mode resolved = resolveOverlayMode(true, snap.studyOrLock, blockedApp, guardPullback);
-            if (resolved == Mode.NORMAL_FOCUS && !mainForeground) {
-                dismiss();
-                return;
-            }
-            if (!canAttachOverlay(app)) {
-                return;
-            }
-            currentMode = resolved;
-            guardReasonLabel = reasonLabel == null ? "" : reasonLabel;
-            attachOrUpdateWindow(app, snap, resolved);
-            scheduleTick(app);
-        };
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            renderTask.run();
-        } else {
-            handler.post(renderTask);
+            WORKER.execute(() -> {
+                SessionSnapshot snap = extractSnapshot(app, observation);
+                Handler main = mainHandler();
+                if (main != null) {
+                    main.post(() -> applySnapshotOnMain(app, snap, blockedApp, guardPullback, reasonLabel));
+                }
+            });
+            return;
         }
+        SessionSnapshot snap = extractSnapshot(app, observation);
+        handler.post(() -> applySnapshotOnMain(app, snap, blockedApp, guardPullback, reasonLabel));
+    }
+
+    private static void applySnapshotOnMain(
+        Context app,
+        SessionSnapshot snap,
+        boolean blockedApp,
+        boolean guardPullback,
+        String reasonLabel
+    ) {
+        appContext = app;
+        if (!snap.active) {
+            dismiss();
+            return;
+        }
+        if (FocusProtection.isInActiveCall(app)) {
+            dismiss();
+            return;
+        }
+        KeyguardManager km = app.getSystemService(KeyguardManager.class);
+        if (km != null && km.isKeyguardLocked()) {
+            dismiss();
+            return;
+        }
+        if ((safeRouteSuppressed || shouldSuppressOverlay(snap.active, currentRoute)) && !blockedApp && !guardPullback) {
+            dismiss();
+            return;
+        }
+        if (shouldSuppressForWhitelist(mainForeground, blockedApp, guardPullback, yieldedWhitelistPackage, safeUptimeMs(), whitelistLaunchGraceUntilMs)) {
+            dismiss();
+            return;
+        }
+        Mode resolved = resolveOverlayMode(true, snap.studyOrLock, blockedApp, guardPullback);
+        if (resolved == Mode.NORMAL_FOCUS && !mainForeground) {
+            dismiss();
+            return;
+        }
+        if (!canAttachOverlay(app)) {
+            return;
+        }
+        currentMode = resolved;
+        guardReasonLabel = reasonLabel == null ? "" : reasonLabel;
+        attachOrUpdateWindow(app, snap, resolved);
+        scheduleTick(app);
     }
 
     private static void scheduleTick(Context app) {
@@ -550,9 +609,20 @@ final class FocusBlockOverlay {
                     tickScheduled = false;
                     return;
                 }
+                PowerManager pm = app.getSystemService(PowerManager.class);
+                KeyguardManager km = app.getSystemService(KeyguardManager.class);
+                if ((pm != null && !pm.isInteractive()) || (km != null && km.isKeyguardLocked())) {
+                    Handler main = mainHandler();
+                    if (main != null && overlayView != null) {
+                        main.postDelayed(this, TICK_INTERVAL_MS);
+                    } else {
+                        tickScheduled = false;
+                    }
+                    return;
+                }
                 WORKER.execute(() -> {
                     try {
-                        JSONObject obs = new FocusControl(app).observeControl();
+                        JSONObject obs = new FocusControl(app).observeSessionState();
                         SessionSnapshot snap = extractSnapshot(app, obs);
                         if (snap.active && snap.countdown && snap.remainingMs <= 0L) {
                             obs = new FocusControl(app).reconcile();
@@ -759,7 +829,7 @@ final class FocusBlockOverlay {
                 if (code == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
                     if (subPanel != SubPanel.NONE) {
                         subPanel = SubPanel.NONE;
-                        refreshFromControlAsync(app);
+                        refreshCurrentOverlayAsync(app);
                         return true;
                     }
                     openRoute(app, "/tasks");
@@ -815,7 +885,7 @@ final class FocusBlockOverlay {
         ));
 
         if (mode == Mode.NORMAL_FOCUS) {
-            TextView backTasks = buildPillButton(app, "← 待办", false, v -> openRoute(app, "/tasks"));
+            TextView backTasks = buildPillButton(app, "← 返回", false, v -> openRoute(app, "/tasks"));
             topRow.addView(backTasks);
 
             View spacer = new View(app);
@@ -827,7 +897,7 @@ final class FocusBlockOverlay {
                 : "白噪音 · " + resolveWhiteNoiseLabel(snap.whiteNoiseTrack);
             TextView noiseBtn = buildPillButton(app, noiseLabel, false, v -> {
                 subPanel = subPanel == SubPanel.WHITE_NOISE ? SubPanel.NONE : SubPanel.WHITE_NOISE;
-                refreshFromControlAsync(app);
+                refreshCurrentOverlayAsync(app);
             });
             LinearLayout.LayoutParams noiseLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -839,7 +909,7 @@ final class FocusBlockOverlay {
 
             TextView helpBtn = buildPillButton(app, "帮助与恢复", false, v -> {
                 subPanel = subPanel == SubPanel.SAFETY ? SubPanel.NONE : SubPanel.SAFETY;
-                refreshFromControlAsync(app);
+                refreshCurrentOverlayAsync(app);
             });
             topRow.addView(helpBtn);
         } else {
@@ -881,35 +951,63 @@ final class FocusBlockOverlay {
             badge.setSingleLine(true);
             badge.setEllipsize(TextUtils.TruncateAt.END);
             badgePill.addView(badge);
-            topRow.addView(badgePill);
+
+            if (!snap.isLock) {
+                LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                badgeLp.rightMargin = dp(app, 8);
+                badgePill.setLayoutParams(badgeLp);
+                topRow.addView(badgePill);
+
+                String noiseLabel = "off".equals(snap.whiteNoiseTrack)
+                    ? "白噪音"
+                    : "白噪音 · " + resolveWhiteNoiseLabel(snap.whiteNoiseTrack);
+                TextView noiseBtn = buildPillButton(app, noiseLabel, false, v -> {
+                    subPanel = subPanel == SubPanel.WHITE_NOISE ? SubPanel.NONE : SubPanel.WHITE_NOISE;
+                    refreshCurrentOverlayAsync(app);
+                });
+                topRow.addView(noiseBtn);
+            } else {
+                topRow.addView(badgePill);
+            }
         }
         root.addView(topRow);
 
-        // Flexible middle container
-        LinearLayout center = new LinearLayout(app);
-        center.setOrientation(LinearLayout.VERTICAL);
-        center.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams centerLp = new LinearLayout.LayoutParams(
+        // Flexible middle container wrapped in a ScrollView so tall subpanels never clip on smaller screens
+        ScrollView centerScroll = new ScrollView(app);
+        centerScroll.setFillViewport(true);
+        centerScroll.setVerticalScrollBarEnabled(false);
+        LinearLayout.LayoutParams centerScrollLp = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             0,
             1f
         );
-        center.setLayoutParams(centerLp);
+        centerScroll.setLayoutParams(centerScrollLp);
 
+        LinearLayout center = new LinearLayout(app);
+        center.setOrientation(LinearLayout.VERTICAL);
+        center.setGravity(Gravity.CENTER);
+        center.setLayoutParams(new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+
+        final boolean compactHeader = shouldUseCompactHeader(subPanel);
         boolean guardDoor = mode == Mode.BLOCKED_APP || mode == Mode.GUARD_PULLBACK;
-        PetGuardView petView = new PetGuardView(
-            app,
-            snap.animalId,
-            snap.skinId,
-            guardDoor,
-            snap.elapsedMs,
-            snap.targetMs,
-            snap.countdown
-        );
-        LinearLayout.LayoutParams petLp = new LinearLayout.LayoutParams(dp(app, 108), dp(app, 108));
-        petLp.bottomMargin = dp(app, 10);
-        petView.setLayoutParams(petLp);
-        center.addView(petView);
+        if (!compactHeader) {
+            PetGuardView petView = new PetGuardView(
+                app,
+                snap.animalId,
+                snap.skinId,
+                guardDoor,
+                snap.elapsedMs,
+                snap.targetMs,
+                snap.countdown
+            );
+            LinearLayout.LayoutParams petLp = new LinearLayout.LayoutParams(dp(app, 108), dp(app, 108));
+            petLp.bottomMargin = dp(app, 10);
+            petView.setLayoutParams(petLp);
+            center.addView(petView);
+        }
 
         TextView modeHint = new TextView(app);
         modeHint.setGravity(Gravity.CENTER);
@@ -930,8 +1028,8 @@ final class FocusBlockOverlay {
         titleView.setGravity(Gravity.CENTER);
         titleView.setText(snap.title);
         titleView.setTextColor(Color.parseColor(COLOR_INK));
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
-        titleView.setPadding(0, dp(app, 10), 0, dp(app, 12));
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, compactHeader ? 17f : 20f);
+        titleView.setPadding(0, dp(app, compactHeader ? 4 : 10), 0, dp(app, compactHeader ? 4 : 12));
         center.addView(titleView);
 
         TextView clockView = new TextView(app);
@@ -939,10 +1037,10 @@ final class FocusBlockOverlay {
         clockView.setGravity(Gravity.CENTER);
         clockView.setText(formatClock(snap.countdown ? Math.max(0L, snap.remainingMs) : Math.max(0L, snap.elapsedMs)));
         clockView.setTextColor(Color.parseColor(COLOR_INK));
-        clockView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 62f);
+        clockView.setTextSize(TypedValue.COMPLEX_UNIT_SP, compactHeader ? 40f : 62f);
         Typeface nunito = resolveNunitoTypeface(app);
         if (nunito != null) {
-            clockView.setTypeface(nunito, Typeface.BOLD);
+            clockView.setTypeface(nunito);
         }
         clockView.setFontFeatureSettings("tnum");
         center.addView(clockView);
@@ -952,7 +1050,9 @@ final class FocusBlockOverlay {
         if (subPanel == SubPanel.CONFIRM_FINISH) {
             LinearLayout confirmCard = buildCard(app);
             TextView ask = new TextView(app);
-            ask.setText(snap.isLock ? "确认提前结束本次锁机吗？" : "确认提前结束本轮专注吗？");
+            ask.setText(snap.isLock
+                ? "确认提前结束本次锁机吗？"
+                : (snap.countdown ? "确认提前结束本轮专注吗？" : "确认结束本次正计时专注吗？"));
             ask.setTextColor(Color.parseColor(COLOR_INK));
             ask.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
             ask.setPadding(0, 0, 0, dp(app, 14));
@@ -963,7 +1063,7 @@ final class FocusBlockOverlay {
             row.setGravity(Gravity.CENTER_VERTICAL);
             TextView cancelBtn = buildPillButton(app, "继续专注", false, v -> {
                 subPanel = SubPanel.NONE;
-                refreshFromControlAsync(app);
+                refreshCurrentOverlayAsync(app);
             });
             LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(0, dp(app, 48), 1f);
             btnLp.rightMargin = dp(app, 10);
@@ -984,11 +1084,19 @@ final class FocusBlockOverlay {
             center.addView(confirmCard);
         } else if (subPanel == SubPanel.WHITE_NOISE) {
             LinearLayout noiseCard = buildCard(app);
+            noiseCard.setPadding(dp(app, 14), dp(app, 14), dp(app, 14), dp(app, 14));
+            LinearLayout.LayoutParams noiseCardLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            );
+            noiseCardLp.topMargin = dp(app, 10);
+            noiseCard.setLayoutParams(noiseCardLp);
+
             TextView noiseTitle = new TextView(app);
             noiseTitle.setText("白噪音");
             noiseTitle.setTextColor(Color.parseColor(COLOR_INK));
             noiseTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-            noiseTitle.setPadding(0, 0, 0, dp(app, 10));
+            noiseTitle.setPadding(0, 0, 0, dp(app, 8));
             noiseCard.addView(noiseTitle);
 
             for (int rowIdx = 0; rowIdx < WHITE_NOISE_OPTIONS.length; rowIdx += 2) {
@@ -998,7 +1106,7 @@ final class FocusBlockOverlay {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 );
-                rowLp.bottomMargin = dp(app, 8);
+                rowLp.bottomMargin = dp(app, 6);
                 row.setLayoutParams(rowLp);
 
                 for (int colIdx = 0; colIdx < 2 && rowIdx + colIdx < WHITE_NOISE_OPTIONS.length; colIdx++) {
@@ -1014,9 +1122,50 @@ final class FocusBlockOverlay {
                 noiseCard.addView(row);
             }
 
+            int volPct = (int) Math.round(WhiteNoisePolicy.clampVolume(snap.whiteNoiseVolume) * 100.0);
+            LinearLayout volHead = new LinearLayout(app);
+            volHead.setOrientation(LinearLayout.HORIZONTAL);
+            volHead.setGravity(Gravity.CENTER_VERTICAL);
+            volHead.setPadding(0, dp(app, 4), 0, dp(app, 2));
+            TextView volLabel = new TextView(app);
+            volLabel.setText("音量");
+            volLabel.setTextColor(Color.parseColor(COLOR_INK));
+            volLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            volLabel.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            volHead.addView(volLabel);
+
+            TextView volValue = new TextView(app);
+            volValue.setText(volPct + "%");
+            volValue.setTextColor(Color.parseColor(COLOR_MUTED_SURFACE));
+            volValue.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            volHead.addView(volValue);
+            noiseCard.addView(volHead);
+
+            SeekBar seekBar = new SeekBar(app);
+            seekBar.setMax(100);
+            seekBar.setProgress(volPct);
+            seekBar.setMinimumHeight(dp(app, 48));
+            seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                    if (fromUser) {
+                        volValue.setText(progress + "%");
+                    }
+                }
+
+                @Override
+                public void onStartTrackingTouch(SeekBar bar) {}
+
+                @Override
+                public void onStopTrackingTouch(SeekBar bar) {
+                    updateWhiteNoiseVolume(app, bar.getProgress() / 100.0);
+                }
+            });
+            noiseCard.addView(seekBar);
+
             TextView closeNoise = buildPillButton(app, "返回专注计时", false, v -> {
                 subPanel = SubPanel.NONE;
-                refreshFromControlAsync(app);
+                refreshCurrentOverlayAsync(app);
             });
             LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(app, 48));
             closeLp.topMargin = dp(app, 4);
@@ -1025,11 +1174,19 @@ final class FocusBlockOverlay {
             center.addView(noiseCard);
         } else if (subPanel == SubPanel.WHITELIST) {
             LinearLayout wlCard = buildCard(app);
+            wlCard.setPadding(dp(app, 14), dp(app, 14), dp(app, 14), dp(app, 14));
+            LinearLayout.LayoutParams wlCardLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            );
+            wlCardLp.topMargin = dp(app, 10);
+            wlCard.setLayoutParams(wlCardLp);
+
             TextView wlTitle = new TextView(app);
             wlTitle.setText("学习白名单应用（点击可直接打开）");
             wlTitle.setTextColor(Color.parseColor(COLOR_INK));
             wlTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-            wlTitle.setPadding(0, 0, 0, dp(app, 10));
+            wlTitle.setPadding(0, 0, 0, dp(app, 8));
             wlCard.addView(wlTitle);
 
             ScrollView scroll = new ScrollView(app);
@@ -1059,7 +1216,7 @@ final class FocusBlockOverlay {
 
             TextView closeWl = buildPillButton(app, "返回专注计时", false, v -> {
                 subPanel = SubPanel.NONE;
-                refreshFromControlAsync(app);
+                refreshCurrentOverlayAsync(app);
             });
             LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(app, 48));
             closeLp.topMargin = dp(app, 8);
@@ -1086,7 +1243,7 @@ final class FocusBlockOverlay {
             row.setOrientation(LinearLayout.HORIZONTAL);
             TextView backBtn = buildPillButton(app, "返回专注", false, v -> {
                 subPanel = SubPanel.NONE;
-                refreshFromControlAsync(app);
+                refreshCurrentOverlayAsync(app);
             });
             LinearLayout.LayoutParams b1 = new LinearLayout.LayoutParams(0, dp(app, 48), 1f);
             b1.rightMargin = dp(app, 10);
@@ -1101,7 +1258,8 @@ final class FocusBlockOverlay {
             center.addView(safetyCard);
         }
 
-        root.addView(center);
+        centerScroll.addView(center);
+        root.addView(centerScroll);
 
         // Bottom controls (max 1 primary action + calm secondary links)
         LinearLayout bottom = new LinearLayout(app);
@@ -1137,7 +1295,7 @@ final class FocusBlockOverlay {
             } else {
                 endBtn = buildPillButton(app, "结束", false, v -> {
                     subPanel = SubPanel.CONFIRM_FINISH;
-                    refreshFromControlAsync(app);
+                    refreshCurrentOverlayAsync(app);
                 });
             }
             LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, dp(app, 50), 1f);
@@ -1146,14 +1304,16 @@ final class FocusBlockOverlay {
             bottom.addView(actionRow);
 
             TextView hint = new TextView(app);
-            hint.setText("可直接上滑返回桌面或切换其他应用，不影响正常使用");
+            hint.setText(snap.leaveAppFail
+                ? "轻看护已开启 · 亮屏离开超 10 秒将导致本轮养成失败（锁屏与通话不受影响）"
+                : "轻看护已关闭 · 可切换其他应用，计时在后台继续");
             hint.setTextColor(Color.parseColor(COLOR_MUTED));
             hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
             hint.setGravity(Gravity.CENTER);
             hint.setPadding(0, dp(app, 12), 0, 0);
             bottom.addView(hint);
         } else {
-            if (mode == Mode.BLOCKED_APP && snap.temporaryRemaining > 0 && !snap.strictMode && !snap.isLock && !TextUtils.isEmpty(blockedPackage)) {
+            if (mode == Mode.BLOCKED_APP && snap.temporaryAccessAllowed && snap.temporaryRemaining > 0 && !snap.strictMode && !snap.isLock && !TextUtils.isEmpty(blockedPackage)) {
                 TextView tempBtn = buildPillButton(
                     app,
                     app.getString(R.string.focus_block_temporary_access, resolveAppLabel(app, blockedPackage), snap.temporaryRemaining),
@@ -1170,10 +1330,10 @@ final class FocusBlockOverlay {
                 TextView wlBtn = buildPillButton(
                     app,
                     "白名单应用（" + snap.whitelistApps.size() + "）",
-                    mode != Mode.BLOCKED_APP || snap.temporaryRemaining <= 0,
+                    mode != Mode.BLOCKED_APP || !snap.temporaryAccessAllowed || snap.temporaryRemaining <= 0,
                     v -> {
                         subPanel = SubPanel.WHITELIST;
-                        refreshFromControlAsync(app);
+                        refreshCurrentOverlayAsync(app);
                     }
                 );
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(app, 48));
@@ -1204,7 +1364,7 @@ final class FocusBlockOverlay {
                 } else {
                     endBtn = buildPillButton(app, "结束", false, v -> {
                         subPanel = SubPanel.CONFIRM_FINISH;
-                        refreshFromControlAsync(app);
+                        refreshCurrentOverlayAsync(app);
                     });
                 }
                 LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, dp(app, 48), 1f);
@@ -1225,7 +1385,7 @@ final class FocusBlockOverlay {
             safetyLink.setPadding(dp(app, 12), dp(app, 10), dp(app, 12), dp(app, 10));
             safetyLink.setOnClickListener(v -> {
                 subPanel = subPanel == SubPanel.SAFETY ? SubPanel.NONE : SubPanel.SAFETY;
-                refreshFromControlAsync(app);
+                refreshCurrentOverlayAsync(app);
             });
             bottom.addView(safetyLink);
         }
@@ -1245,7 +1405,7 @@ final class FocusBlockOverlay {
                 } else if ("focus_cancel".equals(actionKind)) {
                     control.focusAction("cancel");
                 } else if ("focus_finish".equals(actionKind)) {
-                    JSONObject preObs = control.observeControl();
+                    JSONObject preObs = control.observeSessionState();
                     SessionSnapshot preSnap = extractSnapshot(app, preObs);
                     if (preSnap.active && !preSnap.isLock
                         && isInRegretWindow(preSnap.strictMode, preSnap.countdown, preSnap.elapsedMs)) {
@@ -1257,7 +1417,7 @@ final class FocusBlockOverlay {
                     control.lockAction("finish", true);
                 }
                 subPanel = SubPanel.NONE;
-                JSONObject obs = control.observeControl();
+                JSONObject obs = control.observeSessionState();
                 SessionSnapshot snap = extractSnapshot(app, obs);
                 if (!snap.active) {
                     dismiss();
@@ -1289,8 +1449,32 @@ final class FocusBlockOverlay {
                 }
                 WhiteNoisePlayer.getInstance(app).syncFromUserAction(app);
                 subPanel = SubPanel.NONE;
-                JSONObject obs = new FocusControl(app).observeControl();
+                JSONObject obs = new FocusControl(app).observeSessionState();
                 renderAsync(app, obs, currentMode == Mode.BLOCKED_APP, currentMode == Mode.GUARD_PULLBACK, guardReasonLabel);
+                CatFocusPlugin.emitJsEvent("whiteNoiseResumed", "");
+                CatFocusPlugin.emitJsEvent("sessionChanged", "");
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    private static void updateWhiteNoiseVolume(Context app, double rawVolume) {
+        final double clamped = Math.round(WhiteNoisePolicy.clampVolume(rawVolume) * 100.0) / 100.0;
+        WORKER.execute(() -> {
+            try {
+                LocalStore store = LocalStore.get(app);
+                synchronized (store) {
+                    JSONObject data = store.read("data");
+                    if (data == null) data = new JSONObject();
+                    JSONObject prefs = data.optJSONObject("preferences");
+                    if (prefs == null) {
+                        prefs = new JSONObject();
+                        data.put("preferences", prefs);
+                    }
+                    prefs.put("whiteNoiseVolume", clamped);
+                    store.saveData(data, false);
+                }
+                WhiteNoisePlayer.getInstance(app).syncFromStore(app);
                 CatFocusPlugin.emitJsEvent("sessionChanged", "");
             } catch (Exception ignored) {
             }
@@ -1390,6 +1574,7 @@ final class FocusBlockOverlay {
         boolean study = protection != null && Boolean.TRUE.equals(protection.opt("study"));
         boolean studyLocked = protection != null && Boolean.TRUE.equals(protection.opt("studyLocked"));
         s.studyOrLock = s.isLock || study || studyLocked;
+        s.temporaryAccessAllowed = protection == null || protection.optBoolean("temporaryAccessAllowed", true);
         s.whitelistPackages = protection == null ? null : protection.optJSONArray("whitelist");
         s.whitelistApps = FocusProtection.resolveWhitelistApps(app, s.whitelistPackages);
 
@@ -1398,18 +1583,26 @@ final class FocusBlockOverlay {
             s.temporaryRemaining = Math.max(0, 3 - tempAccess.optInt("used", 0));
         }
         boolean keepScreenOn = true;
+        boolean leaveAppFail = true;
         String whiteNoiseTrack = "off";
+        double whiteNoiseVolume = WhiteNoisePolicy.DEFAULT_VOLUME;
         try {
             JSONObject data = LocalStore.get(app).read("data");
             JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
             if (prefs != null) {
                 keepScreenOn = prefs.optBoolean("keepScreenOn", true);
+                leaveAppFail = prefs.optBoolean("leaveAppFail", true);
                 whiteNoiseTrack = WhiteNoisePolicy.normalizeTrack(prefs.optString("whiteNoise", "off"));
+                whiteNoiseVolume = WhiteNoisePolicy.clampVolume(
+                    prefs.optDouble("whiteNoiseVolume", WhiteNoisePolicy.DEFAULT_VOLUME)
+                );
             }
         } catch (Exception ignored) {
         }
         s.keepScreenOn = keepScreenOn;
+        s.leaveAppFail = leaveAppFail;
         s.whiteNoiseTrack = whiteNoiseTrack;
+        s.whiteNoiseVolume = whiteNoiseVolume;
         return s;
     }
 
@@ -1431,7 +1624,7 @@ final class FocusBlockOverlay {
     }
 
     private static String formatClock(long ms) {
-        long totalSec = Math.max(0L, ms / 1000L);
+        long totalSec = ms <= 0L ? 0L : (ms + 999L) / 1000L;
         long hours = totalSec / 3600L;
         long mins = (totalSec % 3600L) / 60L;
         long secs = totalSec % 60L;
@@ -1488,7 +1681,13 @@ final class FocusBlockOverlay {
         try {
             android.content.res.AssetManager assets = context.getApplicationContext().getAssets();
             if (assets != null) {
-                cachedNunitoTypeface = Typeface.createFromAsset(assets, "public/fonts/Nunito.ttf");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    cachedNunitoTypeface = new Typeface.Builder(assets, "public/fonts/Nunito.ttf")
+                        .setFontVariationSettings("'wght' 850")
+                        .build();
+                } else {
+                    cachedNunitoTypeface = Typeface.createFromAsset(assets, "public/fonts/Nunito.ttf");
+                }
             }
         } catch (Throwable ignored) {
             // Safe fallback in JVM unit tests or environments without bundled assets.
@@ -1793,6 +1992,8 @@ final class FocusBlockOverlay {
         boolean paused;
         boolean countdown;
         boolean keepScreenOn = true;
+        boolean leaveAppFail = true;
+        boolean temporaryAccessAllowed = true;
         long targetMs;
         long elapsedMs;
         long remainingMs;
@@ -1801,6 +2002,7 @@ final class FocusBlockOverlay {
         String animalId = "black-cat";
         String skinId = "default";
         String whiteNoiseTrack = "off";
+        double whiteNoiseVolume = WhiteNoisePolicy.DEFAULT_VOLUME;
         JSONArray whitelistPackages;
         List<String[]> whitelistApps = new java.util.ArrayList<>();
     }

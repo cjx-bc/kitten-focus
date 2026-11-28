@@ -64,11 +64,12 @@ export function statistics(
     earlyCount = 0,
     startedTotalMs = 0
   for (const record of records) {
+    const isManual = record.source === 'manual'
     const startDate =
       record.startedAt >= minEpoch && record.startedAt <= maxEpoch
         ? zoneDate(record.startedAt, record.timeZone)
         : ''
-    const startedInRange = Boolean(startDate && inRange(startDate))
+    const startedInRange = !isManual && Boolean(startDate && inRange(startDate))
     if (startedInRange) {
       count++
       if (record.status === 'early') earlyCount++
@@ -138,14 +139,15 @@ function intensityLevel(value: number, maxValue: number, hasActivity: boolean): 
   return 4
 }
 
-/** Build a 365-day heatmap ending on anchorDate using the same timezone rules as statistics(). */
+/** Build a 365-day (366-day on leap year Dec 31) heatmap ending on anchorDate using the same timezone rules as statistics(). */
 export function yearlyHeatmap(
   records: FocusRecord[],
   anchorDate: string,
   metric: 'duration' | 'count' = 'duration',
 ): YearlyHeatmap {
   const to = normalizeAnchorDate(anchorDate)
-  const from = addDays(to, -364)
+  const isLeapYearEnd = /^\d{4}-12-31$/.test(to) && addDays(to, -365) === `${to.slice(0, 4)}-01-01`
+  const from = isLeapYearEnd ? `${to.slice(0, 4)}-01-01` : addDays(to, -364)
   const summary = statistics(records, from, to)
   const msByDate = new Map(summary.daily)
   const countByDate = new Map(summary.dailyCounts)
@@ -156,10 +158,10 @@ export function yearlyHeatmap(
   for (const cnt of countByDate.values()) if (cnt > maxCount) maxCount = cnt
 
   const days: HeatmapDay[] = []
-  for (let i = 0, day = from; i < 365; i++, day = addDays(day, 1)) {
+  for (let guard = 0, day = from; day <= to && guard < 367; guard++, day = addDays(day, 1)) {
     const ms = msByDate.get(day) || 0
     const count = countByDate.get(day) || 0
-    const active = ms > 0 || count > 0
+    const active = metric === 'count' ? count > 0 : ms > 0
     const level =
       metric === 'count'
         ? intensityLevel(count, maxCount, active)
@@ -185,6 +187,7 @@ export function todaySummary(records: FocusRecord[], today: string): TodaySummar
   }
   for (const record of records) {
     if (
+      record.source !== 'manual' &&
       record.startedAt >= minEpoch &&
       record.startedAt <= maxEpoch &&
       zoneDate(record.startedAt, record.timeZone) === today

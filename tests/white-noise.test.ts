@@ -289,6 +289,8 @@ describe('FocusView white noise controls and persistence', () => {
     standby.state.onWhiteNoiseVolumeInput({ target: { value: '85' } } as unknown as Event)
     await standby.state.flushWhiteNoiseVolume()
     expect(mocks.app.data.preferences.whiteNoiseVolume).toBe(0.85)
+    // Changing volume must NOT clear noisy pause (1 call from selectWhiteNoise('fire') only)
+    expect(mocks.app.clearWhiteNoiseNoisyPause).toHaveBeenCalledTimes(1)
 
     mocks.app.focus.session = {
       id: 'f1',

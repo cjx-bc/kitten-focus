@@ -82,11 +82,16 @@ const selectedItem = computed<FocusItem | null>(() => {
 })
 
 watch(
-  [selectedItem, defaultMinutes],
-  ([item, defMin]) => {
-    if (item) {
-      standbyMode.value = item.mode
-      standbyMinutes.value = Math.min(180, Math.max(5, item.minutes || defMin))
+  [
+    () => selectedItem.value?.id ?? null,
+    () => selectedItem.value?.mode ?? null,
+    () => selectedItem.value?.minutes ?? null,
+    defaultMinutes,
+  ],
+  ([id, mode, itemMins, defMin]) => {
+    if (id) {
+      standbyMode.value = mode ?? 'countdown'
+      standbyMinutes.value = Math.min(180, Math.max(5, itemMins || defMin))
     } else {
       standbyMode.value = 'countdown'
       standbyMinutes.value = Math.min(180, Math.max(5, defMin))
@@ -127,21 +132,47 @@ async function refreshProtection() {
   }
 }
 
-function openStudyFromCapsule() {
+function hasOtherOpenDialog() {
+  return typeof document !== 'undefined' && document.querySelectorAll('dialog[open]').length > 0
+}
+
+async function openFocusSheet(target: Exclude<FocusSheet, null>) {
+  if (busy.value) return
+  if (petOpen.value || studyOpen.value) {
+    petOpen.value = false
+    studyOpen.value = false
+    await waitForDialogClose()
+  } else if (focusSheet.value === null && hasOtherOpenDialog()) {
+    await waitForDialogClose()
+  }
+  focusSheet.value = target
+}
+
+async function openStudyFromCapsule() {
   if (busy.value || focusSheet.value !== null || petOpen.value) return
+  if (hasOtherOpenDialog()) await waitForDialogClose()
   studyInitialView.value = studyCapsule.value.tone === 'warning' ? 'permissions' : 'home'
   studyOpen.value = true
 }
 
-function openPetPicker() {
+async function openPetPicker() {
   if (busy.value || focusSheet.value !== null || studyOpen.value) return
+  if (hasOtherOpenDialog()) await waitForDialogClose()
   petOpen.value = true
+}
+
+function onFocusResultBack(e: Event) {
+  if (!session.value && result.value) {
+    e.preventDefault()
+    void backHome()
+  }
 }
 
 onMounted(() => {
   void refreshProtection()
   document.addEventListener('visibilitychange', onVisibilityRefresh)
   window.addEventListener('protection-recovered', onVisibilityRefresh)
+  window.addEventListener('focus-result-back', onFocusResultBack)
 })
 onBeforeUnmount(() => {
   protectionRevision++
@@ -150,6 +181,7 @@ onBeforeUnmount(() => {
   clearTimeout(whiteNoiseSaveTimer)
   document.removeEventListener('visibilitychange', onVisibilityRefresh)
   window.removeEventListener('protection-recovered', onVisibilityRefresh)
+  window.removeEventListener('focus-result-back', onFocusResultBack)
 })
 function onVisibilityRefresh() {
   if (!document.hidden) void refreshProtection()
@@ -163,7 +195,14 @@ const session = computed(() => app.focus.session),
   canRest = computed(() =>
     Boolean(result.value && result.value.status === 'completed' && result.value.durationMs > 0),
   ),
-  inRegretWindow = computed(() => Boolean(session.value && app.focus.elapsedMs < REGRET_WINDOW_MS)),
+  inRegretWindow = computed(() =>
+    Boolean(
+      session.value &&
+        session.value.mode === 'countdown' &&
+        !strict.value &&
+        app.focus.elapsedMs < REGRET_WINDOW_MS,
+    ),
+  ),
   display = computed(() =>
     session.value?.mode === 'countdown'
       ? Math.max(0, session.value.targetMs - app.focus.elapsedMs)
@@ -267,7 +306,7 @@ async function flushWhiteNoiseVolume() {
         hasActiveFocus: Boolean(app.focus.session),
         sessionState: app.focus.session?.state ?? null,
       },
-      true,
+      false,
     )
   } catch (e) {
     app.notify(e instanceof Error ? e.message : String(e))
@@ -381,12 +420,14 @@ function setStopwatchMode() {
 
 // Clock drag gesture (isolated from tabSwipe via data-tab-swipe-ignore)
 let dragKind: 'touch' | 'mouse' | null = null
+let dragAxis: 'x' | 'y' | null = null
 let dragStartX = 0
 let dragStartY = 0
 let dragConsumed = 0
 
 function beginClockDrag(kind: 'touch' | 'mouse', x: number, y: number) {
   dragKind = kind
+  dragAxis = null
   dragStartX = x
   dragStartY = y
   dragConsumed = 0
@@ -395,7 +436,11 @@ function moveClockDrag(x: number, y: number) {
   if (!dragKind) return
   const dx = x - dragStartX
   const dy = y - dragStartY
-  const axisDelta = Math.abs(dx) > Math.abs(dy) ? dx : -dy
+  if (dragAxis === null) {
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return
+    dragAxis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y'
+  }
+  const axisDelta = dragAxis === 'x' ? dx : -dy
   const steps = Math.trunc((axisDelta - dragConsumed) / DRAG_STEP_PX)
   if (steps !== 0) {
     dragConsumed += steps * DRAG_STEP_PX
@@ -404,6 +449,7 @@ function moveClockDrag(x: number, y: number) {
 }
 function endClockDrag() {
   dragKind = null
+  dragAxis = null
 }
 
 function onClockTouchStart(e: TouchEvent) {
@@ -536,7 +582,15 @@ function finish() {
   const sessionId = session.value?.id
   if (!sessionId || strict.value || busy.value) return
   pendingFinishSessionId.value = sessionId
-  focusSheet.value = 'endConfirm'
+  void openFocusSheet('endConfirm')
+}
+
+function onGiveupThumbClick() {
+  if (suppressGiveupClick) {
+    suppressGiveupClick = false
+    return
+  }
+  finish()
 }
 
 async function confirmFinish() {
@@ -565,6 +619,7 @@ const giveupTrackRef = ref<HTMLElement | null>(null)
 let giveupDrag: 'touch' | 'mouse' | null = null
 let giveupStartX = 0
 let giveupMoved = false
+let suppressGiveupClick = false
 
 function giveupMaxOffset(): number {
   const w = giveupTrackRef.value?.clientWidth ?? 220
@@ -575,6 +630,7 @@ function startGiveup(kind: 'touch' | 'mouse', x: number) {
   giveupDrag = kind
   giveupStartX = x
   giveupMoved = false
+  suppressGiveupClick = false
   giveupOffsetPx.value = 0
 }
 function moveGiveup(x: number) {
@@ -591,6 +647,12 @@ async function endGiveup() {
   const wasMoved = giveupMoved
   giveupDrag = null
   giveupOffsetPx.value = 0
+  if (wasMoved && Math.abs(offset) < threshold) {
+    suppressGiveupClick = true
+    setTimeout(() => {
+      suppressGiveupClick = false
+    }, 300)
+  }
   if (wasMoved && Math.abs(offset) >= threshold && !busy.value && !strict.value) {
     busy.value = true
     try {
@@ -642,9 +704,13 @@ function onGiveupPointerUp() {
 
 // Settlement actions
 function onNoteInput(e: Event) {
-  const val = (e.target as HTMLInputElement).value
-  const chars = [...val]
-  noteDraft.value = chars.length > 100 ? chars.slice(0, 100).join('') : val
+  const input = e.target as HTMLInputElement
+  const chars = [...input.value]
+  const clamped = chars.length > 100 ? chars.slice(0, 100).join('') : input.value
+  noteDraft.value = clamped
+  if (input.value !== clamped) {
+    input.value = clamped
+  }
 }
 
 async function saveNoteIfChanged() {
@@ -695,6 +761,9 @@ async function again() {
     const trimmed = [...noteDraft.value].slice(0, 100).join('')
     if ((previous.note ?? '') !== trimmed) {
       await saveNoteIfChanged()
+    }
+    if (autoRestPending.value) {
+      await app.exitRest()
     }
     const item = app.items.find((i) => i.id === previous.itemId) || null
     await startFocusSessionInner(item, previous.mode, previous.targetMs / 60000)
@@ -794,7 +863,7 @@ async function rest() {
           aria-label="白噪音"
           aria-haspopup="dialog"
           :aria-expanded="focusSheet === 'whiteNoise'"
-          @click="focusSheet = 'whiteNoise'"
+          @click="openFocusSheet('whiteNoise')"
         >
           <Icon name="music" :size="20" />
         </button>
@@ -804,7 +873,7 @@ async function rest() {
           aria-label="专注辅助与安全出口"
           aria-haspopup="dialog"
           :aria-expanded="focusSheet === 'safety'"
-          @click="focusSheet = 'safety'"
+          @click="openFocusSheet('safety')"
         >
           <Icon name="more" />
         </button>
@@ -818,7 +887,7 @@ async function rest() {
         class="task-pill"
         aria-haspopup="dialog"
         :aria-expanded="focusSheet === 'tasks'"
-        @click="focusSheet = 'tasks'"
+        @click="openFocusSheet('tasks')"
       >
         <span class="task-pill-label">{{ selectedItem ? selectedItem.title : '自由专注' }}</span>
         <Icon name="down" :size="15" />
@@ -845,7 +914,7 @@ async function rest() {
           aria-label="白噪音"
           aria-haspopup="dialog"
           :aria-expanded="focusSheet === 'whiteNoise'"
-          @click="focusSheet = 'whiteNoise'"
+          @click="openFocusSheet('whiteNoise')"
         >
           <Icon name="music" :size="20" />
         </button>
@@ -918,7 +987,7 @@ async function rest() {
               aria-label="放弃专注"
               :disabled="busy"
               :style="{ transform: `translateX(${giveupOffsetPx}px)` }"
-              @click.stop="finish"
+              @click.stop="onGiveupThumbClick"
             >
               <Icon name="left" :size="20" />
             </button>
@@ -1161,7 +1230,8 @@ async function rest() {
     >
       <div v-if="focusSheet === 'tasks'" class="stack">
         <button type="button" class="secondary wide" @click="goManageTasks">
-          管理全部待办 ›
+          <span>管理全部待办</span>
+          <Icon name="right" :size="15" />
         </button>
         <div class="item-list selector-list">
           <div class="selector-row" :class="{ selected: !selectedItem }">
@@ -1322,6 +1392,7 @@ async function rest() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   color: var(--muted);
   font-size: 13px;
@@ -1409,6 +1480,7 @@ async function rest() {
 .ongoing small {
   display: block;
   margin-top: 2px;
+  color: var(--muted-surface);
 }
 .standby-stage {
   flex: 1;

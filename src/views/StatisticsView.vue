@@ -91,7 +91,7 @@ const trend = computed(() => {
   const byCount = metric.value === 'count'
   if (period.value === 'day') {
     return {
-      labels: Array.from({ length: 24 }, (_, i) => (i % 4 === 0 ? `${i}时` : '')),
+      labels: Array.from({ length: 24 }, (_, i) => `${i}时`),
       values: byCount ? stats.value.hourCounts : stats.value.hours.map((ms) => ms / 60000),
     }
   }
@@ -205,7 +205,7 @@ const trendOption = computed(() => {
               if (val <= 0 && !showZeroRestingHeads) return null
               const [x, y] = api.coord([params.dataIndex, val])
               const slotW = api.size ? api.size([1, 0])[0] : 24
-              const r = Math.max(4.5, Math.min(8, slotW * 0.34))
+              const r = Math.max(2.5, Math.min(8, slotW * 0.36))
               if (val >= mean) {
                 // Perked dark animal head with #EF4E36 red comb
                 const cy = y - r - 2
@@ -295,7 +295,11 @@ const trendOption = computed(() => {
       data: trend.value.labels,
       axisLine: { lineStyle: { color: '#EAEAEA' } },
       axisTick: { show: false },
-      axisLabel: { color: '#737378', fontSize: 12 },
+      axisLabel: {
+        color: '#66666b',
+        fontSize: 12,
+        ...(period.value === 'day' ? { interval: (idx: number) => idx % 4 === 0 } : {}),
+      },
     },
     yAxis: {
       type: 'value',
@@ -303,9 +307,9 @@ const trendOption = computed(() => {
       min: 0,
       minInterval: 1,
       max: peak > 0 && peak < 1 ? 1 : undefined,
-      nameTextStyle: { color: '#737378', fontSize: 12 },
+      nameTextStyle: { color: '#66666b', fontSize: 12 },
       splitLine: { lineStyle: { color: '#EAEAEA', type: 'dashed' } },
-      axisLabel: { color: '#737378', fontSize: 12 },
+      axisLabel: { color: '#66666b', fontSize: 12 },
     },
     series: baseSeries,
   }
@@ -368,10 +372,14 @@ const hourOption = computed(() => {
     grid: { left: 44, right: 10, top: 24, bottom: 28 },
     xAxis: {
       type: 'category',
-      data: Array.from({ length: 24 }, (_, i) => (i % 4 === 0 ? `${i}时` : '')),
+      data: Array.from({ length: 24 }, (_, i) => `${i}时`),
       axisLine: { lineStyle: { color: '#EAEAEA' } },
       axisTick: { show: false },
-      axisLabel: { color: '#737378', fontSize: 12 },
+      axisLabel: {
+        color: '#66666b',
+        fontSize: 12,
+        interval: (idx: number) => idx % 4 === 0,
+      },
     },
     yAxis: {
       type: 'value',
@@ -379,9 +387,9 @@ const hourOption = computed(() => {
       min: 0,
       minInterval: 1,
       max: peak > 0 && peak < 1 ? 1 : undefined,
-      nameTextStyle: { color: '#737378', fontSize: 12 },
+      nameTextStyle: { color: '#66666b', fontSize: 12 },
       splitLine: { lineStyle: { color: '#EAEAEA', type: 'dashed' } },
-      axisLabel: { color: '#737378', fontSize: 12 },
+      axisLabel: { color: '#66666b', fontSize: 12 },
     },
     series: [
       {
@@ -404,8 +412,14 @@ const hourOption = computed(() => {
 const heatmapAnchor = computed(() => {
   const today = dateKey()
   return safeAnchor.value.slice(0, 4) === today.slice(0, 4)
-    ? safeAnchor.value
+    ? today
     : `${safeAnchor.value.slice(0, 4)}-12-31`
+})
+
+const isCurrentPeriod = computed(() => {
+  if (period.value === 'all') return true
+  const today = dateKey()
+  return today >= range.value[0] && today <= range.value[1]
 })
 
 const heatmap = computed(() => yearlyHeatmap(app.data.records, heatmapAnchor.value, metric.value))
@@ -565,7 +579,13 @@ watch([heatmap, selectedHeatmapIdx], () => {
 })
 
 const stateName = (r: FocusRecord) =>
-  r.status === 'completed' ? '正常结束' : r.status === 'early' ? '提前结束' : '中断'
+  r.source === 'manual'
+    ? '手动补录'
+    : r.status === 'completed'
+      ? '正常结束'
+      : r.status === 'early'
+        ? '提前结束'
+        : '中断'
 
 function openRecords() {
   recordView.value = 'list'
@@ -645,15 +665,23 @@ async function confirmRemove(record: FocusRecord) {
       <h2>
         {{
           period === 'all'
-            ? '累计'
-            : period === 'day'
-              ? '今日'
-              : period === 'week'
-                ? '本周'
-                : period === 'month'
-                  ? '本月'
-                  : '本年'
-        }}概览
+            ? '累计概览'
+            : isCurrentPeriod
+              ? period === 'day'
+                ? '今日概览'
+                : period === 'week'
+                  ? '本周概览'
+                  : period === 'month'
+                    ? '本月概览'
+                    : '本年概览'
+              : period === 'day'
+                ? '当日概览'
+                : period === 'week'
+                  ? '所选周概览'
+                  : period === 'month'
+                    ? '所选月概览'
+                    : '所选年概览'
+        }}
       </h2>
       <div class="overview-grid">
         <div class="main-metric">
@@ -713,7 +741,11 @@ async function confirmRemove(record: FocusRecord) {
     <section v-if="period === 'year'" class="stats-card heatmap-card" data-ux-card>
       <div class="row between">
         <h2>365天热力图</h2>
-        <span class="chart-caption">{{ heatmap.from.slice(5) }} ~ {{ heatmap.to.slice(5) }}</span>
+        <span class="chart-caption">{{
+          heatmap.from.slice(0, 4) !== heatmap.to.slice(0, 4)
+            ? `${heatmap.from} ~ ${heatmap.to}`
+            : `${heatmap.from.slice(5)} ~ ${heatmap.to.slice(5)}`
+        }}</span>
       </div>
       <div class="heatmap-stage" data-tab-swipe-ignore>
         <canvas
@@ -832,8 +864,9 @@ async function confirmRemove(record: FocusRecord) {
         </p>
         <p class="muted">
           暂停 {{ duration(selected.pausedMs) }} ·
-          {{ selected.mode === 'countdown' ? '倒计时' : '正计时' }}
+          {{ selected.source === 'manual' ? '手动补录' : selected.mode === 'countdown' ? '倒计时' : '正计时' }}
         </p>
+        <p v-if="selected.note" class="record-note">{{ selected.note }}</p>
         <div v-if="confirmDelete" class="inline-confirm">
           <p>删除这条专注记录？对应统计也会更新。</p>
           <div class="inline-confirm-actions">
@@ -1002,9 +1035,9 @@ async function confirmRemove(record: FocusRecord) {
 }
 .heatmap-stage {
   margin-top: 12px;
-  background: var(--white);
-  border-radius: var(--radius);
-  padding: 10px 8px;
+  background: transparent;
+  border-radius: 12px;
+  padding: 6px 2px;
 }
 .heatmap-canvas {
   display: block;

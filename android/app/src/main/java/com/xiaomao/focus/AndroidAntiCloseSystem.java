@@ -4,12 +4,20 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
+import android.os.SystemClock;
 import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.ArrayList;
 import java.util.List;
 import org.json.JSONObject;
 
 final class AndroidAntiCloseSystem implements AntiCloseSystem {
+    private static final long APP_LABEL_CACHE_TTL_MS = 30_000L;
+    private static final Object APP_LABEL_CACHE_LOCK = new Object();
+    private static String cachedPackageName = "";
+    private static String cachedOwnLabel = "";
+    private static String cachedUniqueLabel = "";
+    private static long cachedAtMono = -1L;
+
     private final Context context;
     private final FocusProtection.AccessibilityState state;
     AndroidAntiCloseSystem(Context context, FocusProtection.AccessibilityState state) { this.context = context; this.state = state; }
@@ -37,15 +45,54 @@ final class AndroidAntiCloseSystem implements AntiCloseSystem {
         try { return (context.getPackageManager().getApplicationInfo(pkg, 0).flags & ApplicationInfo.FLAG_SYSTEM) != 0; }
         catch (Exception ignored) { return false; }
     }
+    static boolean isAppLabelCacheFresh(
+        String pkg,
+        String ownLabel,
+        String cachedPkg,
+        String cachedOwn,
+        long cachedAt,
+        long nowMono,
+        long ttlMs
+    ) {
+        return cachedAt >= 0L
+            && nowMono >= cachedAt
+            && (nowMono - cachedAt) < ttlMs
+            && pkg != null
+            && pkg.equals(cachedPkg)
+            && ownLabel != null
+            && ownLabel.equals(cachedOwn);
+    }
+
     public String appLabel() {
+        String ownPkg = context.getPackageName();
         String label = context.getApplicationInfo().loadLabel(context.getPackageManager()).toString();
+        long nowMono = SystemClock.elapsedRealtime();
+        synchronized (APP_LABEL_CACHE_LOCK) {
+            if (isAppLabelCacheFresh(ownPkg, label, cachedPackageName, cachedOwnLabel, cachedAtMono, nowMono, APP_LABEL_CACHE_TTL_MS)) {
+                return cachedUniqueLabel;
+            }
+        }
         // A name is only a fallback for a known app header. A colliding visible installed
         // label must never identify another package as ours (including production vs QA).
+        String resolved = label;
         List<ApplicationInfo> visible = context.getPackageManager().getInstalledApplications(0);
-        if (visible.size() > 512) return "";
-        for (ApplicationInfo app : visible)
-            if (!context.getPackageName().equals(app.packageName) && label.contentEquals(app.loadLabel(context.getPackageManager()))) return "";
-        return label;
+        if (visible.size() > 512) {
+            resolved = "";
+        } else {
+            for (ApplicationInfo app : visible) {
+                if (!ownPkg.equals(app.packageName) && label.contentEquals(app.loadLabel(context.getPackageManager()))) {
+                    resolved = "";
+                    break;
+                }
+            }
+        }
+        synchronized (APP_LABEL_CACHE_LOCK) {
+            cachedPackageName = ownPkg;
+            cachedOwnLabel = label;
+            cachedUniqueLabel = resolved;
+            cachedAtMono = nowMono;
+        }
+        return resolved;
     }
     public AntiCloseWindow.Node root(String pkg) {
         AccessibilityNodeInfo root = FocusAccessibilityService.activeSystemRoot(pkg);

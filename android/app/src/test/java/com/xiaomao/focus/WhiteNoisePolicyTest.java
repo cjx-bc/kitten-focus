@@ -118,5 +118,20 @@ public class WhiteNoisePolicyTest {
         WhiteNoisePolicy.Decision lost = policy.evaluate("stream", 0.8, true, true);
         assertEquals(WhiteNoisePolicy.Action.PAUSE, lost.action);
         assertTrue(lost.abandonAudioFocus);
+        assertFalse(lost.requestAudioFocus);
+
+        // Subsequent 750ms poll evaluations MUST stay PAUSE without re-requesting audio focus
+        for (int i = 0; i < 5; i++) {
+            WhiteNoisePolicy.Decision poll = policy.evaluate("stream", 0.8, true, true);
+            assertEquals(WhiteNoisePolicy.Action.PAUSE, poll.action);
+            assertFalse(poll.requestAudioFocus);
+        }
+
+        // Explicit user resume or track switch clears LOST (even when pausedByNoisy is false) and plays again
+        assertFalse(policy.isPausedByNoisy());
+        policy.clearPausedByNoisy();
+        WhiteNoisePolicy.Decision userResumed = policy.evaluate("stream", 0.8, true, true);
+        assertEquals(WhiteNoisePolicy.Action.PLAY, userResumed.action);
+        assertTrue(userResumed.requestAudioFocus);
     }
 }

@@ -11,6 +11,9 @@ final class RestEngine {
         void scheduleRest(long endMono);
         void cancelRest();
         void showRestFinished();
+        default void showRestFinished(boolean pomodoroLoop) {
+            showRestFinished();
+        }
     }
 
     private final FocusEngine.Store store;
@@ -36,7 +39,8 @@ final class RestEngine {
         return new SideEffects() {
             @Override public void scheduleRest(long endMono) { Reminders.scheduleRest(app, endMono); }
             @Override public void cancelRest() { Reminders.cancelRest(app); }
-            @Override public void showRestFinished() { Reminders.showRestFinished(app); }
+            @Override public void showRestFinished() { Reminders.showRestFinished(app, false); }
+            @Override public void showRestFinished(boolean pomodoroLoop) { Reminders.showRestFinished(app, pomodoroLoop); }
         };
     }
 
@@ -99,7 +103,14 @@ final class RestEngine {
                 session.put("state", "completed");
                 store.write("rest", session);
                 effects.cancelRest();
-                effects.showRestFinished();
+                boolean pomodoroLoop = false;
+                try {
+                    JSONObject data = store.read("data");
+                    JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
+                    pomodoroLoop = prefs != null && prefs.optBoolean("pomodoroLoop", false);
+                } catch (Exception ignored) {
+                }
+                effects.showRestFinished(pomodoroLoop);
             }
             return snapshot(session, remaining);
         }

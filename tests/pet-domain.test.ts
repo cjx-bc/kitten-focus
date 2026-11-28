@@ -223,6 +223,7 @@ describe('pet domain projection', () => {
     expect(slice.weekTotalCount).toBe(40)
     expect(slice.instances).toHaveLength(36)
     expect(slice.instances[0]?.recordId).toBe('w-0')
+    expect(slice.instances[35]?.recordId).toBe('w-19')
   })
 
   it('builds weeklyFourColorMatrix across focus, pause, early, and manual segments', () => {

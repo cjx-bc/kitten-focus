@@ -182,7 +182,7 @@ function catStageNodes(
             ellipse(54, 62, 6, 4.5, BODY, INK, 1.8),
             path('M58 58 Q61 63 64 58', 'none', ACCENT, 2),
           ]
-        : [path('M56 59 Q60 62 64 59', 'none', WHITE, 1.8)]),
+        : [path('M56 59 Q60 62 64 59', 'none', skinId === 'cow' ? INK : WHITE, 1.8)]),
     ]
   }
 

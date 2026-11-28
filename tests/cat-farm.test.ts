@@ -196,6 +196,17 @@ describe('weekFarmSlice and renderWeeklyFarmCard', () => {
     expect(drawnTexts.some((t) => t.includes('40'))).toBe(true)
     expect(drawnTexts.some((t) => t.includes('2小时5分'))).toBe(true)
     expect(ctx.ellipse.mock.calls.length + ctx.arc.mock.calls.length).toBeGreaterThan(0)
+
+    drawnTexts.length = 0
+    renderWeeklyFarmCard(fakeCanvas, {
+      weekStartDate: '2026-12-28',
+      weekEndDate: '2027-01-03',
+      weekTotalCount: 1,
+      totalDurationMs: 25 * 60_000,
+      instances: [],
+    })
+    expect(drawnTexts).toContain('2026 年 12 月 28 日–2027 年 1 月 3 日')
+    expect(drawnTexts.some((t) => t.includes('2026 年 · 2026 年'))).toBe(false)
   })
 })
 

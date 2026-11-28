@@ -11,6 +11,7 @@ import org.json.JSONObject;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Zero-permission light supervision watcher ("轻看护").
@@ -27,6 +28,9 @@ final class LeaveAppWatcher {
         boolean isYieldedWhitelist();
         boolean isSettingsAuthorizationInFlight();
         boolean canAttachOverlay();
+        default boolean isAppRestrictionReady() {
+            return canAttachOverlay();
+        }
         JSONObject readActiveSession() throws JSONException;
         JSONObject readData() throws JSONException;
         long monotonicNowMs();
@@ -46,6 +50,7 @@ final class LeaveAppWatcher {
     private final LeaveEnvironment env;
     private final TimerScheduler scheduler;
     private final Object lock = new Object();
+    private final AtomicLong lifecycleSeq = new AtomicLong(0L);
     private long generation = 0L;
     private boolean pending = false;
     private String pendingSessionId = "";
@@ -66,9 +71,16 @@ final class LeaveAppWatcher {
         return sharedInstance;
     }
 
+    long markStopped() {
+        return lifecycleSeq.incrementAndGet();
+    }
+
     static void onActivityStopped(Context context) {
         if (context == null) return;
-        shared(context).onStop();
+        final Context app = context.getApplicationContext();
+        LeaveAppWatcher watcher = shared(app);
+        final long stopSeq = watcher.markStopped();
+        WORKER.execute(() -> watcher.onStop(stopSeq));
     }
 
     static void onActivityForegrounded(Context context) {
@@ -77,30 +89,44 @@ final class LeaveAppWatcher {
     }
 
     void onStop() {
-        final long currentGen;
+        onStop(markStopped());
+    }
+
+    void onStop(long expectedSeq) {
         synchronized (lock) {
+            if (lifecycleSeq.get() != expectedSeq) {
+                return;
+            }
             scheduler.cancel();
             pending = false;
             pendingSessionId = "";
-            if (isExempt(null)) {
+        }
+        JSONObject active = readActiveIfNotExempt(null);
+        if (active == null) {
+            return;
+        }
+        final long currentGen;
+        synchronized (lock) {
+            if (lifecycleSeq.get() != expectedSeq) {
                 return;
             }
-            JSONObject active;
-            try {
-                active = env.readActiveSession();
-            } catch (Exception ignored) {
-                return;
-            }
-            if (active == null) return;
             currentGen = ++generation;
             pending = true;
             pendingSessionId = active.optString("id", "");
+            scheduler.schedule(LEAVE_FAIL_DELAY_MS, () -> onTimeout(currentGen));
         }
         env.showLeaveWarning();
-        scheduler.schedule(LEAVE_FAIL_DELAY_MS, () -> onTimeout(currentGen));
+        boolean stillPending;
+        synchronized (lock) {
+            stillPending = pending && generation == currentGen;
+        }
+        if (!stillPending) {
+            env.cancelLeaveWarning();
+        }
     }
 
     void onForeground() {
+        lifecycleSeq.incrementAndGet();
         synchronized (lock) {
             generation++;
             pending = false;
@@ -129,46 +155,48 @@ final class LeaveAppWatcher {
     }
 
     private boolean isExempt(String expectedSessionId) {
+        return readActiveIfNotExempt(expectedSessionId) == null;
+    }
+
+    private JSONObject readActiveIfNotExempt(String expectedSessionId) {
         JSONObject active;
         JSONObject data;
         try {
             active = env.readActiveSession();
             data = env.readData();
         } catch (Exception ignored) {
-            return true;
+            return null;
         }
         // 1. No active session or independent lock session
-        if (active == null || LockEngine.owns(active)) return true;
+        if (active == null || LockEngine.owns(active)) return null;
         if (expectedSessionId != null && !expectedSessionId.isEmpty()
             && !expectedSessionId.equals(active.optString("id", ""))) {
-            return true;
+            return null;
         }
         // 2. Active focus not running (e.g. paused)
-        if (!"running".equals(active.optString("state"))) return true;
+        if (!"running".equals(active.optString("state"))) return null;
         // 2b. Strict countdown must never be ended early by leaving the app (even without overlay)
-        if (active.optBoolean("strictMode") && "countdown".equals(active.optString("mode"))) return true;
+        if (active.optBoolean("strictMode") && "countdown".equals(active.optString("mode"))) return null;
         // 3. preferences.leaveAppFail === false (default when missing is true)
         JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
-        if (prefs != null && !prefs.optBoolean("leaveAppFail", true)) return true;
+        if (prefs != null && !prefs.optBoolean("leaveAppFail", true)) return null;
         // 4. Screen off
-        if (!env.isInteractive()) return true;
+        if (!env.isInteractive()) return null;
         // 5. Lockscreen showing
-        if (env.isKeyguardLocked()) return true;
+        if (env.isKeyguardLocked()) return null;
         // 6. Cellular call or ringing
-        if (env.isInActiveCall()) return true;
+        if (env.isInActiveCall()) return null;
         // 7. Yielded to active round's whitelisted / temporary-access app
-        if (env.isYieldedWhitelist() || hasActiveTemporaryAccess(active, env.monotonicNowMs())) return true;
+        if (env.isYieldedWhitelist() || hasActiveTemporaryAccess(active, env.monotonicNowMs())) return null;
         // 8. In-app authorization jump to system settings
-        if (env.isSettingsAuthorizationInFlight()) return true;
-        // 9. Study mode overlay active and ready to pull back
+        if (env.isSettingsAuthorizationInFlight()) return null;
+        // 9. Study mode app restriction active and ready to pull back
         JSONObject protection = active.optJSONObject("protection");
         boolean withdrawn = protection != null && protection.optBoolean("applicationsWithdrawn");
         boolean study = protection != null && Boolean.TRUE.equals(protection.opt("study")) && !withdrawn;
-        boolean studyLocked = protection != null && Boolean.TRUE.equals(protection.opt("studyLocked")) && !withdrawn;
-        boolean studyOrLock = LockEngine.owns(active) || study || studyLocked;
-        if (studyOrLock && env.canAttachOverlay()) return true;
+        if (study && env.isAppRestrictionReady()) return null;
 
-        return false;
+        return active;
     }
 
     private static boolean hasActiveTemporaryAccess(JSONObject active, long monoNowMs) {
@@ -241,8 +269,22 @@ final class LeaveAppWatcher {
         }
 
         @Override
+        public boolean isAppRestrictionReady() {
+            return FocusProtection.isAppRestrictionReady(app);
+        }
+
+        @Override
         public JSONObject readActiveSession() throws JSONException {
-            return LocalStore.get(app).read("active");
+            LocalStore store = LocalStore.get(app);
+            JSONObject active = store.read("active");
+            if (active != null && active.optJSONObject("protection") != null) {
+                boolean withdrawn = new FocusRecovery(app, store).withdrawn(
+                    active.optString("id"),
+                    FocusRecovery.APPLICATIONS
+                );
+                active.getJSONObject("protection").put("applicationsWithdrawn", withdrawn);
+            }
+            return active;
         }
 
         @Override

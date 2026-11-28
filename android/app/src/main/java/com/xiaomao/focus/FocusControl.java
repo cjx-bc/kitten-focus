@@ -175,14 +175,20 @@ final class FocusControl {
     }
 
     private void synchronizeEffects(JSONObject active) throws JSONException {
+        synchronizeEffects(active, false);
+    }
+
+    private void synchronizeEffects(JSONObject active, boolean skipWhiteNoise) throws JSONException {
         dnd.synchronize(active);
         notifications.synchronize(active);
         recentTasks.synchronize(active);
         launcher.synchronize(active);
         wallpaper.synchronize(active);
-        JSONObject data = store.read("data");
-        JSONObject preferences = data == null ? null : data.optJSONObject("preferences");
-        WhiteNoisePlayer.getInstance(context).sync(active, preferences);
+        if (!skipWhiteNoise) {
+            JSONObject data = store.read("data");
+            JSONObject preferences = data == null ? null : data.optJSONObject("preferences");
+            WhiteNoisePlayer.getInstance(context).sync(active, preferences);
+        }
     }
 
     JSONObject startFocus(JSONObject session) throws JSONException { return startFocus(session, false); }
@@ -251,7 +257,7 @@ final class FocusControl {
                 lockAction("read", false);
                 return focus.observe();
             }
-            JSONObject observation = observeControl();
+            JSONObject observation = observeSessionStateLocked();
             JSONObject active = observation.getJSONObject("focus").optJSONObject("session");
             enforceFocusActionAllowed(active, action, observation.optBoolean("needsReconcile"));
             JSONObject result = focus.action(action);
@@ -262,13 +268,39 @@ final class FocusControl {
             return projectTemporary(result);
         }
     }
+    static String resolveNotificationFinishAction(boolean strictMode, String mode, long elapsedMs, boolean needsReconcile) {
+        if (!needsReconcile && !strictMode && "countdown".equals(mode) && elapsedMs < FocusEngine.REGRET_WINDOW_MS) {
+            return "cancel";
+        }
+        return "finish";
+    }
+
+    JSONObject finishFromNotification() throws JSONException {
+        synchronized (store) {
+            if (LockEngine.owns(store.read("active"))) {
+                throw new IllegalStateException("请返回当前锁机处理");
+            }
+            JSONObject observation = observeSessionStateLocked();
+            JSONObject focusObj = observation.optJSONObject("focus");
+            JSONObject active = focusObj == null ? null : focusObj.optJSONObject("session");
+            if (active == null) {
+                return focusAction("finish");
+            }
+            long elapsedMs = focusObj.optLong("elapsedMs", 0L);
+            boolean strict = active.optBoolean("strictMode");
+            String mode = active.optString("mode");
+            String action = resolveNotificationFinishAction(strict, mode, elapsedMs, observation.optBoolean("needsReconcile"));
+            return focusAction(action);
+        }
+    }
+
     JSONObject failByLeave() throws JSONException {
         synchronized (store) {
             JSONObject active = store.read("active");
             if (active == null || LockEngine.owns(active) || !"running".equals(active.optString("state"))) {
                 return null;
             }
-            JSONObject observation = observeControl();
+            JSONObject observation = observeSessionStateLocked();
             JSONObject observedActive = observation.getJSONObject("focus").optJSONObject("session");
             enforceFocusActionAllowed(observedActive, "fail_leave", observation.optBoolean("needsReconcile"));
             JSONObject result = focus.action("fail_leave");
@@ -349,6 +381,10 @@ final class FocusControl {
 
     /** Explicit lifecycle work for alarms, boot and other reconciliation triggers. */
     JSONObject reconcile() throws JSONException {
+        return reconcile(false);
+    }
+
+    JSONObject reconcile(boolean fromBoot) throws JSONException {
         synchronized (store) {
             focus.action("read");
             lock.action("read", false);
@@ -356,50 +392,70 @@ final class FocusControl {
             JSONObject active = store.read("active");
             recovery.releaseFinished(active == null ? null : active.optString("id"));
             if (active == null) { navigation.release(); antiClose.release(); }
-            else { FocusKeepAliveService.ensureStarted(context); }
-            synchronizeEffects(store.read("active"));
-            return observeControl();
+            else { FocusKeepAliveService.ensureStarted(context, fromBoot); }
+            synchronizeEffects(store.read("active"), fromBoot);
+        }
+        return observeControl();
+    }
+
+    private JSONObject observeSessionStateLocked() throws JSONException {
+        JSONObject focusSnapshot = focus.observe();
+        JSONObject restSnapshot = rest.observe();
+        JSONObject lockSnapshot = lock.observe();
+        JSONObject active = store.read("active");
+        if (active != null && active.optJSONObject("protection") != null) {
+            active.getJSONObject("protection").put("applicationsWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.APPLICATIONS));
+            active.getJSONObject("protection").put("navigationWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.NAVIGATION));
+            active.getJSONObject("protection").put("antiCloseWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.ANTI_CLOSE));
+        }
+        if (active != null) {
+            if (LockEngine.owns(active)) lockSnapshot.put("session", active);
+            else focusSnapshot.put("session", active);
+        }
+        JSONObject resting = restSnapshot.optJSONObject("session");
+        boolean runningRest = resting != null && resting.optString("state").equals("running");
+        boolean needsReconcile = active != null && (
+            active.optInt("bootId") != clock.boot() || clock.mono() < active.optLong("anchorMono")
+            || active.optString("mode").equals("countdown")
+                && (LockEngine.owns(active) ? lockSnapshot.optLong("remainingMs") == 0 : focusSnapshot.optLong("elapsedMs") >= active.optLong("targetMs")));
+        needsReconcile |= runningRest && (resting.optInt("bootId") != clock.boot()
+            || restSnapshot.optLong("remainingMs") == 0);
+        JSONObject observation = new JSONObject()
+            .put("owner", active != null ? LockEngine.owns(active) ? "lock" : "focus" : runningRest ? "rest" : JSONObject.NULL)
+            .put("focus", projectTemporary(focusSnapshot)).put("rest", restSnapshot).put("lock", lockSnapshot)
+            .put("needsReconcile", needsReconcile);
+        return observation.put("mainEntry", mainEntryStatus(observation));
+    }
+
+    /** Lightweight read-only session/entry state without external Binder/PackageManager IPC. */
+    JSONObject observeSessionState() throws JSONException {
+        synchronized (store) {
+            return observeSessionStateLocked();
         }
     }
 
     /** Never checkpoints, settles, writes, schedules alarms or changes notifications. */
     JSONObject observeControl() throws JSONException {
+        final JSONObject observation;
+        final boolean wallpaperPreferred;
         synchronized (store) {
-            JSONObject focusSnapshot = focus.observe();
-            JSONObject restSnapshot = rest.observe();
-            JSONObject lockSnapshot = lock.observe();
-            JSONObject active = store.read("active");
-            if (active != null && active.optJSONObject("protection") != null) {
-                active.getJSONObject("protection").put("applicationsWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.APPLICATIONS));
-                active.getJSONObject("protection").put("navigationWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.NAVIGATION));
-                active.getJSONObject("protection").put("antiCloseWithdrawn", recovery.withdrawn(active.optString("id"), FocusRecovery.ANTI_CLOSE));
-            }
-            if (active != null) {
-                if (LockEngine.owns(active)) lockSnapshot.put("session", active);
-                else focusSnapshot.put("session", active);
-
-            }
-            JSONObject resting = restSnapshot.optJSONObject("session");
-            boolean runningRest = resting != null && resting.optString("state").equals("running");
-            boolean needsReconcile = active != null && (
-                active.optInt("bootId") != clock.boot() || clock.mono() < active.optLong("anchorMono")
-                || active.optString("mode").equals("countdown")
-                    && (LockEngine.owns(active) ? lockSnapshot.optLong("remainingMs") == 0 : focusSnapshot.optLong("elapsedMs") >= active.optLong("targetMs")));
-            needsReconcile |= runningRest && (resting.optInt("bootId") != clock.boot()
-                || restSnapshot.optLong("remainingMs") == 0);
-            JSONObject observation = new JSONObject()
-                .put("owner", active != null ? LockEngine.owns(active) ? "lock" : "focus" : runningRest ? "rest" : JSONObject.NULL)
-                .put("focus", projectTemporary(focusSnapshot)).put("rest", restSnapshot).put("lock", lockSnapshot)
-
-                .put("dnd", dnd.observe(active))
-                .put("notifications", notifications.observe(active))
-                .put("recentTasks", recentTasks.observe(active))
-                .put("launcher", launcher.observe(active))
-                .put("wallpaper", getWallpaperStatus())
-                .put("needsReconcile", needsReconcile);
-            return observation.put("navigation", navigation.observe(observation)).put("antiClose", antiClose.observe(observation))
-                .put("mainEntry", mainEntryStatus(observation));
+            observation = observeSessionStateLocked();
+            wallpaperPreferred = WallpaperProtection.requested(
+                new JSONObject().put("protection", FocusProtection.preferences(store))
+            );
         }
+        JSONObject active = ControlSession.from(observation);
+        JSONObject wallpaperStatus = wallpaper.observe(active)
+            .put("preferenceEnabled", wallpaperPreferred)
+            .put("lastAssociation", WallpaperLifecycle.observation(context));
+        return observation
+            .put("dnd", dnd.observe(active))
+            .put("notifications", notifications.observe(active))
+            .put("recentTasks", recentTasks.observe(active))
+            .put("launcher", launcher.observe(active))
+            .put("wallpaper", wallpaperStatus)
+            .put("navigation", navigation.observe(observation))
+            .put("antiClose", antiClose.observe(observation));
     }
 
     private JSONObject mainEntryStatus(JSONObject observation) throws JSONException {
@@ -411,12 +467,10 @@ final class FocusControl {
     }
     /** Read-only policy shared by Android launch/warm entry and every Vue navigation. */
     JSONObject resolveMainEntry(String path) throws JSONException {
-        synchronized (store) {
-            JSONObject status = observeControl().getJSONObject("mainEntry");
-            boolean safe = "/lock".equals(path) || "/permissions".equals(path) || "/help".equals(path)
-                || "/emergency".equals(path) || "/recovery".equals(path);
-            return status.put("path", status.optBoolean("active") && !safe ? "/lock" : path);
-        }
+        JSONObject status = observeSessionState().getJSONObject("mainEntry");
+        boolean safe = "/lock".equals(path) || "/permissions".equals(path) || "/help".equals(path)
+            || "/emergency".equals(path) || "/recovery".equals(path);
+        return status.put("path", status.optBoolean("active") && !safe ? "/lock" : path);
     }
 
     private boolean temporaryEligible(JSONObject session) throws JSONException {
@@ -480,7 +534,7 @@ final class FocusControl {
             JSONObject current = temporaryState(session);
             if (current.optLong("remainingMs") > 0 && !Boolean.TRUE.equals(request.opt("replaceConfirmed")))
                 return grantResult("confirmation-required", "继续将结束上一个应用的临时放行", false, session);
-            JSONObject observation = observeControl();
+            JSONObject observation = observeSessionStateLocked();
             observation.getJSONObject("focus").getJSONObject("session").remove("temporaryAccess");
             if (!FocusProtection.shouldBlock(context, observation, target, ""))
                 return grantResult("denied", "此应用不受本轮限制，无需临时放行", false, session);
@@ -517,10 +571,10 @@ final class FocusControl {
     JSONObject loadData() throws JSONException { return store.loadData(); }
     /** OS-event command; callers must supply actual package/class from accessibility. */
     boolean navigationWindow(String packageName, String className) throws JSONException {
-        synchronized (store) { return navigation.window(observeControl(), packageName, className); }
+        synchronized (store) { return navigation.window(observeSessionStateLocked(), packageName, className); }
     }
     boolean antiCloseWindow(String packageName, String className) throws JSONException {
-        synchronized (store) { return antiClose.window(observeControl(), packageName, className); }
+        synchronized (store) { return antiClose.window(observeSessionStateLocked(), packageName, className); }
     }
     JSONObject previewRecovery() throws JSONException { synchronized (store) { return recovery.preview(); } }
     JSONObject confirmRecovery(String revision) throws JSONException { synchronized (store) {
@@ -553,11 +607,14 @@ final class FocusControl {
         }
     }
     JSONObject getWallpaperStatus() throws JSONException {
+        final JSONObject active;
+        final boolean preferred;
         synchronized (store) {
-            return wallpaper.observe(store.read("active")).put("preferenceEnabled",
-                WallpaperProtection.requested(new JSONObject().put("protection", FocusProtection.preferences(store))))
-                .put("lastAssociation", WallpaperLifecycle.observation(context));
+            active = store.read("active");
+            preferred = WallpaperProtection.requested(new JSONObject().put("protection", FocusProtection.preferences(store)));
         }
+        return wallpaper.observe(active).put("preferenceEnabled", preferred)
+            .put("lastAssociation", WallpaperLifecycle.observation(context));
     }
     JSONObject prepareWallpaper(boolean limitsAccepted, boolean originalMatches) throws JSONException {
         synchronized (store) {
@@ -584,11 +641,11 @@ final class FocusControl {
     JSONObject wallpaperEngineCreated(boolean preview) throws JSONException {
         synchronized (store) {
             wallpaper.engineCreated(preview);
-            if (preview) return observeControl();
-            JSONObject result = reconcile();
-            WallpaperLifecycle.record(context, "existing_session_reconciled", false, result);
-            return result;
         }
+        if (preview) return observeControl();
+        JSONObject result = reconcile();
+        WallpaperLifecycle.record(context, "existing_session_reconciled", false, result);
+        return result;
     }
     void wallpaperPreviewDestroyed() throws JSONException { synchronized (store) { wallpaper.previewDestroyed(); } }
     void restoreLauncher() throws JSONException { synchronized (store) { launcher.restore(store.read("active")); } }

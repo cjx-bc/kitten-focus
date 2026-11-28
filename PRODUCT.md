@@ -21,18 +21,19 @@ Local-first, zero-account Android focus companion whose single source of truth f
 ## Operating Context
 
 - **Runtime & Storage**: Capacitor 8 hybrid shell hosting a Vue 3 + TypeScript + Pinia interface over Android Java (`minSdk 24`, `targetSdk 36`, SQLite `LocalStore`), with browser/IndexedDB mode strictly limited to UI preview.
-- **Session Ownership**: Focus sessions, 5-minute post-completion rests, and independent countdown locks share mutually exclusive native ownership; `observeControl()` remains strictly read-only, while active sessions persist across app switches and survive screen-off via `FocusKeepAliveService` (`specialUse` foreground service reusing the single ongoing focus notification).
+- **Session Ownership**: Focus sessions, customizable post-completion rests (with optional auto-rest and Pomodoro loop), and independent countdown locks share mutually exclusive native ownership; `observeControl()` remains strictly read-only, while active sessions persist across app switches and survive screen-off via `FocusKeepAliveService` (`specialUse` foreground service, adding `mediaPlayback` only while offline white noise is actively playing, reusing the single ongoing focus notification).
 - **Primary Routines**: Common user actions (starting a reusable item focus, starting free focus, pausing/finishing, toggling Study Mode, checking today's/weekly stats & schedule) are constrained to `<= 2` steps and single-layer dialogs (`0` nested modals).
 - **In-App Distribution & Updates**: Distributed directly via APK (GitHub Releases and self-hosted HTTPS mirrors) using consistent debug internal-testing signing, background cold-launch update checks with 60-second cooldown, Option A per-version persistent dismiss (`稍后再说`), metered-network confirmation, SHA-256/signature verification, and automatic pre-upgrade local recovery backups.
 
 ## Capabilities and Constraints
 
-- **Core Focus & Reusable Tasks**: Focus items belong to color-coded themes (`待办主题` / `子待办`) and never track completion checkboxes or "completed" states (`GLOSSARY.md` & `ADR 0003`). Supports countdown and stopwatch modes, plus free focus (`自由专注`).
-- **Calendar & Semester Timetable**: Personal events (with conflict warnings and linked tasks) plus multi-semester teaching-week timetables (`课表`) with single-session cancellation/adjustment.
-- **Statistics**: Day, week, month, year, and cumulative views of actual accumulated focus duration (excluding paused intervals), session counts, and midnight-split allocations.
-- **Study Mode & Independent Lock**: Unified Study Mode (`学霸模式` -> `应用限制` / `严格模式` / `免打扰`) plus separate Independent Lock (`独立锁机`) whose records never mix into Focus Statistics (`docs/adr/0004-native-focus-control-boundary.md`).
-- **Honest System Boundaries**: No claim of immunity against user force-stop, uninstall, or aggressive OEM background policies; battery optimization exemption (`后台运行不限制`) is a calm, optional recommendation that never blocks focus starts or triggers error badges; `CatView` remains an intentional v1 placeholder (`小猫还未入驻`), with virtual cat growth/items/coins/XP and cloud sync explicitly deferred.
-- **Strict Terminology (`GLOSSARY.md`)**: Student/user-facing screens avoid forbidden terms (`番茄钟`, `番茄数`, `待办完成`, `本次专注已完成`, `大主题模块`, `子日程`, `临时待办`) and keep low-level protection telemetry confined to Tier 3 diagnostic views (`/permissions`, `/help`, `/recovery`, `/emergency`).
+- **Core Focus & Reusable Tasks**: Default entry opens `/focus` standby with dial-drag duration adjustment (`5–180` min + stopwatch), task selector (`/tasks` reusable `待办主题` / `子待办` without completion checkboxes per `GLOSSARY.md` & `ADR 0003`), free focus (`自由专注`), 10-second regret cancel window, left-swipe early give-up, and 5 offline `.wav` white-noise soundscapes.
+- **Companion, Weekly Farm & Manual Backfill**: Pure-function `FocusRecord[]` projection derives `好感` (only affection/streak/raised milestones per `ADR 0005`, never coins/XP/levels), 12 animals with multi-coat skins, and the natural-week meadow (`一周农场`, `/cat`) with PNG check-in export. Manual backfills (`手动补录`) enter timeline and duration statistics only and never produce affection, animals, or session counts.
+- **Timeline, Calendar & Semester Timetable**: Default timeline view with completed/early/manual cards, inline reflection notes, and weekly 4-color PNG matrix; seamlessly switches to personal events (with conflict warnings and linked tasks) and multi-semester teaching-week timetables (`课表`) with single-session cancellation/adjustment.
+- **Statistics**: Day, week, month, year, and cumulative views of actual accumulated focus duration (excluding paused intervals), timer session counts, early-finish counts, midnight-split allocations, ECharts trend/distribution/hourly charts, and a 365-day yearly heatmap.
+- **Three-Tier Distraction Protection**: Zero-permission light supervision (`轻看护`, 10-second bright-screen leave timeout with screen-off/lockscreen/call/whitelist exemptions), unified native Study Mode (`学霸模式` -> `应用限制` / `严格模式` / `免打扰`), and separate Independent Lock (`独立锁机`) whose records never mix into Focus Statistics (`docs/adr/0004-native-focus-control-boundary.md`).
+- **Honest System Boundaries**: No claim of immunity against user force-stop, uninstall, or aggressive OEM background policies; battery optimization exemption (`后台运行不限制`) is a calm, optional recommendation that never blocks focus starts or triggers error badges; cloud sync and accounts remain deferred.
+- **Strict Terminology (`GLOSSARY.md`)**: Student/user-facing screens avoid forbidden terms (`番茄钟`, `番茄数`, `待办完成`, `本次专注已完成`, `大主题模块`, `子日程`, `临时待办`, `金币`, `经验值`, `等级`) and keep low-level protection telemetry confined to Tier 3 diagnostic views (`/permissions`, `/help`, `/recovery`, `/emergency`).
 
 ## Brand Commitments
 
@@ -44,8 +45,8 @@ Local-first, zero-account Android focus companion whose single source of truth f
 ## Evidence on Hand
 
 - **Authoritative Specs**: `GLOSSARY.md`, `docs/brand-spec.md`, `docs/ux-spec.md`, `docs/app-updates.md`, `docs/adr/0001`–`0004`, `deploy/landing/index.html`, and the Vue/Android codebase (`src/`, `android/`).
-- **Verification Scope**: Host unit tests (Vitest), browser UX/brand E2E checks, Android JVM unit tests, APK signature/integrity checks (`scripts/prepare-update.py`), and landing/update server verification are active in the repository.
-- **Explicit Gaps Not to Fabricate**: Do not invent testimonials, user growth metrics, App Store / Google Play reviews, implemented virtual-pet progression mechanics, dark-mode support, or Android physical-device/emulator regression passes when unexecuted.
+- **Verification Scope**: Host unit tests (Vitest), browser UX/brand E2E checks, Android JVM unit tests, APK signature/integrity checks (`scripts/prepare-update.py`), and Android 16 emulator verification are active in the repository.
+- **Explicit Gaps Not to Fabricate**: Do not invent testimonials, user growth metrics, App Store / Google Play reviews, cloud sync, or physical-device regression passes when unexecuted.
 
 ## Product Principles
 

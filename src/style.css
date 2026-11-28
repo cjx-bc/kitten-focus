@@ -292,12 +292,12 @@ main {
 .text-button.danger {
   color: #c13a25;
 }
-:is(.card, .notice, .settings-group, .more-settings, .inline-confirm, .conflict-banner, .metered-confirm, .capability, .recovery-step, .perm-card)
+:is(.card, .notice, .settings-group, .more-settings, .inline-confirm, .inline-confirm-box, .conflict-banner, .metered-confirm, .capability, .recovery-step, .perm-card, .farm-record-bar, .timeline-card, .ongoing)
   :is(.secondary, .icon-button.soft) {
   background: var(--white);
   border: 1px solid var(--line);
 }
-:is(.card, .notice, .settings-group, .more-settings, .inline-confirm, .conflict-banner, .metered-confirm, .capability, .recovery-step, .perm-card)
+:is(.card, .notice, .settings-group, .more-settings, .inline-confirm, .inline-confirm-box, .conflict-banner, .metered-confirm, .capability, .recovery-step, .perm-card, .farm-record-bar, .timeline-card, .ongoing)
   .text-button:not(.danger) {
   color: var(--muted-surface);
 }

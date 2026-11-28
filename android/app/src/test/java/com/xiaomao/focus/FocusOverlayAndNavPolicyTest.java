@@ -181,11 +181,11 @@ public class FocusOverlayAndNavPolicyTest {
 
     @Test
     public void resolvesRegretWindowPetStagesAndRenderSignatures() {
-        // Regret window (< 10s) applies to normal countdown/stopwatch & non-strict sessions, never strict countdown
+        // Regret window (< 10s) applies ONLY to non-strict countdown, never stopwatch or strict countdown
         assertTrue(FocusBlockOverlay.isInRegretWindow(false, true, 0L));
         assertTrue(FocusBlockOverlay.isInRegretWindow(false, true, 9_999L));
         assertFalse(FocusBlockOverlay.isInRegretWindow(false, true, 10_000L));
-        assertTrue(FocusBlockOverlay.isInRegretWindow(false, false, 5_000L));
+        assertFalse(FocusBlockOverlay.isInRegretWindow(false, false, 5_000L));
         assertFalse(FocusBlockOverlay.isInRegretWindow(true, true, 3_000L));
 
         // 3-stage pet progression: countdown 0-33% / 33-75% / 75-100%, stopwatch 0-8m / 8-20m / 20m+
@@ -215,5 +215,23 @@ public class FocusOverlayAndNavPolicyTest {
         );
         assertFalse(s1.equals(s2));
         assertFalse(s2.equals(s3));
+    }
+
+    @Test
+    public void preservesNormalOverlayInUsageAppMonitorUnlessUnlockedOffOrSessionEnded() {
+        assertEquals("dismiss", UsageAppMonitor.overlayCleanupAction(false, true, true, true));
+        assertEquals("keep", UsageAppMonitor.overlayCleanupAction(true, false, true, true));
+        assertEquals("dismiss", UsageAppMonitor.overlayCleanupAction(true, true, false, false));
+        assertEquals("dismiss_locked", UsageAppMonitor.overlayCleanupAction(true, true, true, false));
+        assertEquals("monitor", UsageAppMonitor.overlayCleanupAction(true, true, true, true));
+    }
+
+    @Test
+    public void usesCompactHeaderOnlyForWhiteNoiseAndWhitelistSubPanels() {
+        assertTrue(FocusBlockOverlay.shouldUseCompactHeader(FocusBlockOverlay.SubPanel.WHITE_NOISE));
+        assertTrue(FocusBlockOverlay.shouldUseCompactHeader(FocusBlockOverlay.SubPanel.WHITELIST));
+        assertFalse(FocusBlockOverlay.shouldUseCompactHeader(FocusBlockOverlay.SubPanel.NONE));
+        assertFalse(FocusBlockOverlay.shouldUseCompactHeader(FocusBlockOverlay.SubPanel.CONFIRM_FINISH));
+        assertFalse(FocusBlockOverlay.shouldUseCompactHeader(FocusBlockOverlay.SubPanel.SAFETY));
     }
 }

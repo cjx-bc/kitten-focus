@@ -172,4 +172,13 @@ public class FocusNotificationActionsTest {
         assertEquals("running", store.read("active").getString("state"));
         assertEquals("sess-notif", store.read("active").getString("id"));
     }
+
+    @Test
+    public void resolvesNotificationFinishWithinRegretWindowToCancelForNormalCountdownOnly() {
+        assertEquals("cancel", FocusControl.resolveNotificationFinishAction(false, "countdown", 4_000L, false));
+        assertEquals("finish", FocusControl.resolveNotificationFinishAction(false, "countdown", 10_000L, false));
+        assertEquals("finish", FocusControl.resolveNotificationFinishAction(false, "stopwatch", 4_000L, false));
+        assertEquals("finish", FocusControl.resolveNotificationFinishAction(true, "countdown", 4_000L, false));
+        assertEquals("finish", FocusControl.resolveNotificationFinishAction(false, "countdown", 4_000L, true));
+    }
 }

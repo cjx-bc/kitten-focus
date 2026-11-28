@@ -19,6 +19,7 @@ import {
 } from '../domain/pet'
 import { formatWeekRangeLabel, renderWeeklyFarmCard } from '../domain/farmCard'
 import { exportPngFile } from '../platform/exportPng'
+import { waitForDialogClose } from '../components/sheetClose'
 import Icon from '../components/Icon.vue'
 import PetGraphic from '../components/PetGraphic.vue'
 import Sheet from '../components/Sheet.vue'
@@ -181,8 +182,9 @@ async function saveCheckinPng() {
     const dataUrl = previewDataUrl.value || buildCheckinDataUrl()
     previewDataUrl.value = dataUrl
     const fileName = `小猫专注-一周农场-${weekSlice.value.weekStartDate}.png`
-    await exportPngFile(dataUrl, fileName)
     sheetView.value = null
+    await waitForDialogClose()
+    await exportPngFile(dataUrl, fileName)
     app.notify('本周农场打卡图已保存')
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

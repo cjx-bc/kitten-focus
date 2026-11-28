@@ -63,7 +63,7 @@ public class FocusAccessibilityService extends AccessibilityService {
         String reason = "recents".equals(target) ? "多任务切换"
             : ("anti_close".equals(target) ? "高危设置页" : "离开专注");
         try {
-            JSONObject obs = new FocusControl(service).observeControl();
+            JSONObject obs = new FocusControl(service).observeSessionState();
             FocusBlockOverlay.showGuardPullback(service, obs, reason);
         } catch (Exception ignored) { }
         cancelPullbackPulse();
@@ -85,7 +85,7 @@ public class FocusAccessibilityService extends AccessibilityService {
                 }
                 remaining[0]--;
                 try {
-                    JSONObject obs = new FocusControl(service).observeControl();
+                    JSONObject obs = new FocusControl(service).observeSessionState();
                     if (ControlSession.from(obs) == null) {
                         service.pullbackPulseTask = null;
                         return;
@@ -220,7 +220,7 @@ public class FocusAccessibilityService extends AccessibilityService {
             FocusControl control = new FocusControl(this);
             if (fromEvent && control.antiCloseWindow(foregroundPackage, foregroundClass)) return;
             if (fromEvent && control.navigationWindow(foregroundPackage, foregroundClass)) return;
-            JSONObject observation = control.observeControl();
+            JSONObject observation = control.observeSessionState();
             String owner = observation.optString("owner");
             JSONObject session = ControlSession.from(observation);
             boolean hasActive = ("focus".equals(owner) || "lock".equals(owner)) && !observation.optBoolean("needsReconcile") && session != null;

@@ -117,6 +117,7 @@ public class LeaveAppWatcherTest {
         boolean yieldedWhitelist = false;
         boolean settingsAuthInFlight = false;
         boolean canAttachOverlay = false;
+        Boolean appRestrictionReady = null;
 
         int showWarningCount = 0;
         int cancelWarningCount = 0;
@@ -129,6 +130,9 @@ public class LeaveAppWatcherTest {
         @Override public boolean isYieldedWhitelist() { return yieldedWhitelist; }
         @Override public boolean isSettingsAuthorizationInFlight() { return settingsAuthInFlight; }
         @Override public boolean canAttachOverlay() { return canAttachOverlay; }
+        @Override public boolean isAppRestrictionReady() {
+            return appRestrictionReady != null ? appRestrictionReady : canAttachOverlay;
+        }
         @Override public JSONObject readActiveSession() throws JSONException { return store.read("active"); }
         @Override public JSONObject readData() throws JSONException { return store.read("data"); }
         @Override public long monotonicNowMs() { return clock.mono(); }
@@ -415,5 +419,44 @@ public class LeaveAppWatcherTest {
         watcher.onStop();
         assertEquals(1, env.showWarningCount);
         assertTrue(scheduler.hasPending());
+    }
+
+    @Test
+    public void doesNotExemptStudyLockedWithoutAppRestrictionOrWhenAppRestrictionNotReady() throws Exception {
+        FakeEnvironment env = new FakeEnvironment();
+        FakeScheduler scheduler = new FakeScheduler();
+        LeaveAppWatcher watcher = new LeaveAppWatcher(env, scheduler);
+
+        // study=false, studyLocked=true (e.g. only DND enabled, app restriction off) + overlay attachable -> NOT exempt
+        env.canAttachOverlay = true;
+        env.appRestrictionReady = true;
+        env.engine.start(focusSession("running", false, true, false));
+        watcher.onStop();
+        assertEquals(1, env.showWarningCount);
+        assertTrue(scheduler.hasPending());
+        watcher.onForeground();
+
+        // study=true, overlay attachable, but appRestrictionReady=false (no usage stats & no a11y) -> NOT exempt
+        env.appRestrictionReady = false;
+        env.store.write("active", focusSession("running", true, false, false));
+        watcher.onStop();
+        assertEquals(2, env.showWarningCount);
+        assertTrue(scheduler.hasPending());
+    }
+
+    @Test
+    public void staleAsyncOnStopAfterForegroundDoesNotArmTimerOrWarning() throws Exception {
+        FakeEnvironment env = new FakeEnvironment();
+        FakeScheduler scheduler = new FakeScheduler();
+        LeaveAppWatcher watcher = new LeaveAppWatcher(env, scheduler);
+
+        env.engine.start(focusSession("running", false, false, false));
+        long seq = watcher.markStopped();
+        watcher.onForeground();
+        watcher.onStop(seq);
+
+        assertEquals(0, env.showWarningCount);
+        assertFalse(scheduler.hasPending());
+        assertEquals(0, env.failByLeaveCount);
     }
 }

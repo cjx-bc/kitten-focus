@@ -217,10 +217,12 @@ describe('manual backfill validation & domain isolation', () => {
       beforeProj.weekFarmSlice('2026-11-23').weekTotalCount,
     )
 
-    // Statistics still includes manual duration
+    // Statistics includes manual duration while excluding manual entries from session counts
     const stat = statistics([timerRecord, manualRec], '2026-11-23', '2026-11-29')
     expect(stat.totalMs).toBe((25 + 120) * 60_000)
-    expect(stat.count).toBe(2)
+    expect(stat.count).toBe(1)
+    expect(stat.averageMs).toBe(25 * 60_000)
+    expect(stat.dailyCounts).toEqual([['2026-11-26', 1]])
 
     // Weekly four-color matrix marks manual hours on Friday (index 4)
     const matrix = afterProj.weeklyFourColorMatrix('2026-11-23')

@@ -120,6 +120,14 @@ final class UsageAppMonitor {
         h.postDelayed(TICK, delayMs);
     }
 
+    static String overlayCleanupAction(boolean interactiveUnlocked, boolean usageReady, boolean hasSession, boolean studyActive) {
+        if (!interactiveUnlocked) return "dismiss";
+        if (!usageReady) return "keep";
+        if (!hasSession) return "dismiss";
+        if (!studyActive) return "dismiss_locked";
+        return "monitor";
+    }
+
     private static void runTick() {
         if (!started) return;
         Context app = appContext;
@@ -131,26 +139,40 @@ final class UsageAppMonitor {
             return;
         }
 
-        if (!isInteractiveUnlocked(app) || !AppUsageGuard.isReady(app)) {
+        boolean unlocked = isInteractiveUnlocked(app);
+        boolean usageReady = AppUsageGuard.isReady(app);
+        String preCheck = overlayCleanupAction(unlocked, usageReady, true, true);
+        if ("dismiss".equals(preCheck)) {
             FocusBlockOverlay.dismiss();
+            reschedule(IDLE_POLL_MS);
+            return;
+        }
+        if ("keep".equals(preCheck)) {
             reschedule(IDLE_POLL_MS);
             return;
         }
 
         try {
             FocusControl control = new FocusControl(app);
-            JSONObject observation = control.observeControl();
+            JSONObject observation = control.observeSessionState();
             String owner = observation.optString("owner");
             JSONObject session = ControlSession.from(observation);
             JSONObject protection = session == null ? null : session.optJSONObject("protection");
-            boolean studyActive = ("focus".equals(owner) || "lock".equals(owner))
+            boolean hasSession = ("focus".equals(owner) || "lock".equals(owner))
                 && !observation.optBoolean("needsReconcile")
+                && session != null;
+            boolean studyActive = hasSession
                 && protection != null
                 && protection.optBoolean("study")
                 && !protection.optBoolean("applicationsWithdrawn");
-            if (!studyActive) {
+            String action = overlayCleanupAction(true, true, hasSession, studyActive);
+            if (!"monitor".equals(action)) {
                 lastBlockedPkg = "";
-                FocusBlockOverlay.dismiss();
+                if ("dismiss".equals(action)) {
+                    FocusBlockOverlay.dismiss();
+                } else {
+                    FocusBlockOverlay.dismissIfLockedOrBlocked();
+                }
                 reschedule(IDLE_POLL_MS);
                 return;
             }

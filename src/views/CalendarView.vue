@@ -143,14 +143,23 @@ const dayItems = computed(() => occurrences(app.data, day.value, day.value)),
   weekCourses = computed(() =>
     occurrences(app.data, week.value[0]!, week.value[6]!).filter((o) => o.kind === 'course'),
   )
+function segmentTouchesDay(
+  s: { start: number; end: number },
+  timeZone: string,
+  targetDay: string,
+): boolean {
+  if (s.end <= s.start) {
+    return zoneDate(s.start, timeZone) === targetDay
+  }
+  const startDay = zoneDate(s.start, timeZone)
+  const endDay = zoneDate(s.end - 1, timeZone)
+  return startDay <= targetDay && endDay >= targetDay
+}
 const actualRecords = computed(() =>
   app.data.records
     .filter((r) =>
       r.segments.length
-        ? r.segments.some(
-            (s) =>
-              zoneDate(s.start, r.timeZone) <= day.value && zoneDate(s.end, r.timeZone) >= day.value,
-          )
+        ? r.segments.some((s) => segmentTouchesDay(s, r.timeZone, day.value))
         : zoneDate(r.startedAt, r.timeZone) === day.value,
     )
     .sort((a, b) => a.startedAt - b.startedAt),
@@ -161,10 +170,13 @@ const recordDateSet = computed(() => {
   for (const r of app.data.records) {
     if (r.segments.length) {
       for (const s of r.segments) {
-        const startD = zoneDate(s.start, r.timeZone)
-        const endD = zoneDate(s.end, r.timeZone)
-        set.add(startD)
-        if (endD !== startD) set.add(endD)
+        if (s.end <= s.start) {
+          set.add(zoneDate(s.start, r.timeZone))
+          continue
+        }
+        for (const bucket of intervalBuckets(s.start, s.end, r.timeZone)) {
+          set.add(bucket.date)
+        }
       }
     } else {
       set.add(zoneDate(r.startedAt, r.timeZone))
@@ -173,7 +185,7 @@ const recordDateSet = computed(() => {
   return set
 })
 const timelineDayTotalMs = computed(() =>
-  actualRecords.value.reduce((sum, r) => sum + (actualDuration(r) || r.durationMs), 0),
+  actualRecords.value.reduce((sum, r) => sum + recordDisplayDuration(r), 0),
 )
 const weeklyMatrix = computed(() => app.petProjection.weeklyFourColorMatrix(week.value[0]!))
 const weeklyStats = computed(() => statistics(app.data.records, week.value[0]!, week.value[6]!))
@@ -622,7 +634,7 @@ function actualDuration(r: FocusRecord) {
 }
 
 function recordDisplayDuration(r: FocusRecord) {
-  return actualDuration(r) || r.durationMs
+  return r.segments.length ? actualDuration(r) : r.durationMs
 }
 
 function recordCardKind(r: FocusRecord): 'manual' | 'early' | 'completed' {
@@ -636,7 +648,7 @@ function recordEarlyReason(r: FocusRecord): string {
   if (note) return note
   if (r.failReason === 'left_app') return '离开专注超时'
   if (r.failReason === 'manual_giveup') return '主动放弃专注'
-  return '提前结束'
+  return ''
 }
 
 function startEditNote(r: FocusRecord) {
@@ -674,15 +686,22 @@ async function saveRecordNote(recordId: string) {
 function openManualBackfill() {
   const today = dateKey()
   manualForm.itemId = null
-  manualForm.date = day.value
   if (day.value === today) {
     const endMs = Date.now() - 60_000
     const midnightMs = new Date(`${today}T00:00:00`).getTime()
-    const safeEnd = Math.max(midnightMs + 60_000, endMs)
-    const safeStart = Math.max(midnightMs, safeEnd - 25 * 60_000)
-    manualForm.startTime = localTime(safeStart)
-    manualForm.endTime = localTime(safeEnd)
+    if (endMs < midnightMs + 60_000) {
+      manualForm.date = addDays(today, -1)
+      manualForm.startTime = '23:35'
+      manualForm.endTime = '23:59'
+    } else {
+      manualForm.date = today
+      const safeEnd = endMs
+      const safeStart = Math.max(midnightMs, safeEnd - 25 * 60_000)
+      manualForm.startTime = localTime(safeStart)
+      manualForm.endTime = localTime(safeEnd)
+    }
   } else {
+    manualForm.date = day.value
     manualForm.startTime = '09:00'
     manualForm.endTime = '09:25'
   }
@@ -720,10 +739,15 @@ async function exportWeeklyGrid() {
       totalMs: weeklyStats.value.totalMs,
       sessionCount: weeklyStats.value.count,
     })
+    sheet.value = null
+    await waitForDialogClose()
     await exportPngFile(dataUrl, `xiaomao-week-${week.value[0]}.png`)
     app.notify('已保存一周分布图')
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    const msg = e instanceof Error ? e.message : String(e)
+    if (!msg.includes('取消')) {
+      app.notify(msg)
+    }
   } finally {
     busy.value = false
   }
@@ -806,9 +830,6 @@ function coursePosition(o: Occurrence) {
     </header>
     <header v-else class="page-header calendar-mode-header">
       <div class="header-top-row timetable-header">
-        <button type="button" class="detail-back timetable-back" @click="tab = 'schedule'">
-          <Icon name="left" :size="16" /><span>日程</span>
-        </button>
         <div v-if="currentSemester" class="week-stepper" data-decision-group>
           <button type="button" class="icon-button" aria-label="上一教学周" @click="changeWeek(-1)">
             <Icon name="left" :size="18" />
@@ -1012,7 +1033,7 @@ function coursePosition(o: Occurrence) {
                   <span v-if="recordCardKind(record) === 'manual'" class="manual-tag">手动补录</span>
                 </div>
                 <p v-if="recordCardKind(record) === 'early'" class="card-meta early-meta">
-                  提前结束 · {{ recordEarlyReason(record) }}
+                  提前结束<template v-if="recordEarlyReason(record)"> · {{ recordEarlyReason(record) }}</template>
                 </p>
                 <p v-else-if="recordCardKind(record) === 'manual'" class="card-meta">
                   {{ record.themeName }} · 手动补录
@@ -1130,7 +1151,7 @@ function coursePosition(o: Occurrence) {
         <h2>
           {{ readableDate(day) }} <span>{{ weekdayName(day) }}</span>
         </h2>
-        <div class="timeline-controls" data-decision-group>
+        <div class="timeline-controls">
           <button
             type="button"
             class="icon-button"
@@ -1219,7 +1240,7 @@ function coursePosition(o: Occurrence) {
           <div class="empty-mark"><Icon name="clock" :size="31" /></div>
           <h2>今天还没有专注记录</h2>
           <p>计划是起点，行动会留下时间。</p>
-          <button type="button" class="secondary" @click="router.push('/tasks')">去专注</button>
+          <button type="button" class="secondary" @click="router.push('/focus')">去专注</button>
         </div>
       </template>
     </template>
@@ -1273,9 +1294,6 @@ function coursePosition(o: Occurrence) {
             </button>
           </div>
         </div>
-        <button type="button" class="add-course secondary wide" @click="openCourse()">
-          <Icon name="plus" :size="17" />添加课程
-        </button>
       </template>
       <div v-else class="empty calendar-empty">
         <div class="empty-mark"><Icon name="book" :size="31" /></div>
@@ -1651,7 +1669,8 @@ function coursePosition(o: Occurrence) {
                   })
                 "
               >
-                ＋ 添加节次
+                <Icon name="plus" :size="15" />
+                <span>添加节次</span>
               </button>
               <button
                 type="button"
@@ -2464,7 +2483,7 @@ function coursePosition(o: Occurrence) {
   font-size: 13px;
 }
 .timeline-top-header {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 .calendar-mode-header {
   flex-direction: column;

@@ -410,6 +410,7 @@ export const onNativeOverlayEvent = async (handlers: {
   onNavigate?: (path: string) => void
   onSessionChanged?: () => void
   onWhiteNoisePaused?: (data: { reason?: string; track?: string }) => void
+  onWhiteNoiseResumed?: () => void
 }): Promise<() => void> => {
   if (!native || typeof plugin.addListener !== 'function') return () => {}
   const handles: Array<{ remove: () => Promise<void> }> = []
@@ -431,6 +432,13 @@ export const onNativeOverlayEvent = async (handlers: {
     handles.push(
       await plugin.addListener('whiteNoisePaused', (data) => {
         handlers.onWhiteNoisePaused?.(data ?? {})
+      }),
+    )
+  }
+  if (handlers.onWhiteNoiseResumed) {
+    handles.push(
+      await plugin.addListener('whiteNoiseResumed', () => {
+        handlers.onWhiteNoiseResumed?.()
       }),
     )
   }

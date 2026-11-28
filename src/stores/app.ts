@@ -196,9 +196,13 @@ export const useApp = defineStore('app', () => {
     if (!dataLoaded) return
     await dataOperation(async () => {
       const loaded = await repository.load()
-      if (loaded.preferences.whiteNoise !== data.value.preferences.whiteNoise) {
+      if (
+        loaded.preferences.whiteNoise !== data.value.preferences.whiteNoise ||
+        loaded.preferences.whiteNoiseVolume !== data.value.preferences.whiteNoiseVolume
+      ) {
         const next = structuredClone(data.value)
         next.preferences.whiteNoise = loaded.preferences.whiteNoise
+        next.preferences.whiteNoiseVolume = loaded.preferences.whiteNoiseVolume
         data.value = JSON.parse(JSON.stringify(next)) as AppData
       }
     })

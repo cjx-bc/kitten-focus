@@ -72,4 +72,38 @@ public class AntiCloseWindowOemTest {
             AntiCloseWindow.strictGuardTarget("com.android.settings", "com.android.settings.SubSettings", headingTree)
         );
     }
+
+    @Test
+    public void expiresAndInvalidatesAppLabelCacheCorrectly() {
+        assertTrue(AndroidAntiCloseSystem.isAppLabelCacheFresh(
+            "com.xiaomao.focus", "小猫专注",
+            "com.xiaomao.focus", "小猫专注",
+            10_000L, 39_999L, 30_000L
+        ));
+        assertFalse(AndroidAntiCloseSystem.isAppLabelCacheFresh(
+            "com.xiaomao.focus", "小猫专注",
+            "com.xiaomao.focus", "小猫专注",
+            10_000L, 40_000L, 30_000L
+        ));
+        assertFalse(AndroidAntiCloseSystem.isAppLabelCacheFresh(
+            "com.xiaomao.focus", "小猫专注",
+            "com.xiaomao.focus", "小猫专注",
+            -1L, 1_000L, 30_000L
+        ));
+        assertFalse(AndroidAntiCloseSystem.isAppLabelCacheFresh(
+            "com.xiaomao.focus", "小猫专注",
+            "com.xiaomao.focus", "小猫专注",
+            10_000L, 9_999L, 30_000L
+        ));
+        assertFalse(AndroidAntiCloseSystem.isAppLabelCacheFresh(
+            "com.xiaomao.focus.qa", "小猫专注 QA",
+            "com.xiaomao.focus", "小猫专注",
+            10_000L, 12_000L, 30_000L
+        ));
+        assertFalse(AndroidAntiCloseSystem.isAppLabelCacheFresh(
+            "com.xiaomao.focus", "小猫专注 QA",
+            "com.xiaomao.focus", "小猫专注",
+            10_000L, 12_000L, 30_000L
+        ));
+    }
 }

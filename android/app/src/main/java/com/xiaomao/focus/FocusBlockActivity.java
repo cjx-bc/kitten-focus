@@ -88,7 +88,7 @@ public class FocusBlockActivity extends ComponentActivity {
     @Override protected void onPause() { visible = false; handler.removeCallbacks(refresh); super.onPause(); }
     private void render() {
         try {
-            JSONObject observation = new FocusControl(this).observeControl();
+            JSONObject observation = new FocusControl(this).observeSessionState();
             JSONObject snapshot = observation.getJSONObject("lock".equals(observation.optString("owner")) ? "lock" : "focus");
             JSONObject session = snapshot.optJSONObject("session");
             JSONObject protection = session == null ? null : session.optJSONObject("protection");

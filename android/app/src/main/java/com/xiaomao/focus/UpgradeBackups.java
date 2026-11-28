@@ -135,8 +135,11 @@ final class UpgradeBackups {
                 JSONObject portable = BusinessBackupData.snapshot(value.getJSONObject("snapshot"));
                 BusinessBackupData.validate(portable.getJSONObject("documents").optJSONObject("data"));
                 JSONArray records = portable.getJSONArray("records");
-                for (int i = 0; i < records.length(); i++)
-                    if (records.getJSONObject(i).optString("id").isEmpty()) throw new IllegalArgumentException("恢复副本记录损坏");
+                for (int i = 0; i < records.length(); i++) {
+                    JSONObject record = records.getJSONObject(i);
+                    if (record.optString("id").isEmpty()) throw new IllegalArgumentException("恢复副本记录损坏");
+                    BusinessBackupData.validateRecordFields(record);
+                }
                 control.prepareDataReplacement();
                 // Keep a safety snapshot of current data before replacing anything.
                 create(BuildConfig.VERSION_CODE, BuildConfig.VERSION_CODE);

@@ -140,10 +140,13 @@ export function renderWeeklyFarmCard(canvas: HTMLCanvasElement, slice: WeekFarmS
   ctx.font = `750 48px ${fontSans}`
   ctx.fillText('一周农场', pad, 64)
 
+  const [y1] = parseYmd(slice.weekStartDate)
+  const [y2] = parseYmd(slice.weekEndDate)
+  const weekRangeText = formatWeekRangeLabel(slice.weekStartDate, slice.weekEndDate)
   ctx.fillStyle = '#737378'
   ctx.font = `500 28px ${fontSans}`
   ctx.fillText(
-    `${slice.weekStartDate.slice(0, 4)} 年 · ${formatWeekRangeLabel(slice.weekStartDate, slice.weekEndDate)}`,
+    y1 !== y2 ? weekRangeText : `${y1} 年 · ${weekRangeText}`,
     pad,
     126,
   )

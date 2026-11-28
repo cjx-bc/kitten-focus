@@ -93,7 +93,7 @@ final class BusinessBackupData {
         return Double.isFinite(number) && number >= min && number <= max;
     }
 
-    private static void validateRecordFields(JSONObject record) {
+    static void validateRecordFields(JSONObject record) {
         if ((record.has("animalId") && !isChoice(record.opt("animalId"), ANIMAL_IDS)) ||
             (record.has("skinId") && !validSkin(record.opt("skinId"))) ||
             (record.has("note") && !withinCodePoints(record.opt("note"), 100)) ||

@@ -390,9 +390,6 @@ async function chooseSkin(skinId: string) {
   border-color: var(--ink);
   background: var(--white);
 }
-.pet-roster-card.locked {
-  opacity: 0.72;
-}
 .pet-roster-card.locked .pet-roster-art {
   filter: grayscale(1);
   opacity: 0.65;
@@ -504,8 +501,8 @@ async function chooseSkin(skinId: string) {
   border-color: var(--ink);
   background: var(--white);
 }
-.skin-option-card.locked {
-  opacity: 0.72;
+.skin-option-card.locked .skin-swatch {
+  opacity: 0.65;
 }
 .skin-option-left {
   display: flex;

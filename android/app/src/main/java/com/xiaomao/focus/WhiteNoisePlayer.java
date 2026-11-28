@@ -97,9 +97,7 @@ final class WhiteNoisePlayer {
 
     void syncFromUserAction(Context context) {
         synchronized (lock) {
-            if (policy.isPausedByNoisy()) {
-                policy.clearPausedByNoisy();
-            }
+            policy.clearPausedByNoisy();
         }
         syncFromStore(context);
     }
@@ -190,7 +188,7 @@ final class WhiteNoisePlayer {
             float volume = decision.effectiveVolume;
             if (decision.requestAudioFocus) {
                 if (!requestAudioFocusLocked()) {
-                    policy.onAudioFocusChange(WhiteNoisePolicy.AudioFocusState.PAUSED_TRANSIENT);
+                    policy.onAudioFocusChange(WhiteNoisePolicy.AudioFocusState.LOST);
                     return;
                 }
                 policy.onAudioFocusChange(WhiteNoisePolicy.AudioFocusState.GAINED);
@@ -213,6 +211,9 @@ final class WhiteNoisePlayer {
             mediaPlayer.setVolume(volume, volume);
             if (!mediaPlayer.isPlaying()) {
                 mediaPlayer.start();
+            }
+            if (FocusKeepAliveService.isRunning()) {
+                FocusKeepAliveService.refreshForegroundType(appContext);
             }
         } catch (Throwable ignored) {
             // Never allow audio subsystem errors to interrupt focus timer lifecycle.

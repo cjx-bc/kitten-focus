@@ -105,13 +105,12 @@ final class WhiteNoisePolicy {
 
         Action action = resolveAction(hasActiveFocusSession, focusRunning);
         float effectiveVol = effectiveVolumeLocked();
-        boolean requestFocus = action == Action.PLAY
-            && (audioFocusState == AudioFocusState.NONE || audioFocusState == AudioFocusState.LOST);
+        boolean requestFocus = action == Action.PLAY && audioFocusState == AudioFocusState.NONE;
         boolean registerNoisy = action == Action.PLAY;
         boolean abandonFocus = action == Action.STOP
             || (action == Action.PAUSE && audioFocusState != AudioFocusState.PAUSED_TRANSIENT);
 
-        if (abandonFocus) {
+        if (abandonFocus && audioFocusState != AudioFocusState.LOST) {
             audioFocusState = AudioFocusState.NONE;
         }
         lastAction = action;
@@ -134,7 +133,7 @@ final class WhiteNoisePolicy {
 
     synchronized void clearPausedByNoisy() {
         pausedByNoisy = false;
-        if (audioFocusState == AudioFocusState.LOST) {
+        if (audioFocusState == AudioFocusState.LOST || audioFocusState == AudioFocusState.PAUSED_TRANSIENT) {
             audioFocusState = AudioFocusState.NONE;
         }
     }

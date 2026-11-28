@@ -245,10 +245,18 @@ async function saveRestTiming() {
 
 async function exportBackup() {
   try {
-    await exportFile(makeBackup(app.data), `小猫专注备份-${dateKey()}.json`)
+    const payload = makeBackup(app.data)
+    if (native) {
+      sheet.value = null
+      await waitForDialogClose()
+    }
+    await exportFile(payload, `小猫专注备份-${dateKey()}.json`)
     app.notify('备份已导出')
   } catch (e) {
-    app.notify(e instanceof Error ? e.message : String(e))
+    const msg = e instanceof Error ? e.message : String(e)
+    if (!msg.includes('取消')) {
+      app.notify(msg)
+    }
   }
 }
 
@@ -273,9 +281,14 @@ async function chooseImport() {
   }
   if (native) {
     try {
+      sheet.value = null
+      await waitForDialogClose()
       previewImport((await importNativeFile()).text)
     } catch (e) {
-      app.notify(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!msg.includes('取消')) {
+        app.notify(msg)
+      }
     }
   } else importInput.value?.click()
 }

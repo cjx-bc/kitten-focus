@@ -166,4 +166,36 @@ describe('statistics v2 (earlyCount, count aggregation, midnight consistency, ye
     expect(map.maxCount).toBe(0)
     expect(map.days.every((d) => d.ms === 0 && d.count === 0 && d.level === 0)).toBe(true)
   })
+
+  it('includes Jan 1 on leap-year Dec 31 yearlyHeatmap and excludes manual records from counts', () => {
+    const jan1 = makeRecord({
+      id: 'leap-jan1',
+      startIso: '2024-01-01T09:00:00+08:00',
+      endIso: '2024-01-01T09:30:00+08:00',
+      timeZone: 'Asia/Shanghai',
+    })
+    const manualOnly = makeRecord({
+      id: 'manual-feb2',
+      startIso: '2024-02-02T10:00:00+08:00',
+      endIso: '2024-02-02T11:00:00+08:00',
+      timeZone: 'Asia/Shanghai',
+      source: 'manual',
+    })
+
+    const leapDur = yearlyHeatmap([jan1, manualOnly], '2024-12-31', 'duration')
+    expect(leapDur.from).toBe('2024-01-01')
+    expect(leapDur.to).toBe('2024-12-31')
+    expect(leapDur.days).toHaveLength(366)
+    expect(leapDur.days[0]).toMatchObject({ date: '2024-01-01', ms: 30 * 60_000, count: 1 })
+    expect(leapDur.days.find((d) => d.date === '2024-02-02')).toMatchObject({ ms: 60 * 60_000, count: 0 })
+
+    const leapCount = yearlyHeatmap([jan1, manualOnly], '2024-12-31', 'count')
+    expect(leapCount.days.find((d) => d.date === '2024-02-02')?.level).toBe(0)
+
+    const stat = statistics([jan1, manualOnly], '2024-01-01', '2024-12-31')
+    expect(stat.totalMs).toBe(90 * 60_000)
+    expect(stat.count).toBe(1)
+    expect(stat.averageMs).toBe(30 * 60_000)
+    expect(stat.categories[0]).toMatchObject({ ms: 90 * 60_000, count: 1 })
+  })
 })

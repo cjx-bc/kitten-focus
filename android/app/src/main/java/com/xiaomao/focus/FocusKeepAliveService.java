@@ -22,7 +22,9 @@ import java.util.concurrent.Executors;
  */
 public final class FocusKeepAliveService extends Service {
     private static final long WATCHDOG_INTERVAL_MS = 2_000L;
+    static final String EXTRA_FROM_BOOT = "from_boot";
     private static volatile boolean running;
+    private static volatile boolean mediaPlaybackAttached;
 
     private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService watchdogExecutor = Executors.newSingleThreadExecutor();
@@ -39,7 +41,7 @@ public final class FocusKeepAliveService extends Service {
                     try {
                         if (!running) return;
                         FocusControl control = new FocusControl(app);
-                        JSONObject obs = control.observeControl();
+                        JSONObject obs = control.observeSessionState();
                         if (obs.isNull("owner") || LocalStore.get(app).read("active") == null) {
                             shouldContinue = false;
                             stop(app);
@@ -74,18 +76,61 @@ public final class FocusKeepAliveService extends Service {
         return running;
     }
 
+    static int resolveForegroundServiceType(int sdkInt, boolean wantMediaPlayback, boolean fromBoot) {
+        if (sdkInt < 34) {
+            return 0;
+        }
+        int fgsType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
+        if (wantMediaPlayback && !fromBoot) {
+            fgsType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
+        }
+        return fgsType;
+    }
+
+    private static boolean wantsMediaPlayback(Context context, JSONObject active) {
+        if (active == null || LockEngine.owns(active) || !"running".equals(active.optString("state"))) {
+            return false;
+        }
+        try {
+            JSONObject data = LocalStore.get(context).read("data");
+            JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
+            String track = prefs == null ? "off" : prefs.optString("whiteNoise", "off");
+            return WhiteNoisePolicy.isPlayableTrack(track);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     static void ensureStarted(Context context) {
+        ensureStarted(context, false);
+    }
+
+    static void ensureStarted(Context context, boolean fromBoot) {
         if (context == null || running) return;
         Context app = context.getApplicationContext();
         try {
-            ContextCompat.startForegroundService(app, new Intent(app, FocusKeepAliveService.class));
+            Intent intent = new Intent(app, FocusKeepAliveService.class);
+            if (fromBoot) {
+                intent.putExtra(EXTRA_FROM_BOOT, true);
+            }
+            ContextCompat.startForegroundService(app, intent);
         } catch (IllegalStateException | SecurityException ignored) {
             // Android 12+ may restrict background FGS starts in edge transitions; Reminders notification remains intact.
         }
     }
 
+    static void refreshForegroundType(Context context) {
+        if (context == null || !running || mediaPlaybackAttached) return;
+        Context app = context.getApplicationContext();
+        try {
+            ContextCompat.startForegroundService(app, new Intent(app, FocusKeepAliveService.class));
+        } catch (IllegalStateException | SecurityException ignored) {
+        }
+    }
+
     static void stop(Context context) {
         running = false;
+        mediaPlaybackAttached = false;
         UsageAppMonitor.stop();
         FocusBlockOverlay.dismiss();
         if (context == null) return;
@@ -99,6 +144,7 @@ public final class FocusKeepAliveService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        boolean fromBoot = intent != null && intent.getBooleanExtra(EXTRA_FROM_BOOT, false);
         JSONObject active = null;
         try {
             active = LocalStore.get(this).read("active");
@@ -109,13 +155,33 @@ public final class FocusKeepAliveService extends Service {
             ? Reminders.buildFocusNotification(this, active, currentElapsed(active))
             : Reminders.buildFallbackKeepAliveNotification(this);
 
-        int fgsType = Build.VERSION.SDK_INT >= 34
-            ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            : 0;
+        boolean wantMedia = wantsMediaPlayback(this, active);
+        int fgsType = resolveForegroundServiceType(Build.VERSION.SDK_INT, wantMedia, fromBoot);
+        boolean startedForeground = false;
         try {
             ServiceCompat.startForeground(this, Reminders.FOCUS_ID, notification, fgsType);
+            startedForeground = true;
+            mediaPlaybackAttached = Build.VERSION.SDK_INT >= 34
+                && (fgsType & ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK) != 0;
         } catch (RuntimeException failure) {
+            if (Build.VERSION.SDK_INT >= 34 && (fgsType & ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK) != 0) {
+                try {
+                    ServiceCompat.startForeground(
+                        this,
+                        Reminders.FOCUS_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    );
+                    startedForeground = true;
+                    mediaPlaybackAttached = false;
+                } catch (RuntimeException fallbackFailure) {
+                    startedForeground = false;
+                }
+            }
+        }
+        if (!startedForeground) {
             running = false;
+            mediaPlaybackAttached = false;
             UsageAppMonitor.stop();
             stopSelf(startId);
             return START_NOT_STICKY;
@@ -123,6 +189,7 @@ public final class FocusKeepAliveService extends Service {
 
         if (active == null) {
             running = false;
+            mediaPlaybackAttached = false;
             UsageAppMonitor.stop();
             FocusBlockOverlay.dismiss();
             WhiteNoisePlayer.getInstance(this).stop();
@@ -133,7 +200,9 @@ public final class FocusKeepAliveService extends Service {
 
         running = true;
         UsageAppMonitor.start(this);
-        WhiteNoisePlayer.getInstance(this).syncFromStore(this);
+        if (!fromBoot) {
+            WhiteNoisePlayer.getInstance(this).syncFromStore(this);
+        }
         Reminders.scheduleKeepAliveHeartbeat(this);
         watchdogActive = true;
         watchdogHandler.removeCallbacks(watchdogTick);
@@ -165,6 +234,7 @@ public final class FocusKeepAliveService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        mediaPlaybackAttached = false;
         watchdogActive = false;
         watchdogHandler.removeCallbacksAndMessages(null);
         watchdogExecutor.shutdownNow();

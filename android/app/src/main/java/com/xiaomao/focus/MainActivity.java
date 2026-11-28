@@ -48,6 +48,8 @@ public class MainActivity extends BridgeActivity {
 
     private static volatile MainActivity activeInstance;
     private static volatile String currentRoutePath = "/";
+    private static final java.util.concurrent.ExecutorService WINDOW_STATE_WORKER =
+        java.util.concurrent.Executors.newSingleThreadExecutor();
     private volatile boolean resumed = false;
 
     static void updateRouteState(android.content.Context context, String routePath) {
@@ -55,14 +57,14 @@ public class MainActivity extends BridgeActivity {
         FocusBlockOverlay.updateRouteState(context, currentRoutePath);
         MainActivity activity = activeInstance;
         if (activity != null) {
-            activity.runOnUiThread(activity::applyImmersiveFocusIfNeeded);
+            activity.applyImmersiveFocusIfNeeded();
         }
     }
 
     static void refreshWindowState(android.content.Context context) {
         MainActivity activity = activeInstance;
         if (activity != null) {
-            activity.runOnUiThread(activity::applyImmersiveFocusIfNeeded);
+            activity.applyImmersiveFocusIfNeeded();
         }
         if (context != null) {
             FocusBlockOverlay.refreshKeepScreenOn(context);
@@ -177,7 +179,7 @@ public class MainActivity extends BridgeActivity {
             return true;
         }
         try {
-            Object owner = new FocusControl(this).observeControl().opt("owner");
+            Object owner = new FocusControl(this).observeSessionState().opt("owner");
             return owner != null && owner != JSONObject.NULL && !owner.toString().isEmpty();
         } catch (Exception ignored) {
             return false;
@@ -253,51 +255,62 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void applyImmersiveFocusIfNeeded() {
-        applyKeepScreenOnIfNeeded();
-        try {
-            androidx.core.view.WindowInsetsControllerCompat controller =
-                androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
-            if (controller == null) return;
-            boolean focusRoute = currentRoutePath.startsWith("/focus") || currentRoutePath.startsWith("/lock");
-            boolean activeSession = LocalStore.get(this).read("active") != null;
-            if (focusRoute && activeSession && !FocusBlockOverlay.canAttachOverlay(this)) {
-                controller.setSystemBarsBehavior(
-                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                );
-                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars());
-            } else {
-                controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+        final String routeSnapshot = currentRoutePath;
+        WINDOW_STATE_WORKER.execute(() -> {
+            boolean keepScreenOn = false;
+            boolean immersive = false;
+            try {
+                LocalStore store = LocalStore.get(this);
+                JSONObject data = store.read("data");
+                JSONObject active = store.read("active");
+                JSONObject rest = store.read("rest");
+                keepScreenOn = shouldKeepScreenOn(data, active, rest);
+                boolean focusRoute = routeSnapshot.startsWith("/focus") || routeSnapshot.startsWith("/lock");
+                immersive = focusRoute && active != null && !FocusBlockOverlay.canAttachOverlay(this);
+            } catch (Exception ignored) {
             }
-        } catch (Exception ignored) {
-        }
-    }
-
-    private void applyKeepScreenOnIfNeeded() {
-        try {
-            LocalStore store = LocalStore.get(this);
-            boolean keep = shouldKeepScreenOn(
-                store.read("data"),
-                store.read("active"),
-                store.read("rest")
-            );
-            if (keep) {
-                getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            } else {
-                getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            }
-        } catch (Exception ignored) {
-        }
+            final boolean applyKeep = keepScreenOn;
+            final boolean applyImmersive = immersive;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (applyKeep) {
+                    getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+                try {
+                    androidx.core.view.WindowInsetsControllerCompat controller =
+                        androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+                    if (controller == null) return;
+                    if (applyImmersive) {
+                        controller.setSystemBarsBehavior(
+                            androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        );
+                        controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+                    } else {
+                        controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars());
+                    }
+                } catch (Exception ignored) {
+                }
+            });
+        });
     }
 
     private void observeNavigationFocus() {
-        try {
-            // Transient Overview can leave this Activity resumed and omit a second
-            // accessibility state event. Actual window focus is independent OS evidence.
-            new FocusControl(this).navigationWindow(getPackageName(), getClass().getName());
-            new FocusControl(this).antiCloseWindow(getPackageName(), getClass().getName());
-        } catch (Exception ignored) {
-            // A missing confirmation remains pending/failed; never infer a successful return.
-        }
+        final android.content.Context app = getApplicationContext();
+        final String pkg = getPackageName();
+        final String cls = getClass().getName();
+        WINDOW_STATE_WORKER.execute(() -> {
+            try {
+                // Transient Overview can leave this Activity resumed and omit a second
+                // accessibility state event. Actual window focus is independent OS evidence.
+                FocusControl control = new FocusControl(app);
+                control.navigationWindow(pkg, cls);
+                control.antiCloseWindow(pkg, cls);
+            } catch (Exception ignored) {
+                // A missing confirmation remains pending/failed; never infer a successful return.
+            }
+        });
     }
 
     @Override

@@ -339,13 +339,49 @@ function computeStreaks(daySet: Set<string>, todayKey: string): { currentStreakD
   return { currentStreakDays, maxConsecutiveDays }
 }
 
-function sampleEvenly<T>(items: readonly T[], limit: number): T[] {
+function sampleEvenly<T extends { animalId?: AnimalId }>(items: readonly T[], limit: number): T[] {
   if (items.length <= limit) return [...items]
-  const out: T[] = []
+  if (limit <= 1) return [items[items.length - 1]!]
+  const chosen = new Set<number>()
   for (let i = 0; i < limit; i++) {
-    out.push(items[Math.floor((i * items.length) / limit)]!)
+    chosen.add(Math.round((i * (items.length - 1)) / (limit - 1)))
   }
-  return out
+  // Ensure every present animal species keeps at least one representative when possible
+  const latestBySpecies = new Map<AnimalId, number>()
+  items.forEach((item, idx) => {
+    if (item.animalId) latestBySpecies.set(item.animalId, idx)
+  })
+  if (latestBySpecies.size <= limit) {
+    const represented = new Set<AnimalId>()
+    for (const idx of chosen) {
+      const id = items[idx]?.animalId
+      if (id) represented.add(id)
+    }
+    const missingIndices = [...latestBySpecies.entries()]
+      .filter(([id]) => !represented.has(id))
+      .map(([, idx]) => idx)
+    if (missingIndices.length > 0) {
+      const speciesCounts = new Map<AnimalId, number>()
+      for (const idx of chosen) {
+        const id = items[idx]?.animalId
+        if (id) speciesCounts.set(id, (speciesCounts.get(id) ?? 0) + 1)
+      }
+      const candidates = [...chosen].filter((idx) => {
+        if (idx === 0 || idx === items.length - 1) return false
+        const id = items[idx]?.animalId
+        return id ? (speciesCounts.get(id) ?? 0) > 1 : true
+      })
+      for (const missingIdx of missingIndices) {
+        const dropIdx = candidates.pop()
+        if (dropIdx === undefined) break
+        const dropId = items[dropIdx]?.animalId
+        if (dropId) speciesCounts.set(dropId, (speciesCounts.get(dropId) ?? 1) - 1)
+        chosen.delete(dropIdx)
+        chosen.add(missingIdx)
+      }
+    }
+  }
+  return [...chosen].sort((a, b) => a - b).map((idx) => items[idx]!)
 }
 
 function resolveCellState(cell: WeeklyFourColorCell): FourColorState {
@@ -438,7 +474,7 @@ export function projectPetDomain(input: PetProjectionInput): PetProjection {
     }
 
     if (record.status === 'early') {
-      if (retroactive) {
+      if (retroactive || record.durationMs < 10_000) {
         recordEffects.set(record.id, {
           recordId: record.id,
           animalId,
@@ -446,7 +482,7 @@ export function projectPetDomain(input: PetProjectionInput): PetProjection {
           affectionDelta: 0,
           litter: 0,
           validForPet: false,
-          retroactive: true,
+          retroactive,
           dayKey,
         })
       } else {

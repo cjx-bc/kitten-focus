@@ -108,7 +108,7 @@ watch([() => app.ready, () => app.rest.session?.record.id, () => route.path], ([
     elapsedRestMs < 2500
   if (isFreshHarvestOnFocus) {
     if (autoRestTimer === undefined) {
-      app.notify('专注完成，即将开始休息')
+      app.notify('本次专注正常结束，即将开始休息')
       autoRestTimer = setTimeout(() => {
         autoRestTimer = undefined
         if (app.rest.session?.state === 'running' && route.path !== '/rest') {
@@ -140,7 +140,7 @@ const tabs = [
 const swipe = createTabSwipe({
   paths: tabs.map((tab) => tab.path),
   currentPath: () => route.path,
-  isBlocked: () => !app.ready || isStudySessionLocked(app.focus.session),
+  isBlocked: () => !app.ready || full.value || isStudySessionLocked(app.focus.session),
   navigate: (path) => void router.replace(path),
 })
 function maybeOpenUpdatePrompt() {
@@ -260,6 +260,9 @@ onMounted(async () => {
           app.pauseWhiteNoiseForNoisy()
           app.notify('音频输出已断开，白噪音已暂停')
         },
+        onWhiteNoiseResumed: () => {
+          app.clearWhiteNoiseNoisyPause()
+        },
       })
       await CapacitorApp.addListener('appStateChange', (state) => {
         if (state.isActive) {
@@ -283,7 +286,9 @@ onMounted(async () => {
           if (app.focus.session) {
             app.notify('专注进行中，请在页面内暂停、取消或结束')
           } else if (app.lastResult) {
-            app.dismissResult()
+            const ev = new CustomEvent('focus-result-back', { cancelable: true })
+            window.dispatchEvent(ev)
+            if (!ev.defaultPrevented) app.dismissResult()
           } else {
             void CapacitorApp.minimizeApp()
           }

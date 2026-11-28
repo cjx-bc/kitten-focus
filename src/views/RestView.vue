@@ -57,14 +57,21 @@ function getAppHandledSet(): Set<string> {
 }
 
 function readStoredLoopIds(): string[] {
-  try {
-    if (typeof sessionStorage === 'undefined') return []
-    const raw = sessionStorage.getItem(POMODORO_LOOP_KEY)
-    const parsed = raw ? (JSON.parse(raw) as unknown) : []
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
-  } catch {
-    return []
+  const ids = new Set<string>()
+  for (const storage of [
+    typeof sessionStorage !== 'undefined' ? sessionStorage : null,
+    typeof localStorage !== 'undefined' ? localStorage : null,
+  ]) {
+    try {
+      if (!storage) continue
+      const raw = storage.getItem(POMODORO_LOOP_KEY)
+      const parsed = raw ? (JSON.parse(raw) as unknown) : []
+      if (Array.isArray(parsed)) {
+        for (const x of parsed) if (typeof x === 'string') ids.add(x)
+      }
+    } catch {}
   }
+  return [...ids]
 }
 
 function isLoopHandled(recordId: string): boolean {
@@ -74,20 +81,28 @@ function isLoopHandled(recordId: string): boolean {
 
 function markLoopHandled(recordId: string) {
   getAppHandledSet().add(recordId)
-  try {
-    if (typeof sessionStorage === 'undefined') return
-    const next = Array.from(new Set([...readStoredLoopIds(), recordId])).slice(-20)
-    sessionStorage.setItem(POMODORO_LOOP_KEY, JSON.stringify(next))
-  } catch {}
+  const next = Array.from(new Set([...readStoredLoopIds(), recordId])).slice(-20)
+  for (const storage of [
+    typeof sessionStorage !== 'undefined' ? sessionStorage : null,
+    typeof localStorage !== 'undefined' ? localStorage : null,
+  ]) {
+    try {
+      storage?.setItem(POMODORO_LOOP_KEY, JSON.stringify(next))
+    } catch {}
+  }
 }
 
 function clearLoopHandled(recordId: string) {
   getAppHandledSet().delete(recordId)
-  try {
-    if (typeof sessionStorage === 'undefined') return
-    const next = readStoredLoopIds().filter((id) => id !== recordId)
-    sessionStorage.setItem(POMODORO_LOOP_KEY, JSON.stringify(next))
-  } catch {}
+  const next = readStoredLoopIds().filter((id) => id !== recordId)
+  for (const storage of [
+    typeof sessionStorage !== 'undefined' ? sessionStorage : null,
+    typeof localStorage !== 'undefined' ? localStorage : null,
+  ]) {
+    try {
+      storage?.setItem(POMODORO_LOOP_KEY, JSON.stringify(next))
+    } catch {}
+  }
 }
 
 function clearStartErrorSheet() {
@@ -199,12 +214,20 @@ async function clearUnreadyAndRetry() {
   }
 }
 
-function maybeTriggerPomodoroLoop() {
+function maybeTriggerPomodoroLoop(fromTransition = false) {
   if (leaving.value || busy.value) return
   const current = session.value
   if (!current || current.state !== 'completed') return
   if (app.data.preferences.pomodoroLoop !== true) return
   if (isLoopHandled(current.record.id)) return
+  if (
+    !fromTransition &&
+    current.endsAt > 1_000_000_000_000 &&
+    Date.now() - current.endsAt > 5 * 60_000
+  ) {
+    markLoopHandled(current.record.id)
+    return
+  }
   markLoopHandled(current.record.id)
   playLightCompletionFeedback({
     sound: app.data.preferences.sound,
@@ -222,7 +245,7 @@ watch(
 watch(
   () => session.value?.state,
   (nextState) => {
-    if (nextState === 'completed') maybeTriggerPomodoroLoop()
+    if (nextState === 'completed') maybeTriggerPomodoroLoop(true)
   },
 )
 onMounted(() => {
@@ -231,7 +254,7 @@ onMounted(() => {
     void router.replace('/focus')
     return
   }
-  maybeTriggerPomodoroLoop()
+  maybeTriggerPomodoroLoop(false)
 })
 onBeforeUnmount(() => document.removeEventListener('rest-exit-request', requestExit))
 onBeforeRouteLeave(async () => {
