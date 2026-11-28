@@ -502,4 +502,68 @@ describe('app store resilience fixes', () => {
     expect(app.lastResult).toBeUndefined()
     app.dispose()
   })
+
+  it('initializes pet.retroCutoffAt when restoring a pre-v2 backup with historical early records (no retroactive penalty)', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const app = useApp()
+    await app.init()
+
+    const legacyBackup = emptyData()
+    delete legacyBackup.pet
+    const completed = makeRecord('hist-done')
+    completed.durationMs = 25 * 60_000
+    completed.targetMs = 25 * 60_000
+    completed.startedAt = 1_000
+    completed.endedAt = 1_501_000
+    completed.segments = [{ start: 1_000, end: 1_501_000 }]
+    const early1: FocusRecord = {
+      ...makeRecord('hist-early-1'),
+      startedAt: 2_000_000,
+      endedAt: 2_300_000,
+      durationMs: 300_000,
+      segments: [{ start: 2_000_000, end: 2_300_000 }],
+      status: 'early',
+    }
+    const early2: FocusRecord = {
+      ...makeRecord('hist-early-2'),
+      startedAt: 3_000_000,
+      endedAt: 3_300_000,
+      durationMs: 300_000,
+      segments: [{ start: 3_000_000, end: 3_300_000 }],
+      status: 'early',
+    }
+    legacyBackup.records.push(completed, early1, early2)
+
+    await app.restore(legacyBackup)
+
+    expect(app.data.pet?.selectedAnimalId).toBe('black-cat')
+    expect(typeof app.data.pet?.retroCutoffAt).toBe('number')
+    expect(app.petProjection.affection).toBe(5)
+    expect(app.petProjection.affection).toBeGreaterThanOrEqual(0)
+    expect(app.petProjection.recordEffects.get('hist-early-1')?.retroactive).toBe(true)
+    expect(app.petProjection.recordEffects.get('hist-early-1')?.affectionDelta).toBe(0)
+    expect(app.petProjection.recordEffects.get('hist-early-2')?.affectionDelta).toBe(0)
+    app.dispose()
+  })
+
+  it('pauses white noise on noisy disconnect without wiping preferences.whiteNoise', async () => {
+    const { useApp } = await import('../src/stores/app')
+    const data = emptyData()
+    data.preferences.whiteNoise = 'waves'
+    mocks.load.mockResolvedValueOnce(data)
+
+    const app = useApp()
+    await app.init()
+
+    await app.start(null, 'countdown', 25)
+    app.pauseWhiteNoiseForNoisy()
+
+    expect(app.whiteNoiseNoisyPaused).toBe(true)
+    expect(app.data.preferences.whiteNoise).toBe('waves')
+
+    app.clearWhiteNoiseNoisyPause()
+    expect(app.whiteNoiseNoisyPaused).toBe(false)
+    expect(app.data.preferences.whiteNoise).toBe('waves')
+    app.dispose()
+  })
 })

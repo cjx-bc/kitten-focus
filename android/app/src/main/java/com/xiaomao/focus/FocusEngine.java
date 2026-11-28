@@ -171,6 +171,9 @@ final class FocusEngine {
         long completedAgo = reached ? (expiredAfterReboot ? Math.max(0L, epoch - s.optLong("deadlineEpoch")) : Math.max(0, now - s.optLong("anchorMono") - Math.max(0, s.optLong("targetMs") - s.optLong("elapsedMs")))) : 0;
         boolean failLeave = "fail_leave".equals(action);
         if (failLeave && !interrupted && !reached) {
+            if (s.optBoolean("strictMode") && "countdown".equals(s.optString("mode"))) {
+                throw new IllegalStateException("严格倒计时不能暂停、取消或提前结束");
+            }
             if (!"running".equals(s.optString("state"))) {
                 return snapshot(s, value, null);
             }

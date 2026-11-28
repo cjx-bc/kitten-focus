@@ -132,6 +132,13 @@ final class WhiteNoisePolicy {
         audioFocusState = nextFocusState == null ? AudioFocusState.NONE : nextFocusState;
     }
 
+    synchronized void clearPausedByNoisy() {
+        pausedByNoisy = false;
+        if (audioFocusState == AudioFocusState.LOST) {
+            audioFocusState = AudioFocusState.NONE;
+        }
+    }
+
     synchronized boolean isPausedByNoisy() {
         return pausedByNoisy;
     }

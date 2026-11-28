@@ -215,11 +215,13 @@ describe('CatView Weekly Farm UI', () => {
     const { weekStart, dateKey } = await import('../src/domain/dates')
 
     const router = { push: vi.fn(), replace: vi.fn() }
+    const emptyPet = { version: 1 as const, selectedAnimalId: 'black-cat' as const, selectedSkins: {}, lastSelectedItemId: null, retroCutoffAt: null }
     const appStore = reactive({
       data: {
         ...emptyData(),
-        pet: { version: 1, selectedAnimalId: 'black-cat', selectedSkins: {}, lastSelectedItemId: null, retroCutoffAt: null },
+        pet: emptyPet,
       },
+      petProjection: projectPetDomain({ records: [], pet: emptyPet }),
       notify: vi.fn(),
     })
 
@@ -272,12 +274,14 @@ describe('CatView Weekly Farm UI', () => {
       }),
     )
 
+    const pet = { version: 1 as const, selectedAnimalId: 'black-cat' as const, selectedSkins: {}, lastSelectedItemId: null, retroCutoffAt: null }
     const appStore = reactive({
       data: {
         ...emptyData(),
         records,
-        pet: { version: 1, selectedAnimalId: 'black-cat', selectedSkins: {}, lastSelectedItemId: null, retroCutoffAt: null },
+        pet,
       },
+      petProjection: projectPetDomain({ records, pet }),
       notify: vi.fn(),
     })
 

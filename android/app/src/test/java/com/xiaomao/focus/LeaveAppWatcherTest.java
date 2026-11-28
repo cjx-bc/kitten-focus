@@ -381,4 +381,39 @@ public class LeaveAppWatcherTest {
         assertEquals(1, env.cancelWarningCount);
         assertNotNull(env.store.read("active"));
     }
+
+    @Test
+    public void exemptsStrictCountdownWithoutOverlayWhileSupervisingStrictStopwatch() throws Exception {
+        FakeEnvironment env = new FakeEnvironment();
+        FakeScheduler scheduler = new FakeScheduler();
+        LeaveAppWatcher watcher = new LeaveAppWatcher(env, scheduler);
+
+        JSONObject strictCountdown = focusSession("running", false, false, false)
+            .put("mode", "countdown")
+            .put("strictMode", true);
+        env.engine.start(strictCountdown);
+        env.canAttachOverlay = false;
+        env.clock.advance(15_000L);
+
+        watcher.onStop();
+        assertEquals(0, env.showWarningCount);
+        assertFalse(scheduler.hasPending());
+        assertEquals(0, env.failByLeaveCount);
+        assertNotNull(env.store.read("active"));
+
+        // Clean up strict session via simulated expiry, then test strict stopwatch (not exempt!)
+        env.clock.advance(25 * 60_000L);
+        env.engine.action("read");
+        assertNull(env.store.read("active"));
+
+        JSONObject strictStopwatch = focusSession("running", false, false, false)
+            .put("id", "sess-sw")
+            .put("mode", "stopwatch")
+            .put("strictMode", true);
+        env.engine.start(strictStopwatch);
+        env.clock.advance(15_000L);
+        watcher.onStop();
+        assertEquals(1, env.showWarningCount);
+        assertTrue(scheduler.hasPending());
+    }
 }

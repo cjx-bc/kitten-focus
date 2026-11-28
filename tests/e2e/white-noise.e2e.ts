@@ -108,7 +108,7 @@ describe('Offline White Noise Controls, Budgets & Persistence (#36)', () => {
       { label: 'waves selected while running' },
     )
 
-    // Simulate native ACTION_AUDIO_BECOMING_NOISY -> whiteNoisePaused event syncs UI back to 关闭
+    // Simulate native ACTION_AUDIO_BECOMING_NOISY -> whiteNoisePaused pauses playback, shows toast, and preserves preferred track
     await p.evaluate(() => {
       ;(
         window as unknown as {
@@ -120,13 +120,30 @@ describe('Offline White Noise Controls, Budgets & Persistence (#36)', () => {
       })
     })
     await p.waitFor(
-      () =>
-        document
-          .querySelector('dialog[open] button[aria-checked="true"]')
-          ?.textContent?.trim() === '关闭',
-      { label: 'white noise synced to off after becoming noisy' },
+      () => (document.body.innerText ?? '').includes('音频输出已断开，白噪音已暂停'),
+      { label: 'noisy pause toast shown' },
+    )
+    const afterNoisy = await p.evaluate(() => {
+      const stub = (window as unknown as {
+        __catFocusStub: { getState: () => { data: { preferences: { whiteNoise?: string } } } }
+      }).__catFocusStub
+      return {
+        prefTrack: stub.getState().data.preferences.whiteNoise,
+        checkedLabel: document.querySelector('dialog[open] button[aria-checked="true"]')?.textContent?.trim(),
+        dialogText: document.querySelector('dialog[open]')?.textContent ?? '',
+      }
+    })
+    expect(afterNoisy.prefTrack).toBe('waves')
+    expect(afterNoisy.checkedLabel).toBe('海浪')
+    expect(afterNoisy.dialogText).toContain('音频输出已断开，白噪音已暂停')
+
+    // Tapping the remembered track resumes playback cleanly
+    await p.clickByRoleOrText({ text: '海浪', withinOpenDialog: true })
+    await p.waitFor(
+      () => !(document.querySelector('dialog[open]')?.textContent ?? '').includes('音频输出已断开，白噪音已暂停'),
+      { label: 'noisy pause notice cleared on user resume' },
     )
 
-    p.assertNoErrors('white noise standby, running, persistence, and becoming noisy sync')
+    p.assertNoErrors('white noise standby, running, persistence, and becoming noisy pause/resume')
   })
 })

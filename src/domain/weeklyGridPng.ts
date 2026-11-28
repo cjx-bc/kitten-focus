@@ -1,5 +1,6 @@
 import type { FourColorState, WeeklyFourColorCell } from './pet'
 import { duration, readableDate } from './dates'
+import { roundedRectPath } from './canvasShapes'
 
 export interface WeeklyGridPngOptions {
   weekDates: readonly string[]
@@ -16,18 +17,6 @@ const STATE_COLOR: Record<FourColorState, string> = {
   pause: '#EAEAEA',
   early: '#EF4E36',
   manual: '#D1D1D6',
-}
-
-function drawRoundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  ctx.beginPath()
-  ctx.roundRect(x, y, w, h, r)
 }
 
 function createDiagonalHatchPattern(ctx: CanvasRenderingContext2D): CanvasPattern | string {
@@ -113,7 +102,7 @@ export function renderWeeklyGridPngDataUrl(options: WeeklyGridPngOptions): strin
     for (let d = 0; d < 7; d++) {
       const x = gridLeft + d * (cellW + colGap)
       const state: FourColorState = matrix[d]?.[h]?.state ?? 'empty'
-      drawRoundedRect(ctx, x, y, cellW, cellH, 6)
+      roundedRectPath(ctx, x, y, cellW, cellH, 6)
       ctx.fillStyle = state === 'pause' ? hatchPattern : STATE_COLOR[state]
       ctx.fill()
       if (state === 'empty') {
@@ -135,7 +124,7 @@ export function renderWeeklyGridPngDataUrl(options: WeeklyGridPngOptions): strin
   ctx.textAlign = 'left'
   let lx = padX
   for (const item of legendItems) {
-    drawRoundedRect(ctx, lx, legendY, 24, 24, 6)
+    roundedRectPath(ctx, lx, legendY, 24, 24, 6)
     ctx.fillStyle = item.state === 'pause' ? hatchPattern : STATE_COLOR[item.state]
     ctx.fill()
     ctx.fillStyle = '#222222'

@@ -1,6 +1,7 @@
 import { duration } from './dates'
 import { getSkinMeta, type WeekFarmSlice } from './pet'
 import { getPetSpriteNodes, type SvgNode } from './petSprites'
+import { roundedRectPath } from './canvasShapes'
 import type { AnimalId } from './model'
 
 function parseYmd(dateStr: string): [number, number, number] {
@@ -15,32 +16,6 @@ export function formatWeekRangeLabel(weekStartDate: string, weekEndDate: string)
   if (y1 !== y2) return `${y1} 年 ${m1} 月 ${d1} 日–${y2} 年 ${m2} 月 ${d2} 日`
   if (m1 === m2) return `${m1} 月 ${d1} 日–${d2} 日`
   return `${m1} 月 ${d1} 日–${m2} 月 ${d2} 日`
-}
-
-function roundedRectPath(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-): void {
-  const radius = Math.min(r, w / 2, h / 2)
-  ctx.beginPath()
-  if (typeof ctx.roundRect === 'function') {
-    ctx.roundRect(x, y, w, h, radius)
-    return
-  }
-  ctx.moveTo(x + radius, y)
-  ctx.lineTo(x + w - radius, y)
-  ctx.quadraticCurveTo(x + w, y, x + w, y + radius)
-  ctx.lineTo(x + w, y + h - radius)
-  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h)
-  ctx.lineTo(x + radius, y + h)
-  ctx.quadraticCurveTo(x, y + h, x, y + h - radius)
-  ctx.lineTo(x, y + radius)
-  ctx.quadraticCurveTo(x, y, x + radius, y)
-  ctx.closePath()
 }
 
 function resolveColor(

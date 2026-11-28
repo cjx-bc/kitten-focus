@@ -145,6 +145,8 @@ final class LeaveAppWatcher {
         }
         // 2. Active focus not running (e.g. paused)
         if (!"running".equals(active.optString("state"))) return true;
+        // 2b. Strict countdown must never be ended early by leaving the app (even without overlay)
+        if (active.optBoolean("strictMode") && "countdown".equals(active.optString("mode"))) return true;
         // 3. preferences.leaveAppFail === false (default when missing is true)
         JSONObject prefs = data == null ? null : data.optJSONObject("preferences");
         if (prefs != null && !prefs.optBoolean("leaveAppFail", true)) return true;

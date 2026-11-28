@@ -2,6 +2,7 @@ import { defaultProtection, type ProtectionPreferences } from './model'
 import { resolveEffectiveProtection } from './protectionModules'
 import { native } from '../platform/bridge'
 import { readProtectionDiagnostics, type CapabilityDiagnostic } from '../platform/protectionDiagnostics'
+import { waitForDialogClose } from '../components/sheetClose'
 
 export type StartErrorKind = 'recovery' | 'protection' | 'other'
 
@@ -59,4 +60,44 @@ export async function getUnreadyProtectionIds(
   } catch {
     return []
   }
+}
+
+export async function runGoRecovery(options: {
+  beforeNavigate?: () => Promise<void> | void
+  clearSheet: () => void
+  navigate: () => Promise<unknown>
+}): Promise<void> {
+  await options.beforeNavigate?.()
+  options.clearSheet()
+  await waitForDialogClose()
+  await options.navigate()
+}
+
+export async function runOpenStudyPermissions(options: {
+  clearSheet: () => void
+  openStudy: () => void
+}): Promise<void> {
+  options.clearSheet()
+  await waitForDialogClose()
+  options.openStudy()
+}
+
+export async function runClearUnreadyAndRetry(options: {
+  protection?: ProtectionPreferences
+  clearUnreadyProtections: (ids: ProtectionCapabilityId[], silent?: boolean) => Promise<void>
+  clearSheet: () => void
+  openStudy: () => void
+  retry: () => Promise<void>
+}): Promise<void> {
+  const ids = await getUnreadyProtectionIds(options.protection)
+  if (!ids.length) {
+    options.clearSheet()
+    await waitForDialogClose()
+    options.openStudy()
+    return
+  }
+  await options.clearUnreadyProtections(ids, true)
+  options.clearSheet()
+  await waitForDialogClose()
+  await options.retry()
 }
